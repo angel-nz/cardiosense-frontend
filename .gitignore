@@ -49,3 +49,10 @@ desktop.ini
 *.tmp
 *.temp
 *.bak
+
+# Secrets / credentials
+*.pem
+*.key
+*.crt
+credentials.json
+service-account.json

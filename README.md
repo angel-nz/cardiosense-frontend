@@ -37,7 +37,7 @@ src/
 │   ├── LoginPage.tsx
 │   ├── NotFoundPage.tsx
 │   └── RegisterPage.tsx
-├── services/         # alertService, api, authService, dashboardService, patientService, predictionService, recordService
+├── services/         # alertService, api, authService, dashboardService, patientService, predictionService, recordService, userService
 ├── types/            # index.ts
 ├── App.tsx
 ├── index.css

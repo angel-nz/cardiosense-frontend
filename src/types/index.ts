@@ -9,6 +9,23 @@ export interface User {
   role: UserRole
   avatarUrl?: string
   createdAt: string
+  // Only present for role MEDICO — mirrors backend sanitizeUser()/PATCH
+  // /users/:id response (medico: {id, especialidad, hospital}).
+  medico?: {
+    id: string
+    especialidad?: string
+    hospital?: string
+  }
+}
+
+// PATCH /api/users/:id — flat payload, exactly matching UpdateProfileDto
+// (backend/src/modules/users/user.routes.ts). especialidad/hospital are
+// only applied server-side when role === MEDICO.
+export interface UpdateUserRequest {
+  firstName?: string
+  lastName?: string
+  especialidad?: string
+  hospital?: string
 }
 
 export interface AuthState {

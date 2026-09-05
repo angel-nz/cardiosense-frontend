@@ -15,6 +15,7 @@ interface BackendUser {
   role: string
   isActive: boolean
   createdAt: string
+  medico?: { id: string; especialidad: string | null; hospital: string | null } | null
 }
 
 interface BackendAuthPayload {
@@ -31,6 +32,11 @@ function normalizeUser(u: BackendUser): User {
     lastName: u.lastName,
     role: u.role.toLowerCase() as UserRole,
     createdAt: u.createdAt,
+    medico: u.medico ? {
+      id: u.medico.id,
+      especialidad: u.medico.especialidad ?? undefined,
+      hospital: u.medico.hospital ?? undefined,
+    } : undefined,
   }
 }
 

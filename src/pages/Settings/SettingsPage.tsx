@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import {
   User, Bell, Shield, Palette, Save, Eye, EyeOff,
-  CheckCircle, Camera, Mail, Phone, Building2,
+  CheckCircle, Camera, Mail, Phone, Building2, Loader2, AlertTriangle,
 } from 'lucide-react'
+import { isAxiosError } from 'axios'
 import { cn, initials } from '@/lib/utils'
 import { useAuth } from '@/context/AuthContext'
+import { userService } from '@/services/userService'
 
 type Tab = 'profile' | 'notifications' | 'security' | 'appearance'
 
@@ -58,21 +60,24 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
 }
 
 export default function SettingsPage() {
-  const { user } = useAuth()
+  const { user, setUser } = useAuth()
   const [activeTab, setActiveTab] = useState<Tab>('profile')
   const [saved, setSaved] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
 
-  // Profile form
+  // Profile form — only firstName/lastName/especialidad/hospital are real
+  // (PATCH /api/users/:id). email/phone/cedula have no editable backend
+  // contract in this block — kept read-only, never sent, never faked as
+  // saved (see profileFieldsReadOnly below).
   const [profile, setProfile] = useState({
     firstName:   user?.firstName ?? '',
     lastName:    user?.lastName ?? '',
-    email:       user?.email ?? '',
-    phone:       '+52 33 1234 5678',
-    speciality:  'Cardiología',
-    hospital:    'Hospital Civil de Guadalajara',
-    cedula:      '1234567',
+    especialidad: user?.medico?.especialidad ?? '',
+    hospital:    user?.medico?.hospital ?? '',
   })
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileSaved, setProfileSaved] = useState(false)
+  const [profileError, setProfileError] = useState('')
 
   // Notification prefs
   const [notifs, setNotifs] = useState({
@@ -89,10 +94,56 @@ export default function SettingsPage() {
     current: '', newPwd: '', confirm: '',
   })
 
+  // Notificaciones/Seguridad remain simulated in this block — explicitly
+  // out of scope (Bloque N-A only covers Perfil). Left untouched so their
+  // pre-existing (already-diagnosed) behavior doesn't change.
   const handleSave = async () => {
     await new Promise(r => setTimeout(r, 700))
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
+  }
+
+  // PATCH /api/users/:id — real persistence for the four supported fields.
+  // Ownership: userId comes from the authenticated session (AuthContext),
+  // never typed/controlled by this form — the backend independently
+  // enforces req.user.sub === :id regardless.
+  const handleSaveProfile = async () => {
+    if (!user || profileSaving) return
+    setProfileSaving(true)
+    setProfileError('')
+    try {
+      const updated = await userService.updateProfile(user.id, {
+        firstName: profile.firstName.trim(),
+        lastName: profile.lastName.trim(),
+        especialidad: profile.especialidad.trim() || undefined,
+        hospital: profile.hospital.trim() || undefined,
+      })
+      // Reuse AuthContext's existing setUser — keeps React state and the
+      // localStorage session cache consistent, no second source of truth.
+      setUser({ ...user, ...updated })
+      setProfileSaved(true)
+      setTimeout(() => setProfileSaved(false), 3000)
+    } catch (err) {
+      if (isAxiosError(err) && err.response?.data?.error) {
+        setProfileError(err.response.data.error)
+      } else {
+        setProfileError('No se pudo guardar el perfil. Intenta de nuevo.')
+      }
+    } finally {
+      setProfileSaving(false)
+    }
+  }
+
+  // Session not resolved yet — never show editable fields with empty/stale
+  // data while this is true (ProtectedRoute normally guarantees `user` is
+  // already set by the time this page renders, but guard defensively).
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <Loader2 className="w-8 h-8 text-primary animate-spin mb-3" />
+        <p className="text-sm text-muted-foreground">Cargando tu perfil...</p>
+      </div>
+    )
   }
 
   return (
@@ -154,36 +205,80 @@ export default function SettingsPage() {
 
               <SectionCard title="Información personal" description="Tus datos de identificación profesional">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Editable — PATCH /api/users/:id */}
                   {[
-                    { label: 'Nombre(s)',   field: 'firstName',  icon: User },
-                    { label: 'Apellidos',   field: 'lastName',   icon: User },
-                    { label: 'Correo',      field: 'email',      icon: Mail },
-                    { label: 'Teléfono',    field: 'phone',      icon: Phone },
-                    { label: 'Especialidad',field: 'speciality', icon: Building2 },
-                    { label: 'Hospital',    field: 'hospital',   icon: Building2 },
-                    { label: 'Cédula profesional', field: 'cedula', icon: Shield },
+                    { label: 'Nombre(s)',    field: 'firstName',    icon: User },
+                    { label: 'Apellidos',    field: 'lastName',     icon: User },
+                    { label: 'Especialidad', field: 'especialidad', icon: Building2 },
                   ].map(({ label, field, icon: Icon }) => (
-                    <div key={field} className={field === 'hospital' ? 'sm:col-span-2' : ''}>
+                    <div key={field}>
                       <label className="text-xs font-medium text-foreground mb-1.5 flex items-center gap-1.5">
                         <Icon className="w-3.5 h-3.5 text-muted-foreground" />
                         {label}
                       </label>
                       <input
-                        type={field === 'email' ? 'email' : 'text'}
-                        value={profile[field as keyof typeof profile]}
+                        type="text"
+                        value={profile[field as 'firstName' | 'lastName' | 'especialidad']}
                         onChange={e => setProfile(p => ({ ...p, [field]: e.target.value }))}
                         className={inputClass}
                       />
                     </div>
                   ))}
+                  <div className="sm:col-span-2">
+                    <label className="text-xs font-medium text-foreground mb-1.5 flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
+                      Hospital / Institución
+                    </label>
+                    <input
+                      type="text"
+                      value={profile.hospital}
+                      onChange={e => setProfile(p => ({ ...p, hospital: e.target.value }))}
+                      className={inputClass}
+                    />
+                  </div>
+
+                  {/* Read-only — no editable backend contract in this block.
+                      Never sent on save, never shown as "guardado". */}
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                      <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+                      Correo <span className="text-[10px] font-normal">(no editable)</span>
+                    </label>
+                    <input type="email" value={user.email} disabled className={cn(inputClass, 'opacity-60 cursor-not-allowed')} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                      <Phone className="w-3.5 h-3.5 text-muted-foreground" />
+                      Teléfono <span className="text-[10px] font-normal">(no disponible)</span>
+                    </label>
+                    <input type="text" value="No disponible" disabled className={cn(inputClass, 'opacity-60 cursor-not-allowed')} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                      <Shield className="w-3.5 h-3.5 text-muted-foreground" />
+                      Cédula profesional <span className="text-[10px] font-normal">(no disponible)</span>
+                    </label>
+                    <input type="text" value="No disponible" disabled className={cn(inputClass, 'opacity-60 cursor-not-allowed')} />
+                  </div>
                 </div>
+
+                {profileError && (
+                  <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 mt-4">
+                    <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                    <p className="text-xs text-red-700">{profileError}</p>
+                  </div>
+                )}
+
                 <div className="flex justify-end mt-4 pt-4 border-t border-border">
                   <button
-                    onClick={handleSave}
-                    className="flex items-center gap-2 bg-primary text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+                    onClick={handleSaveProfile}
+                    disabled={profileSaving}
+                    className="flex items-center gap-2 bg-primary text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors"
                   >
-                    {saved ? <CheckCircle className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-                    {saved ? 'Guardado' : 'Guardar cambios'}
+                    {profileSaving
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : profileSaved ? <CheckCircle className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                    {profileSaving ? 'Guardando...' : profileSaved ? 'Guardado' : 'Guardar cambios'}
                   </button>
                 </div>
               </SectionCard>
