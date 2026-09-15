@@ -28,6 +28,14 @@ export interface UpdateUserRequest {
   hospital?: string
 }
 
+// GET/PATCH /api/users/me/notification-preferences (Bloque N-B).
+// Deliberately only these two: email/push/SMS/sound have no backend
+// channel, so they are NOT persisted and are not part of this contract.
+export interface NotificationPreferences {
+  highRiskAlerts: boolean
+  weeklySummary: boolean
+}
+
 export interface AuthState {
   user: User | null
   token: string | null

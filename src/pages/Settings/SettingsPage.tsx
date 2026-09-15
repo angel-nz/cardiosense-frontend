@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   User, Bell, Shield, Palette, Save, Eye, EyeOff,
   CheckCircle, Camera, Mail, Phone, Building2, Loader2, AlertTriangle,
@@ -7,6 +7,8 @@ import { isAxiosError } from 'axios'
 import { cn, initials } from '@/lib/utils'
 import { useAuth } from '@/context/AuthContext'
 import { userService } from '@/services/userService'
+import { notificationPreferencesService } from '@/services/notificationPreferencesService'
+import type { NotificationPreferences } from '@/types'
 
 type Tab = 'profile' | 'notifications' | 'security' | 'appearance'
 
@@ -78,16 +80,54 @@ export default function SettingsPage() {
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileSaved, setProfileSaved] = useState(false)
   const [profileError, setProfileError] = useState('')
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences | null>(null)
+  const [notifLoading, setNotifLoading] = useState(false)
+  const [notifLoadError, setNotifLoadError] = useState('')
+  const [notifSaving, setNotifSaving] = useState(false)
+  const [notifSaved, setNotifSaved] = useState(false)
+  const [notifSaveError, setNotifSaveError] = useState('')
 
-  // Notification prefs
-  const [notifs, setNotifs] = useState({
-    emailAlerts:    true,
-    browserPush:    true,
-    criticalOnly:   false,
-    weeklyReport:   true,
-    soundAlert:     false,
-    smsAlerts:      false,
-  })
+  const loadNotifPrefs = useCallback(async () => {
+    setNotifLoading(true)
+    setNotifLoadError('')
+    try {
+      setNotifPrefs(await notificationPreferencesService.getPreferences())
+    } catch {
+      setNotifLoadError('No se pudieron cargar tus preferencias de notificaciones.')
+    } finally {
+      setNotifLoading(false)
+    }
+  }, [])
+
+  // Fetch when the tab is opened — never initialize with invented values.
+  useEffect(() => {
+    if (activeTab === 'notifications' && !notifPrefs && !notifLoading && !notifLoadError) {
+      loadNotifPrefs()
+    }
+  }, [activeTab, notifPrefs, notifLoading, notifLoadError, loadNotifPrefs])
+
+  const handleSaveNotifPrefs = async () => {
+    if (!notifPrefs || notifSaving) return
+    setNotifSaving(true)
+    setNotifSaveError('')
+    try {
+      const saved = await notificationPreferencesService.updatePreferences({
+        highRiskAlerts: notifPrefs.highRiskAlerts,
+        weeklySummary: notifPrefs.weeklySummary,
+      })
+      setNotifPrefs(saved)
+      setNotifSaved(true)
+      setTimeout(() => setNotifSaved(false), 3000)
+    } catch (err) {
+      if (isAxiosError(err) && err.response?.data?.error) {
+        setNotifSaveError(err.response.data.error)
+      } else {
+        setNotifSaveError('No se pudieron guardar las preferencias. Intenta de nuevo.')
+      }
+    } finally {
+      setNotifSaving(false)
+    }
+  }
 
   // Password form
   const [passwords, setPasswords] = useState({
@@ -288,32 +328,86 @@ export default function SettingsPage() {
           {/* ── NOTIFICATIONS ────────────────────────────────────────── */}
           {activeTab === 'notifications' && (
             <SectionCard title="Preferencias de notificaciones" description="Controla cómo y cuándo recibes alertas">
-              <div className="space-y-1 divide-y divide-border">
-                {[
-                  { key: 'emailAlerts',  label: 'Alertas por correo electrónico' },
-                  { key: 'browserPush',  label: 'Notificaciones push en el navegador' },
-                  { key: 'criticalOnly', label: 'Solo alertas críticas (riesgo alto)' },
-                  { key: 'weeklyReport', label: 'Reporte semanal de pacientes' },
-                  { key: 'soundAlert',   label: 'Sonido en alertas en tiempo real' },
-                  { key: 'smsAlerts',    label: 'Alertas por SMS (requiere número verificado)' },
-                ].map(({ key, label }) => (
-                  <Toggle
-                    key={key}
-                    label={label}
-                    checked={notifs[key as keyof typeof notifs]}
-                    onChange={v => setNotifs(n => ({ ...n, [key]: v }))}
-                  />
-                ))}
-              </div>
-              <div className="flex justify-end mt-4 pt-4 border-t border-border">
-                <button
-                  onClick={handleSave}
-                  className="flex items-center gap-2 bg-primary text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
-                >
-                  {saved ? <CheckCircle className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-                  {saved ? 'Guardado' : 'Guardar preferencias'}
-                </button>
-              </div>
+              {notifLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                </div>
+              ) : notifLoadError ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <AlertTriangle className="w-8 h-8 text-red-400 mb-2" />
+                  <p className="text-sm text-red-600">{notifLoadError}</p>
+                  <button
+                    onClick={loadNotifPrefs}
+                    className="mt-3 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+                  >
+                    Reintentar
+                  </button>
+                </div>
+              ) : notifPrefs ? (
+                <>
+                  {/* Real, persisted preferences */}
+                  <div className="space-y-1 divide-y divide-border">
+                    <Toggle
+                      label="Solo alertas críticas (riesgo alto)"
+                      checked={notifPrefs.highRiskAlerts}
+                      onChange={v => setNotifPrefs(p => p && ({ ...p, highRiskAlerts: v }))}
+                    />
+                    <Toggle
+                      label="Reporte semanal de pacientes"
+                      checked={notifPrefs.weeklySummary}
+                      onChange={v => setNotifPrefs(p => p && ({ ...p, weeklySummary: v }))}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-3">
+                    Estas preferencias se guardan en tu cuenta. Su aplicación al envío
+                    real de alertas y reportes llegará en una fase posterior.
+                  </p>
+
+                  {/* Channels with no backend — explicitly unavailable, never
+                      persisted, never sent. Rendered disabled so the UI can't
+                      suggest they control anything. */}
+                  <div className="mt-5 pt-4 border-t border-border">
+                    <p className="text-xs font-medium text-muted-foreground mb-1">
+                      Canales no disponibles todavía
+                    </p>
+                    <div className="space-y-1 divide-y divide-border opacity-60">
+                      {[
+                        'Alertas por correo electrónico',
+                        'Notificaciones push en el navegador',
+                        'Alertas por SMS (requiere número verificado)',
+                        'Sonido en alertas en tiempo real',
+                      ].map(label => (
+                        <div key={label} className="flex items-center justify-between py-3">
+                          <span className="text-sm text-muted-foreground">{label}</span>
+                          <span className="text-[10px] font-medium text-muted-foreground border border-border rounded-full px-2 py-0.5">
+                            No disponible
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {notifSaveError && (
+                    <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 mt-4">
+                      <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                      <p className="text-xs text-red-700">{notifSaveError}</p>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end mt-4 pt-4 border-t border-border">
+                    <button
+                      onClick={handleSaveNotifPrefs}
+                      disabled={notifSaving}
+                      className="flex items-center gap-2 bg-primary text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors"
+                    >
+                      {notifSaving
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : notifSaved ? <CheckCircle className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                      {notifSaving ? 'Guardando...' : notifSaved ? 'Guardado' : 'Guardar preferencias'}
+                    </button>
+                  </div>
+                </>
+              ) : null}
             </SectionCard>
           )}
 
