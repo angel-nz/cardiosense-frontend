@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Activity, Heart, Phone, Calendar,
@@ -116,6 +116,12 @@ export default function PatientDetailPage() {
   const [showRecordForm, setShowRecordForm] = useState(false)
   const [recordForm, setRecordForm] = useState<RecordFormState>(RECORD_INITIAL)
   const [recordSaving, setRecordSaving] = useState(false)
+  // Synchronous guard against double-submit (Q2): `disabled={recordSaving}`
+  // on the button already existed, but a React state update only disables
+  // the DOM after a re-render — two clicks close enough together can both
+  // fire before that happens. A ref is read/written synchronously, so it
+  // closes that race window completely.
+  const recordSavingRef = useRef(false)
   const [recordFormError, setRecordFormError] = useState<string | null>(null)
   const [recordFieldErrors, setRecordFieldErrors] = useState<Record<string, string>>({})
 
@@ -191,13 +197,23 @@ export default function PatientDetailPage() {
     clearLastPrediction()
   }, [id, lastPrediction, loadPatient, loadPredictions, clearLastPrediction])
 
-  // INT-20 — health_record_created: payload is ids + recordedAt only, not
-  // enough to construct a HealthRecord, so this refetches history (same
-  // recordService-backed loader already used after manually adding a
-  // record) instead of fabricating clinical fields.
+  // INT-20 — health_record_created. Q3: dedup by record.id before deciding
+  // whether to refetch. The payload is too thin (ids + recordedAt only) to
+  // build a full HealthRecord, so when the record is genuinely new to this
+  // client's local state, this still refetches the authoritative list
+  // (same as before) — but when the creator's own POST already inserted it
+  // (see submitRecord above), this becomes a no-op: no redundant GET, and
+  // no dependency on event ordering between the HTTP response and the
+  // socket delivery (whichever arrives first "wins" the insert; the other
+  // sees it's already present and does nothing).
   useEffect(() => {
     if (!id || !lastHealthRecord || lastHealthRecord.patientId !== id) return
-    loadHistory(true)
+    let alreadyPresent = false
+    setRecords(prev => {
+      alreadyPresent = prev.some(r => r.id === lastHealthRecord.recordId)
+      return prev
+    })
+    if (!alreadyPresent) loadHistory(true)
     clearLastHealthRecord()
   }, [id, lastHealthRecord, loadHistory, clearLastHealthRecord])
 
@@ -241,7 +257,8 @@ export default function PatientDetailPage() {
 
   const submitRecord = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!id) return
+    if (!id || recordSavingRef.current) return
+    recordSavingRef.current = true
     setRecordFormError(null)
     setRecordFieldErrors({})
     setRecordSaving(true)
@@ -261,10 +278,15 @@ export default function PatientDetailPage() {
         glucose: Number(recordForm.glucose),
         notes: recordForm.notes.trim() || undefined,
       }
-      await recordService.create(payload)
-      // Refresh via GET /api/health-records/patient/:patientId (INT-10)
-      const fresh = await recordService.getByPatientId(id)
-      setRecords(fresh)
+      const created = await recordService.create(payload)
+      // Q3 — the creator updates its own local state directly from the
+      // 201 response instead of waiting for health_record_created: an
+      // operation this client just executed successfully shouldn't depend
+      // on realtime delivery to be reflected locally (the bug Q3 fixes —
+      // see the dedup-aware socket effect below for the other half of this).
+      // recordedAt-desc is the same order GET /patients/:id/history already
+      // returns (patient.repository.ts), so prepending keeps it correct.
+      setRecords(prev => (prev.some(r => r.id === created.id) ? prev : [created, ...prev]))
       setRecordForm(RECORD_INITIAL)
       setShowRecordForm(false)
     } catch (err) {
@@ -277,6 +299,7 @@ export default function PatientDetailPage() {
       }
     } finally {
       setRecordSaving(false)
+      recordSavingRef.current = false
     }
   }
 
