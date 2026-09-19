@@ -12,6 +12,7 @@ import { isAxiosError } from 'axios'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import { RiskGauge } from '@/components/charts/RiskGauge'
 import { FeatureImportanceBar } from '@/components/charts/FeatureImportanceBar'
+import { PatientCalendar } from '@/components/patients/PatientCalendar'
 import { cn, formatDate, formatDateTime, calcAge, sexLabel, timeAgo } from '@/lib/utils'
 import { patientService } from '@/services/patientService'
 import { recordService } from '@/services/recordService'
@@ -105,6 +106,68 @@ export default function PatientDetailPage() {
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [predictionsLoading, setPredictionsLoading] = useState(true)
   const [predictionsError, setPredictionsError] = useState<string | null>(null)
+
+  // P4 — Calendar → longitudinal-view cross-navigation. Exact-identity only
+  // (record.id / prediction.id) — never matched by date/score proximity.
+  const [selectedHealthRecordId, setSelectedHealthRecordId] = useState<string | null>(null)
+  const [selectedPredictionId, setSelectedPredictionId] = useState<string | null>(null)
+  const [timelineFeedback, setTimelineFeedback] = useState<string | null>(null)
+  const recordRowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map())
+  const riskEvolutionRef = useRef<HTMLDivElement>(null)
+
+  // Patient switch (A→B): clear cross-navigation state — a highlighted
+  // record/prediction from the previous patient must never survive.
+  useEffect(() => {
+    setSelectedHealthRecordId(null)
+    setSelectedPredictionId(null)
+    setTimelineFeedback(null)
+  }, [id])
+
+  // CLINICAL_RECORD click. `records` (loadHistory, GET /:id/history) is
+  // unbounded — no page/limit — so in practice a Calendar clinical event
+  // should always resolve here. Still checked explicitly rather than
+  // assumed (section 24/25): a not-found record never highlights a
+  // different, wrong row.
+  const handleSelectHealthRecord = useCallback((healthRecordId: string) => {
+    const exists = records.some(r => r.id === healthRecordId)
+    if (!exists) {
+      setTimelineFeedback('Este registro no está incluido en el historial clínico actualmente visible.')
+      return
+    }
+    setTimelineFeedback(null)
+    setSelectedPredictionId(null)
+    setSelectedHealthRecordId(healthRecordId)
+    recordRowRefs.current.get(healthRecordId)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [records])
+
+  // PREDICTION / RISK_CHANGE click (RISK_CHANGE passes its
+  // currentPredictionId here — same target, same mechanism, no duplicate
+  // navigation flow). `predictions` (predictionService.getHistory) is
+  // capped at the latest 20 — a Calendar month can legitimately reference
+  // an older Prediction outside that window; that case is reported
+  // honestly instead of guessing a nearby point.
+  const handleSelectPrediction = useCallback((predictionId: string) => {
+    const exists = predictions.some(p => p.id === predictionId)
+    if (!exists) {
+      setTimelineFeedback('Esta predicción no está incluida en la ventana actualmente visible del historial (últimas 20).')
+      return
+    }
+    setTimelineFeedback(null)
+    setSelectedHealthRecordId(null)
+    setSelectedPredictionId(predictionId)
+    riskEvolutionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [predictions])
+
+  // P4-FIX — called by PatientCalendar whenever its own temporal context
+  // changes (day, month, "Hoy") in a way that invalidates whichever
+  // external target a previous Calendar click had selected. Referentially
+  // stable (useCallback, no deps) so it never causes PatientCalendar's
+  // patient-switch effect to re-run for the wrong reason.
+  const handleClearTimelineSelection = useCallback(() => {
+    setSelectedHealthRecordId(null)
+    setSelectedPredictionId(null)
+    setTimelineFeedback(null)
+  }, [])
 
   // Edit patient
   const [editing, setEditing] = useState(false)
@@ -509,6 +572,19 @@ export default function PatientDetailPage() {
               </div>
             )}
           </div>
+
+          {/* Patient Calendar (P3-FIX) — moved into the left column, right
+              below Información personal, instead of the previous
+              full-width section after the whole grid. Same component/logic
+              as P3 (no realtime — P5's responsibility), now with P4's
+              cross-navigation into Clinical History/Risk Evolution below. */}
+          <PatientCalendar
+            patientId={patient.id}
+            onSelectHealthRecord={handleSelectHealthRecord}
+            onSelectPrediction={handleSelectPrediction}
+            onSelectionClear={handleClearTimelineSelection}
+            feedback={timelineFeedback}
+          />
         </div>
 
         {/* ── Right columns ─────────────────────────────────────────── */}
@@ -516,7 +592,7 @@ export default function PatientDetailPage() {
 
           {/* Risk trend chart — real predictions (predictionService.getHistory),
               chronological (oldest→newest; backend returns newest-first) */}
-          <div className="bg-card rounded-xl border border-border p-5">
+          <div ref={riskEvolutionRef} className="bg-card rounded-xl border border-border p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-semibold text-foreground">Evolución del riesgo</h3>
@@ -540,6 +616,7 @@ export default function PatientDetailPage() {
                 <LineChart data={[...predictions].reverse().map(p => ({
                   date: formatDate(p.predictedAt, 'dd MMM'),
                   score: p.riskScore,
+                  predictionId: p.id,
                 }))}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
                   <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9CA3AF' }} axisLine={false} tickLine={false} />
@@ -558,7 +635,21 @@ export default function PatientDetailPage() {
                     dataKey="score"
                     stroke="#2563EB"
                     strokeWidth={2.5}
-                    dot={{ fill: '#2563EB', r: 4, strokeWidth: 2, stroke: '#fff' }}
+                    dot={(dotProps: { cx?: number; cy?: number; payload?: { predictionId: string } }) => {
+                      const { cx, cy, payload } = dotProps
+                      const isSelected = !!payload && payload.predictionId === selectedPredictionId
+                      return (
+                        <circle
+                          key={payload?.predictionId ?? `${cx}-${cy}`}
+                          cx={cx}
+                          cy={cy}
+                          r={isSelected ? 7 : 4}
+                          fill={isSelected ? '#DC2626' : '#2563EB'}
+                          stroke="#fff"
+                          strokeWidth={isSelected ? 3 : 2}
+                        />
+                      )
+                    }}
                     activeDot={{ r: 6 }}
                   />
                 </LineChart>
@@ -756,7 +847,17 @@ export default function PatientDetailPage() {
                   </thead>
                   <tbody>
                     {records.map(r => (
-                      <tr key={r.id} className="border-b border-border last:border-0">
+                      <tr
+                        key={r.id}
+                        ref={el => {
+                          if (el) recordRowRefs.current.set(r.id, el)
+                          else recordRowRefs.current.delete(r.id)
+                        }}
+                        className={cn(
+                          'border-b border-border last:border-0 transition-colors',
+                          r.id === selectedHealthRecordId && 'bg-primary/10 ring-1 ring-inset ring-primary',
+                        )}
+                      >
                         <td className="py-2 pr-4 text-muted-foreground">{formatDateTime(r.recordedAt)}</td>
                         <td className="py-2 pr-4">{r.sysBP}</td>
                         <td className="py-2 pr-4">{r.diaBP}</td>

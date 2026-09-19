@@ -155,6 +155,76 @@ export interface PatientHistoryResponse {
 // ─── Prediction ───────────────────────────────────────────────────────────────
 export type RiskLevel = 'low' | 'moderate' | 'high'
 
+// ─── Patient Timeline (P2/P3) ───────────────────────────────────────────────
+// GET /api/patients/:patientId/timeline — discriminated union matching the
+// real backend contract (patient.timeline.ts). Normalized casing
+// (riskLevel/severity lowercase) is applied in timelineService.ts, same
+// convention already used by predictionService.ts/alertService.ts.
+export type TimelineEventType = 'CLINICAL_RECORD' | 'PREDICTION' | 'ALERT' | 'RISK_CHANGE'
+
+export interface ClinicalRecordEventMetadata {
+  healthRecordId: string
+  sysBP: number
+  diaBP: number
+}
+
+export interface PredictionEventMetadata {
+  predictionId: string
+  healthRecordId: string | null
+  riskScore: number
+  riskLevel: RiskLevel
+  isAnomaly: boolean
+  anomalyScore: number | null
+  modelVersion: string | null
+}
+
+export interface AlertEventMetadata {
+  alertId: string
+  predictionId: string | null
+  severity: AlertSeverity
+  message: string
+  isRead: boolean
+}
+
+export interface RiskChangeEventMetadata {
+  fromLevel: RiskLevel
+  toLevel: RiskLevel
+  previousPredictionId: string
+  currentPredictionId: string
+}
+
+interface TimelineEventBase {
+  id: string
+  patientId: string
+  eventDate: string
+}
+
+export interface ClinicalRecordTimelineEvent extends TimelineEventBase {
+  eventType: 'CLINICAL_RECORD'
+  metadata: ClinicalRecordEventMetadata
+}
+
+export interface PredictionTimelineEvent extends TimelineEventBase {
+  eventType: 'PREDICTION'
+  metadata: PredictionEventMetadata
+}
+
+export interface AlertTimelineEvent extends TimelineEventBase {
+  eventType: 'ALERT'
+  metadata: AlertEventMetadata
+}
+
+export interface RiskChangeTimelineEvent extends TimelineEventBase {
+  eventType: 'RISK_CHANGE'
+  metadata: RiskChangeEventMetadata
+}
+
+export type PatientTimelineEvent =
+  | ClinicalRecordTimelineEvent
+  | PredictionTimelineEvent
+  | AlertTimelineEvent
+  | RiskChangeTimelineEvent
+
 export interface CreatePredictionRequest {
   patientId: string
   healthRecordId?: string

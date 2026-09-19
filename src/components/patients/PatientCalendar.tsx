@@ -1,0 +1,522 @@
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import type { ReactNode } from 'react'
+import {
+  Activity, ChevronLeft, ChevronRight, FileText, Bell,
+  ArrowRight, AlertTriangle, Loader2,
+} from 'lucide-react'
+import { cn, formatScore, RISK_CONFIG, SEVERITY_CONFIG } from '@/lib/utils'
+import { BUSINESS_TIMEZONE, getBusinessDateKey, getMonthRange, buildCalendarDays, groupEventsByBusinessDay } from '@/lib/businessDate'
+import { timelineService } from '@/services/timelineService'
+import { RiskBadge } from '@/components/ui/RiskBadge'
+import { useSocket } from '@/context/SocketContext'
+import type { PatientTimelineEvent } from '@/types'
+
+// P5 — how long to wait before actually refetching after a realtime signal,
+// purely to coalesce a rapid burst (health_record_created → prediction_completed
+// → new_alert can all arrive within milliseconds of each other for the same
+// action) into a single GET instead of one per event. NOT a wait for backend
+// persistence — Q6 already guarantees persist-before-emit, so any signal is
+// safe to act on immediately; this only debounces the *frontend request*,
+// short enough to be imperceptible as a delay.
+const REALTIME_COALESCE_MS = 400
+
+const WEEKDAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+
+const MONTH_LABEL_FORMATTER = new Intl.DateTimeFormat('es-MX', {
+  month: 'long', year: 'numeric', timeZone: BUSINESS_TIMEZONE,
+})
+
+interface PatientCalendarProps {
+  patientId: string
+  // P4 — cross-navigation into the longitudinal views already rendered by
+  // PatientDetailPage. Omitted entirely for ALERT (Classification C — no
+  // exact, unambiguous destination exists yet; see P4 report).
+  onSelectHealthRecord?: (healthRecordId: string) => void
+  onSelectPrediction?: (predictionId: string) => void
+  // P4-FIX — called whenever the Calendar's own temporal context changes
+  // (day, month, "Hoy") in a way that invalidates whichever external
+  // target (Clinical History row / Risk Evolution point) a previous
+  // Calendar click had selected. PatientCalendar doesn't know or touch the
+  // parent's selectedHealthRecordId/selectedPredictionId directly — it only
+  // signals "the event I selected is no longer the current context";
+  // PatientDetailPage decides how to clear its own state.
+  onSelectionClear?: () => void
+  // Feedback for a click whose target isn't in the currently-loaded
+  // longitudinal window (e.g. a Prediction older than the last 20) — owned
+  // by the parent, since only it knows what's actually loaded.
+  feedback?: string | null
+}
+
+export function PatientCalendar({
+  patientId, onSelectHealthRecord, onSelectPrediction, onSelectionClear, feedback,
+}: PatientCalendarProps) {
+  const now = new Date()
+  // P5 — passive listener only: reads the already-flowing signals from the
+  // SAME subscription PatientDetailPage already owns (subscribeToPatient/
+  // unsubscribeFromPatient) for this exact patientId. Never calls
+  // subscribe/unsubscribe itself — doing so here too would be a duplicate,
+  // redundant subscription for the same room (section 36).
+  const {
+    connected, lastHealthRecord, lastPrediction, lastAlert,
+    clearLastHealthRecord, clearLastPrediction, clearLastAlert,
+  } = useSocket()
+  const todayKey = useMemo(() => getBusinessDateKey(new Date().toISOString()), [])
+  const [viewYear, setViewYear] = useState(now.getFullYear())
+  const [viewMonth, setViewMonth] = useState(now.getMonth() + 1) // 1-12
+  const [events, setEvents] = useState<PatientTimelineEvent[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  // P3-02 UX fix: initializes to *today*, not null — opening the calendar
+  // (mount, or switching patients below) shows today's activity immediately,
+  // with no extra click. Manual selection (any day click) and month
+  // navigation (which nulls this — see goToPrevMonth/goToNextMonth) are the
+  // only other ways this changes; only the explicit "Hoy" button re-selects
+  // today deliberately.
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(todayKey)
+  // Which event row (by its own timeline id) is currently highlighted
+  // inside the day panel — distinct from selectedDateKey (which *day* is
+  // open) and from the parent's selectedHealthRecordId/selectedPredictionId
+  // (which *external* target is highlighted in History/Risk Evolution).
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
+  const requestIdRef = useRef(0)
+  const coalesceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasConnectedOnceRef = useRef(false)
+
+  // P4-FIX — single explicit cleanup point, called directly from every
+  // action that changes the Calendar's temporal context (day click, month
+  // nav, "Hoy", patient switch) rather than reactively from a `useEffect`
+  // watching selectedDateKey. This matters concretely for "Hoy": if the
+  // user is already viewing today with an event selected and presses "Hoy"
+  // again, `setSelectedDateKey(todayKey)` sets the *same* string value —
+  // React bails out of that state update entirely, so an effect keyed on
+  // selectedDateKey would never re-run and the stale selection would
+  // survive. Calling this explicitly at the action site has no such gap,
+  // and also avoids any effect→parent-state→child-render→effect loop
+  // (section 11) since it's never triggered reactively.
+  const clearEventSelection = useCallback(() => {
+    setSelectedEventId(null)
+    onSelectionClear?.()
+  }, [onSelectionClear])
+
+  // Switching patients (A → B): reset to the current month and clear the
+  // selection/events synchronously, before the new patient's data ever
+  // arrives — otherwise Patient A's events could remain visible, briefly
+  // mislabeled as Patient B's, for the duration of the first request.
+  // Reselects *today* (not null) — opening a different patient's calendar
+  // is, semantically, the same "initial entry" moment as Case A.
+  // (PatientDetailPage already clears its own external selection
+  // independently on patientId change — calling onSelectionClear here too
+  // is redundant but harmless, kept for symmetry/defense-in-depth.)
+  useEffect(() => {
+    const today = new Date()
+    setViewYear(today.getFullYear())
+    setViewMonth(today.getMonth() + 1)
+    setSelectedDateKey(todayKey)
+    setSelectedEventId(null)
+    setEvents([])
+    setError('')
+    onSelectionClear?.()
+    // A pending coalesced refresh belongs to whichever patient scheduled
+    // it — switching patients must not let a stale timer for the PREVIOUS
+    // patient later overwrite this component's (now Patient B's) events
+    // (section 22).
+    if (coalesceTimerRef.current) {
+      clearTimeout(coalesceTimerRef.current)
+      coalesceTimerRef.current = null
+    }
+  }, [patientId, todayKey, onSelectionClear])
+
+  // silent=true (realtime/reconnect-triggered): fetch and replace `events`
+  // exactly as normal, but never toggle the loading spinner and never
+  // surface a fetch error — a background sync failing shouldn't blank out
+  // an already-valid, already-visible calendar (section 30/31). The user's
+  // own explicit actions (month nav, Retry) always call this non-silent.
+  const loadMonth = useCallback(async (silent = false) => {
+    const requestId = ++requestIdRef.current
+    if (!silent) { setLoading(true); setError('') }
+    try {
+      const { from, to } = getMonthRange(viewYear, viewMonth)
+      const result = await timelineService.getPatientTimeline(patientId, { from, to })
+      // Ignore stale responses — e.g. Sep → Oct → Nov navigated quickly;
+      // a slow Sep response must never overwrite Nov's already-rendered data.
+      if (requestId !== requestIdRef.current) return
+      setEvents(result)
+    } catch {
+      if (requestId !== requestIdRef.current || silent) return
+      setError('No se pudo cargar la actividad cardiovascular de este periodo.')
+    } finally {
+      if (requestId === requestIdRef.current && !silent) setLoading(false)
+    }
+  }, [patientId, viewYear, viewMonth])
+
+  useEffect(() => { loadMonth() }, [loadMonth])
+
+  // P5 — coalesced background refresh, shared by both realtime signals and
+  // reconnect resync below. Debounced (not instant) purely to collapse a
+  // rapid health_record_created → prediction_completed → new_alert burst
+  // from the same action into one GET — never to wait for persistence
+  // (Q6 already guarantees persist-before-emit).
+  const scheduleCoalescedRefresh = useCallback(() => {
+    if (coalesceTimerRef.current) clearTimeout(coalesceTimerRef.current)
+    coalesceTimerRef.current = setTimeout(() => {
+      coalesceTimerRef.current = null
+      loadMonth(true)
+    }, REALTIME_COALESCE_MS)
+  }, [loadMonth])
+
+  // Cleanup pending timer on unmount (section: no update/warning after
+  // Calendar is gone).
+  useEffect(() => {
+    return () => {
+      if (coalesceTimerRef.current) clearTimeout(coalesceTimerRef.current)
+    }
+  }, [])
+
+  // health_record_created / prediction_completed / new_alert — canonical
+  // refetch, never a hand-built TimelineEvent from the (intentionally
+  // minimal) socket payload. Filtered by patientId even though the patient
+  // room already scopes delivery, matching the same defensive pattern
+  // PatientDetailPage already uses for prediction_completed. A matched
+  // event's date isn't checked against the currently-visible month before
+  // deciding to refetch (section 28) — simpler and always correct, at the
+  // cost of an occasional refetch whose result doesn't visibly change
+  // anything if the event actually falls outside the visible range.
+  useEffect(() => {
+    const relevant =
+      lastHealthRecord?.patientId === patientId ||
+      lastPrediction?.patientId === patientId ||
+      lastAlert?.patientId === patientId
+    if (!relevant) return
+    scheduleCoalescedRefresh()
+    if (lastHealthRecord?.patientId === patientId) clearLastHealthRecord()
+    if (lastPrediction?.patientId === patientId) clearLastPrediction()
+    if (lastAlert?.patientId === patientId) clearLastAlert()
+  }, [
+    patientId, lastHealthRecord, lastPrediction, lastAlert, scheduleCoalescedRefresh,
+    clearLastHealthRecord, clearLastPrediction, clearLastAlert,
+  ])
+
+  // Reconnect resync (sections 33-35). `connected` also becomes true on the
+  // very first successful connection — skip exactly that one occurrence,
+  // since the mount-driven `loadMonth()` effect above already covers it;
+  // every SUBSEQUENT true is a genuine reconnect. By the time this effect
+  // runs, SocketContext's own `connect` handler has already synchronously
+  // re-emitted subscribe_patient for whatever PatientDetailPage currently
+  // desires — so the ordering (reconnect → resubscribe → resync) holds
+  // without any extra coordination here.
+  useEffect(() => {
+    if (!connected) return
+    if (!hasConnectedOnceRef.current) {
+      hasConnectedOnceRef.current = true
+      return
+    }
+    scheduleCoalescedRefresh()
+  }, [connected, scheduleCoalescedRefresh])
+
+  // After ANY refetch (realtime, reconnect, or a normal month/day action),
+  // a previously-selected event might no longer be present in the
+  // canonical data (defensive — current sources are effectively
+  // append-only, so this should rarely trigger in practice). Never leave
+  // an orphaned highlight pointing at data that no longer confirms it.
+  useEffect(() => {
+    if (!selectedEventId) return
+    if (!events.some(e => e.id === selectedEventId)) {
+      setSelectedEventId(null)
+      onSelectionClear?.()
+    }
+  }, [events, selectedEventId, onSelectionClear])
+
+  const days = useMemo(() => buildCalendarDays(viewYear, viewMonth, todayKey), [viewYear, viewMonth, todayKey])
+  const eventsByDay = useMemo(() => groupEventsByBusinessDay(events), [events])
+  const monthLabel = useMemo(
+    () => MONTH_LABEL_FORMATTER.format(new Date(Date.UTC(viewYear, viewMonth - 1, 15))),
+    [viewYear, viewMonth],
+  )
+
+  const goToPrevMonth = () => {
+    clearEventSelection()
+    setSelectedDateKey(null)
+    if (viewMonth === 1) { setViewMonth(12); setViewYear(y => y - 1) }
+    else setViewMonth(m => m - 1)
+  }
+  const goToNextMonth = () => {
+    clearEventSelection()
+    setSelectedDateKey(null)
+    if (viewMonth === 12) { setViewMonth(1); setViewYear(y => y + 1) }
+    else setViewMonth(m => m + 1)
+  }
+  const goToToday = () => {
+    clearEventSelection()
+    const today = new Date()
+    setViewYear(today.getFullYear())
+    setViewMonth(today.getMonth() + 1)
+    setSelectedDateKey(todayKey)
+  }
+
+  const selectedEvents = selectedDateKey ? (eventsByDay.get(selectedDateKey) ?? []) : []
+  const hasAnyEventsThisMonth = events.length > 0
+
+  return (
+    <div className="bg-card rounded-xl border border-border p-5">
+      <div className="mb-4">
+        <h3 className="font-semibold text-foreground flex items-center gap-2">
+          <Activity className="w-4 h-4 text-muted-foreground" />
+          Actividad cardiovascular
+        </h3>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Historial temporal de registros clínicos, predicciones, cambios de riesgo y alertas.
+        </p>
+      </div>
+
+      {/* Month navigation */}
+      <div className="flex items-center justify-between mb-3 gap-1">
+        <button
+          type="button"
+          onClick={goToPrevMonth}
+          aria-label="Mes anterior"
+          className="p-1 rounded-lg border border-border hover:bg-accent transition-colors flex-shrink-0"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-xs font-medium text-foreground capitalize truncate">{monthLabel}</span>
+          {loading && <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin flex-shrink-0" />}
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            type="button"
+            onClick={goToToday}
+            className="text-xs font-medium text-primary hover:underline px-1"
+          >
+            Hoy
+          </button>
+          <button
+            type="button"
+            onClick={goToNextMonth}
+            aria-label="Mes siguiente"
+            className="p-1 rounded-lg border border-border hover:bg-accent transition-colors"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="flex flex-col items-center justify-center py-10 text-center">
+          <AlertTriangle className="w-7 h-7 text-red-400 mb-2" />
+          <p className="text-sm text-red-600">{error}</p>
+          <button
+            onClick={() => loadMonth()}
+            className="mt-3 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+          >
+            Reintentar
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Weekday header */}
+          <div className="grid grid-cols-7 gap-1 mb-1">
+            {WEEKDAY_LABELS.map(label => (
+              <div key={label} className="text-center text-[10px] font-medium text-muted-foreground uppercase py-1">
+                {label}
+              </div>
+            ))}
+          </div>
+
+          {/* Day grid */}
+          <div className="grid grid-cols-7 gap-1">
+            {days.map(day => {
+              const dayEvents = eventsByDay.get(day.dateKey) ?? []
+              const isSelected = day.dateKey === selectedDateKey
+              return (
+                <button
+                  key={day.dateKey}
+                  type="button"
+                  onClick={() => { clearEventSelection(); setSelectedDateKey(day.dateKey) }}
+                  aria-label={`${day.dayOfMonth}${dayEvents.length ? `, ${dayEvents.length} evento(s)` : ', sin actividad'}`}
+                  className={cn(
+                    'aspect-square rounded-lg border text-xs flex flex-col items-center justify-center gap-0.5 transition-colors',
+                    day.isCurrentMonth ? 'text-foreground' : 'text-muted-foreground/40',
+                    isSelected ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-accent',
+                    day.isToday && !isSelected && 'border-border bg-accent/50',
+                  )}
+                >
+                  <span>{day.dayOfMonth}</span>
+                  {dayEvents.length > 0 && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {!loading && !hasAnyEventsThisMonth && (
+            <p className="text-xs text-muted-foreground text-center mt-3">
+              Sin actividad cardiovascular registrada en este periodo.
+            </p>
+          )}
+
+          {/* Selected day panel */}
+          {selectedDateKey && (
+            <div className="mt-4 pt-4 border-t border-border">
+              <h4 className="text-sm font-medium text-foreground mb-2">
+                Eventos del {selectedDateKey}
+              </h4>
+              {feedback && (
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-700">{feedback}</p>
+                </div>
+              )}
+              {selectedEvents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No hay actividad cardiovascular registrada para este día.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {selectedEvents.map(event => (
+                    <TimelineEventRow
+                      key={event.id}
+                      event={event}
+                      isSelected={event.id === selectedEventId}
+                      onSelectHealthRecord={onSelectHealthRecord}
+                      onSelectPrediction={onSelectPrediction}
+                      onRowClick={() => setSelectedEventId(event.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+interface TimelineEventRowProps {
+  event: PatientTimelineEvent
+  isSelected: boolean
+  onSelectHealthRecord?: (healthRecordId: string) => void
+  onSelectPrediction?: (predictionId: string) => void
+  onRowClick: () => void
+}
+
+// Shared shell for the row: a <button> when the event type has an exact,
+// unambiguous longitudinal destination (Classification A — CLINICAL_RECORD/
+// PREDICTION/RISK_CHANGE), a plain non-interactive <div> otherwise (ALERT —
+// Classification C, no `/alerts/:id` route exists; see P4 report). Using a
+// real <button> (not a styled div) gives focus/hover/Enter-Space activation
+// for free, and never makes a non-actionable row look clickable.
+function EventRowShell({
+  interactive, isSelected, onClick, children,
+}: { interactive: boolean; isSelected: boolean; onClick?: () => void; children: ReactNode }) {
+  const classes = cn(
+    'w-full flex items-start gap-3 p-3 rounded-lg text-left transition-colors',
+    isSelected ? 'bg-primary/10 ring-1 ring-inset ring-primary' : 'bg-accent/40',
+    interactive && !isSelected && 'hover:bg-accent/70',
+  )
+  if (!interactive) return <div className={classes}>{children}</div>
+  return (
+    <button type="button" onClick={onClick} className={classes}>
+      {children}
+    </button>
+  )
+}
+
+function TimelineEventRow({ event, isSelected, onSelectHealthRecord, onSelectPrediction, onRowClick }: TimelineEventRowProps) {
+  const time = new Intl.DateTimeFormat('es-MX', {
+    hour: '2-digit', minute: '2-digit', timeZone: BUSINESS_TIMEZONE,
+  }).format(new Date(event.eventDate))
+
+  if (event.eventType === 'CLINICAL_RECORD') {
+    const { healthRecordId } = event.metadata
+    return (
+      <EventRowShell
+        interactive
+        isSelected={isSelected}
+        onClick={() => { onRowClick(); onSelectHealthRecord?.(healthRecordId) }}
+      >
+        <FileText className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground">Registro clínico</p>
+          <p className="text-xs text-muted-foreground">
+            Presión arterial: {event.metadata.sysBP}/{event.metadata.diaBP} mmHg
+          </p>
+        </div>
+        <span className="text-[10px] text-muted-foreground flex-shrink-0">{time}</span>
+      </EventRowShell>
+    )
+  }
+
+  if (event.eventType === 'PREDICTION') {
+    const cfg = RISK_CONFIG[event.metadata.riskLevel]
+    const { predictionId } = event.metadata
+    return (
+      <EventRowShell
+        interactive
+        isSelected={isSelected}
+        onClick={() => { onRowClick(); onSelectPrediction?.(predictionId) }}
+      >
+        <Activity className={cn('w-4 h-4 mt-0.5 flex-shrink-0', cfg.text)} />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground">Predicción cardiovascular</p>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <RiskBadge level={event.metadata.riskLevel} size="sm" />
+            <span className="text-xs text-muted-foreground">{formatScore(event.metadata.riskScore)}</span>
+            {event.metadata.modelVersion && (
+              <span className="text-[10px] text-muted-foreground">Modelo {event.metadata.modelVersion}</span>
+            )}
+          </div>
+          {event.metadata.isAnomaly && (
+            <p className="text-xs text-purple-600 font-medium mt-1">⚠ Anomalía detectada</p>
+          )}
+        </div>
+        <span className="text-[10px] text-muted-foreground flex-shrink-0">{time}</span>
+      </EventRowShell>
+    )
+  }
+
+  if (event.eventType === 'RISK_CHANGE') {
+    const fromCfg = RISK_CONFIG[event.metadata.fromLevel]
+    const toCfg = RISK_CONFIG[event.metadata.toLevel]
+    // Belongs to its currentPrediction (section 14) — never
+    // previousPredictionId, which may not even be in the requested range
+    // (it can be the pre-range predecessor used only for derivation, per P2).
+    const { currentPredictionId } = event.metadata
+    return (
+      <EventRowShell
+        interactive
+        isSelected={isSelected}
+        onClick={() => { onRowClick(); onSelectPrediction?.(currentPredictionId) }}
+      >
+        <ArrowRight className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground">Cambio de riesgo</p>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className={cn('text-xs font-medium', fromCfg.text)}>{fromCfg.label}</span>
+            <ArrowRight className="w-3 h-3 text-muted-foreground" />
+            <span className={cn('text-xs font-medium', toCfg.text)}>{toCfg.label}</span>
+          </div>
+        </div>
+        <span className="text-[10px] text-muted-foreground flex-shrink-0">{time}</span>
+      </EventRowShell>
+    )
+  }
+
+  // ALERT — Classification C: no exact per-alert destination exists
+  // (no /alerts/:id route, and /alerts has no highlight-by-id mechanism),
+  // so this stays informational only, never rendered as a button.
+  const cfg = SEVERITY_CONFIG[event.metadata.severity]
+  return (
+    <EventRowShell interactive={false} isSelected={false}>
+      <Bell className={cn('w-4 h-4 mt-0.5 flex-shrink-0', cfg.text)} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-foreground">Alerta</p>
+        <p className="text-xs text-muted-foreground break-words">{event.metadata.message}</p>
+        <span className={cn('text-[10px] font-bold uppercase', cfg.text)}>{cfg.label}</span>
+      </div>
+      <span className="text-[10px] text-muted-foreground flex-shrink-0">{time}</span>
+    </EventRowShell>
+  )
+}
