@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { isAxiosError } from 'axios'
 import { Dialog } from '@/components/ui/Dialog'
-import { cn } from '@/lib/utils'
+import { cn, calcAge } from '@/lib/utils'
 import { recordService } from '@/services/recordService'
 import type { HealthRecord, CreateHealthRecordRequest } from '@/types'
 
@@ -33,21 +33,8 @@ const BLANK_FORM: RecordFormState = {
   notes: '',
 }
 
-// U3.2 — display-only local age, never sent to the backend (which always
-// derives and overwrites it authoritatively from Paciente.birthDate — see
-// record.service.ts::create). UTC-safe: birthDate is a plain "YYYY-MM-DD"
-// string (@db.Date on the backend) — parsing/reading it with UTC methods
-// avoids the classic off-by-one-day shift in negative-UTC-offset timezones
-// (e.g. Guadalajara) that local Date methods would risk.
-function calculateLocalAge(birthDate: string): number {
-  const [y, m, d] = birthDate.split('-').map(Number)
-  const now = new Date()
-  let age = now.getUTCFullYear() - y
-  const monthDiff = (now.getUTCMonth() + 1) - m
-  const dayDiff = now.getUTCDate() - d
-  if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) age--
-  return age
-}
+// U4.2A — local age calculation moved to the shared frontend helper
+// (lib/utils.ts::calcAge) — this component no longer keeps its own copy.
 
 function prefillFromLatest(latest: HealthRecord): RecordFormState {
   // Nullish-safe (`??`, never `||`) — 0/false are legitimate persisted
@@ -172,7 +159,7 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
     }
   }
 
-  const displayAge = calculateLocalAge(birthDate)
+  const displayAge = calcAge(birthDate)
   const provenanceMessage = loadingLatest
     ? 'Cargando el último registro clínico...'
     : hadPreviousRecord

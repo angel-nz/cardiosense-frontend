@@ -38,6 +38,23 @@ interface BackendPaginated<T> {
   totalPages: number
 }
 
+// U4.2A-FIX-2 — Prisma's Paciente.birthDate (DateTime @db.Date) comes back
+// from the backend as a full ISO datetime string ("2000-01-01T00:00:00.000Z")
+// — Prisma returns a JS Date, and Express's res.json() serializes any Date
+// via .toISOString(). The frontend Patient contract requires plain
+// "YYYY-MM-DD" (consumed by <input type="date">, calcAge, and
+// UpdatePatientDto's regex on the way back out). A simple prefix slice is
+// the correct, timezone-safe extraction here: the ISO string always begins
+// with the exact UTC calendar date the @db.Date column stores, so this
+// never risks the local-timezone day-shift a `new Date(...)` round-trip
+// through local getters could introduce (e.g. Guadalajara, UTC-6).
+// Idempotent — an already-normalized "YYYY-MM-DD" input's first 10
+// characters are itself, so this is safe to apply unconditionally to any
+// Patient response, normalized or not.
+function toDateOnly(value: string): string {
+  return value.slice(0, 10)
+}
+
 function normalizePatient(p: BackendPatient): Patient {
   const latest = p.predictions?.[0]
   return {
@@ -45,7 +62,7 @@ function normalizePatient(p: BackendPatient): Patient {
     medicoId: p.medicoId,
     firstName: p.firstName,
     lastName: p.lastName,
-    birthDate: p.birthDate,
+    birthDate: toDateOnly(p.birthDate),
     sex: p.sex,
     curp: p.curp ?? undefined,
     phone: p.phone ?? undefined,

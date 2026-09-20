@@ -101,7 +101,15 @@ export interface CreatePatientRequest {
 export interface UpdatePatientRequest {
   firstName?: string
   lastName?: string
-  phone?: string
+  // U4.2A — extended: curp/birthDate/sex are now editable (all already
+  // existed in Prisma/CreatePatientRequest — no schema change). curp/phone
+  // use `| null` — an explicit null clears an existing value (both columns
+  // are nullable in Prisma); omitting the field entirely means "don't
+  // touch it". EditPatientModal is the only caller that sends these.
+  curp?: string | null
+  birthDate?: string
+  sex?: Sex
+  phone?: string | null
   isActive?: boolean
 }
 

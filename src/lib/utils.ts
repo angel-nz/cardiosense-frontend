@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { format, formatDistanceToNow, differenceInYears, parseISO } from 'date-fns'
+import { format, formatDistanceToNow, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import type { RiskLevel, AlertSeverity } from '@/types'
 
@@ -24,9 +24,34 @@ export function timeAgo(date: string | Date) {
   return formatDistanceToNow(d, { addSuffix: true, locale: es })
 }
 
+// U4.2A — shared, canonical frontend age calculation (was previously
+// date-fns-based, browser-local-timezone semantics — replaced here to match
+// the backend's calendar-based approach, and to unify what had become 3
+// divergent implementations: this one, backend lib/age.ts, and
+// NewRecordModal's own local copy, now removed). `birthDate` is a
+// date-only "YYYY-MM-DD" string (Paciente.birthDate, @db.Date on the
+// backend) — parsed and compared by UTC calendar components only (never
+// local Date methods), so the result never shifts by a day depending on
+// the viewer's own timezone offset (e.g. Guadalajara, UTC-6). Reference
+// point is always "now" — every current consumer (PatientDetailPage,
+// PatientRow, NewRecordModal, EditPatientModal) displays CURRENT age, none
+// need an arbitrary reference date. Feb 29 handled naturally by the same
+// year/month/day calendar comparison the backend uses — a non-leap-year
+// reference date increments on March 1, with no special-cased rule.
 export function calcAge(birthDate: string): number {
-  return differenceInYears(new Date(), parseISO(birthDate))
+  const [y, m, d] = birthDate.split('-').map(Number)
+  const now = new Date()
+  let age = now.getUTCFullYear() - y
+  const monthDiff = (now.getUTCMonth() + 1) - m
+  const dayDiff = now.getUTCDate() - d
+  if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) age--
+  return age
 }
+
+// U4.2A — extracted from PatientCreatePage (its original, and still only,
+// source) so PatientCreatePage and EditPatientModal validate CURP against
+// the exact same official pattern instead of drifting into two regexes.
+export const CURP_REGEX = /^[A-Z]{4}\d{6}[HM][A-Z]{5}\d{2}$/
 
 // ─── Risk helpers ─────────────────────────────────────────────────────────────
 export function getRiskLevel(score: number): RiskLevel {

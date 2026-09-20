@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Save, User } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, CURP_REGEX } from '@/lib/utils'
 import { patientService } from '@/services/patientService'
 import { isAxiosError } from 'axios'
 
@@ -66,7 +66,7 @@ export default function PatientCreatePage() {
     if (!form.lastName.trim()) errs.lastName = 'Los apellidos son obligatorios'
     if (!form.birthDate) errs.birthDate = 'La fecha de nacimiento es obligatoria'
     if (!form.sex) errs.sex = 'El sexo es obligatorio'
-    if (form.curp && !/^[A-Z]{4}\d{6}[HM][A-Z]{5}\d{2}$/.test(form.curp)) {
+    if (form.curp && !CURP_REGEX.test(form.curp)) {
       errs.curp = 'CURP no válido'
     }
     setErrors(errs)

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, Activity, Heart, Phone, Calendar,
-  User, FileText, AlertTriangle, Plus, Edit, Loader2, X, Check,
+  User, FileText, AlertTriangle, Plus, Edit, Loader2,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -14,11 +14,12 @@ import { RiskGauge } from '@/components/charts/RiskGauge'
 import { FeatureImportanceBar } from '@/components/charts/FeatureImportanceBar'
 import { PatientCalendar } from '@/components/patients/PatientCalendar'
 import { NewRecordModal } from '@/components/patients/NewRecordModal'
+import { EditPatientModal } from '@/components/patients/EditPatientModal'
 import { cn, formatDate, formatDateTime, calcAge, sexLabel, timeAgo } from '@/lib/utils'
 import { patientService } from '@/services/patientService'
 import { predictionService } from '@/services/predictionService'
 import { useSocket } from '@/context/SocketContext'
-import type { Patient, HealthRecord, Prediction, UpdatePatientRequest, DashboardEventNavigationState } from '@/types'
+import type { Patient, HealthRecord, Prediction, DashboardEventNavigationState } from '@/types'
 
 interface InfoRowProps {
   label: string
@@ -39,21 +40,10 @@ function InfoRow({ label, value, unit, highlight }: InfoRowProps) {
   )
 }
 
-const inputClass = cn(
-  'w-full px-3 py-2 text-sm rounded-lg border border-border bg-card',
-  'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
-  'transition-all placeholder:text-muted-foreground',
-)
-
-// ─── Edit patient (INT-07) ────────────────────────────────────────────────
-// Backend UpdatePatientDto only accepts firstName/lastName/phone/isActive —
-// birthDate/sex/curp are not editable post-creation, so those fields are
-// intentionally absent from this form.
-interface EditFormState {
-  firstName: string
-  lastName: string
-  phone: string
-}
+// U4.2A — the old inline personal-info editor (EditFormState + its
+// firstName/lastName/phone-only fields) is gone entirely — editing now
+// happens via EditPatientModal, which covers curp/birthDate/sex/phone/
+// firstName/lastName in one place.
 
 // U3.2 — New Record form state/logic now lives entirely in
 // NewRecordModal.tsx (extracted from the previous inline expandable
@@ -113,6 +103,18 @@ export default function PatientDetailPage() {
   // (record.id / prediction.id) — never matched by date/score proximity.
   const [selectedHealthRecordId, setSelectedHealthRecordId] = useState<string | null>(null)
   const [selectedPredictionId, setSelectedPredictionId] = useState<string | null>(null)
+  // U4-DEEPLINK — temporary: lets handleClearTimelineSelection's diagnostic
+  // log read the current selection accurately, without adding either state
+  // to its useCallback deps (deliberately `[]`/referentially stable — see
+  // its own comment; adding deps there would be a functional change this
+  // instrumentation-only block must not make). Kept in sync by the existing
+  // RECORD_SELECTED_STATE/PREDICTION_SELECTED_STATE observation effects.
+  const selectedHealthRecordIdRef = useRef<string | null>(null)
+  const selectedPredictionIdRef = useRef<string | null>(null)
+  // U4-DEEPLINK — temporary: holds the one-shot diagnostic timeout from
+  // captureGeometry('RECORD_SCROLL_DELAYED') so it can be cleared on
+  // unmount (see cleanup effect further below), never left dangling.
+  const recordScrollDelayedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [timelineFeedback, setTimelineFeedback] = useState<string | null>(null)
   const recordRowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map())
   const riskEvolutionRef = useRef<HTMLDivElement>(null)
@@ -125,15 +127,56 @@ export default function PatientDetailPage() {
   // timing (its own month may still be loading) — the two must not be
   // coupled into a single "done" flag (section 20).
   const [dashboardNav, setDashboardNav] = useState<DashboardEventNavigationState | null>(null)
+  // U4-DEEPLINK — temporary: lets loadPatient's instrumentation read the
+  // latest dashboardNav without adding it to loadPatient's own useCallback
+  // deps (which would change its re-creation frequency — a functional
+  // change this instrumentation-only block must not make). Kept in sync by
+  // the DASHBOARD_NAV_READY observation effect below.
+  const dashboardNavRef = useRef<DashboardEventNavigationState | null>(null)
   const navTargetAppliedRef = useRef(false)
+
+  // U4-DEEPLINK — temporary: layout-phase transitions logged only for
+  // completion (loading → not loading), so a scroll target that landed
+  // correctly before one of these can be checked against whatever moved
+  // afterward.
+  useEffect(() => {
+    if (patientLoading) return
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] LAYOUT_PHASE', { phase: 'patient-loaded', scrollY: window.scrollY, documentHeight: document.documentElement.scrollHeight })
+  }, [patientLoading])
+
+  useEffect(() => {
+    if (recordsLoading) return
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] LAYOUT_PHASE', { phase: 'records-loaded', scrollY: window.scrollY, documentHeight: document.documentElement.scrollHeight })
+  }, [recordsLoading])
+
+  useEffect(() => {
+    if (predictionsLoading) return
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] LAYOUT_PHASE', { phase: 'predictions-loaded', scrollY: window.scrollY, documentHeight: document.documentElement.scrollHeight })
+  }, [predictionsLoading])
+
+  // U4-DEEPLINK — temporary: clears the one-shot RECORD_SCROLL_DELAYED
+  // diagnostic timeout if the component unmounts before it fires.
+  useEffect(() => {
+    return () => {
+      if (recordScrollDelayedTimeoutRef.current) clearTimeout(recordScrollDelayedTimeoutRef.current)
+    }
+  }, [])
 
   // Patient switch (A→B): clear cross-navigation state — a highlighted
   // record/prediction from the previous patient must never survive.
   useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] RECORD_CLEAR', { reason: 'patient-switch', previousSelectedHealthRecordId: selectedHealthRecordId })
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] PREDICTION_CLEAR', { reason: 'patient-switch', previousSelectedPredictionId: selectedPredictionId })
     setSelectedHealthRecordId(null)
     setSelectedPredictionId(null)
     setTimelineFeedback(null)
     setDashboardNav(null)
+    dashboardNavRef.current = null
     navTargetAppliedRef.current = false
   }, [id])
 
@@ -143,14 +186,67 @@ export default function PatientDetailPage() {
   // assumed (section 24/25): a not-found record never highlights a
   // different, wrong row.
   const handleSelectHealthRecord = useCallback((healthRecordId: string) => {
-    const exists = records.some(r => r.id === healthRecordId)
+    const matchingIndex = records.findIndex(r => r.id === healthRecordId)
+    const exists = matchingIndex !== -1
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] RECORD_HANDLER_ENTER', {
+      id: healthRecordId, recordsLength: records.length, found: exists, matchingIndex,
+    })
     if (!exists) {
+      // eslint-disable-next-line no-console
+      console.log('[U4-DEEPLINK] RECORD_NOT_FOUND', { id: healthRecordId })
       setTimelineFeedback('Este registro no está incluido en el historial clínico actualmente visible.')
       return
     }
     setTimelineFeedback(null)
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] PREDICTION_CLEAR', { reason: 'record-select-exclusivity', healthRecordId })
     setSelectedPredictionId(null)
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] RECORD_SELECT_SET', { id: healthRecordId })
     setSelectedHealthRecordId(healthRecordId)
+    const refFound = recordRowRefs.current.has(healthRecordId)
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] RECORD_REF_STATUS', { id: healthRecordId, refFound })
+
+    // U4-DEEPLINK — temporary geometry probe, observation only (never
+    // calls scrollIntoView again, never touches state). Captures the
+    // target row's viewport position at 4 points in time to determine
+    // whether a later layout shift moves it out of view after the
+    // original scroll already completed.
+    const captureGeometry = (tag: string) => {
+      const el = recordRowRefs.current.get(healthRecordId)
+      const rect = el?.getBoundingClientRect()
+      const viewportHeight = window.innerHeight
+      // eslint-disable-next-line no-console
+      console.log(`[U4-DEEPLINK] ${tag}`, {
+        id: healthRecordId,
+        refFound: !!el,
+        scrollY: window.scrollY,
+        rectTop: rect?.top,
+        rectBottom: rect?.bottom,
+        viewportHeight,
+        isInViewport: rect ? rect.bottom > 0 && rect.top < viewportHeight : null,
+      })
+    }
+    captureGeometry('RECORD_SCROLL_BEFORE')
+    requestAnimationFrame(() => {
+      captureGeometry('RECORD_SCROLL_RAF1')
+      requestAnimationFrame(() => captureGeometry('RECORD_SCROLL_RAF2'))
+    })
+    const delayedTimeout = setTimeout(() => captureGeometry('RECORD_SCROLL_DELAYED'), 400)
+    recordScrollDelayedTimeoutRef.current = delayedTimeout
+
+    const el = recordRowRefs.current.get(healthRecordId)
+    if (el) {
+      // eslint-disable-next-line no-console
+      console.log('[U4-DEEPLINK] RECORD_HIGHLIGHT_DOM', {
+        id: healthRecordId,
+        hasExpectedHighlightClass: el.className.includes('ring-primary'),
+        className: el.className,
+      })
+    }
+
     recordRowRefs.current.get(healthRecordId)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [records])
 
@@ -161,14 +257,41 @@ export default function PatientDetailPage() {
   // an older Prediction outside that window; that case is reported
   // honestly instead of guessing a nearby point.
   const handleSelectPrediction = useCallback((predictionId: string) => {
-    const exists = predictions.some(p => p.id === predictionId)
+    const matchingIndex = predictions.findIndex(p => p.id === predictionId)
+    const exists = matchingIndex !== -1
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] PREDICTION_HANDLER_ENTER', {
+      id: predictionId, predictionsLength: predictions.length, found: exists, matchingIndex,
+    })
     if (!exists) {
+      // eslint-disable-next-line no-console
+      console.log('[U4-DEEPLINK] PREDICTION_NOT_FOUND', { id: predictionId })
       setTimelineFeedback('Esta predicción no está incluida en la ventana actualmente visible del historial (últimas 20).')
       return
     }
     setTimelineFeedback(null)
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] RECORD_CLEAR', { reason: 'prediction-select-exclusivity', predictionId })
     setSelectedHealthRecordId(null)
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] PREDICTION_SELECT_SET', { id: predictionId })
     setSelectedPredictionId(predictionId)
+    const riskEvolutionRefFound = riskEvolutionRef.current != null
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] PREDICTION_REF_STATUS', { id: predictionId, riskEvolutionRefFound })
+    // U4-DEEPLINK — geometry probe before scroll, observation only.
+    {
+      const el = riskEvolutionRef.current
+      const rect = el?.getBoundingClientRect()
+      // eslint-disable-next-line no-console
+      console.log('[U4-DEEPLINK] PREDICTION_SCROLL_BEFORE', {
+        id: predictionId,
+        refFound: !!el,
+        scrollY: window.scrollY,
+        rectTop: rect?.top,
+        rectBottom: rect?.bottom,
+      })
+    }
     riskEvolutionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [predictions])
 
@@ -178,6 +301,15 @@ export default function PatientDetailPage() {
   // stable (useCallback, no deps) so it never causes PatientCalendar's
   // patient-switch effect to re-run for the wrong reason.
   const handleClearTimelineSelection = useCallback(() => {
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] CALENDAR_CLEAR_CALLBACK', {
+      clearingSelectedHealthRecordId: selectedHealthRecordIdRef.current,
+      clearingSelectedPredictionId: selectedPredictionIdRef.current,
+    })
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] RECORD_CLEAR', { reason: 'calendar-context-change' })
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] PREDICTION_CLEAR', { reason: 'calendar-context-change' })
     setSelectedHealthRecordId(null)
     setSelectedPredictionId(null)
     setTimelineFeedback(null)
@@ -206,6 +338,14 @@ export default function PatientDetailPage() {
     if (dashboardNav) return
     const nav = readDashboardEventNav(location.state)
     if (!nav) return
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] NAV_RECEIVED', {
+      patientId: id,
+      targetKind: nav.target.kind,
+      targetId: nav.target.id,
+      calendarEventId: nav.calendarEventId,
+      eventDate: nav.eventDate,
+    })
     setDashboardNav(nav)
     navigate(location.pathname, { replace: true, state: null })
   }, [location.state, location.pathname, dashboardNav, navigate])
@@ -221,19 +361,167 @@ export default function PatientDetailPage() {
   // arrive (section 12). Applied at most once per patient visit
   // (navTargetAppliedRef) — independent of whether/when PatientCalendar
   // itself finishes positioning on its own copy of `dashboardNav`.
+  // U4-DEEPLINK — temporary observation-only effect (does not replace/alter
+  // the existing dashboardNav lifecycle above); logs once whenever
+  // dashboardNav transitions to non-null.
   useEffect(() => {
-    if (!dashboardNav || navTargetAppliedRef.current) return
-    if (recordsLoading || predictionsLoading) return
+    if (!dashboardNav) return
+    dashboardNavRef.current = dashboardNav
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] DASHBOARD_NAV_READY', {
+      targetKind: dashboardNav.target.kind,
+      targetId: dashboardNav.target.id,
+      calendarEventId: dashboardNav.calendarEventId,
+      eventDate: dashboardNav.eventDate,
+      navTargetAppliedRefCurrent: navTargetAppliedRef.current,
+    })
+  }, [dashboardNav])
+
+  // O3-FIX-4 — apply the EXTERNAL (History/Risk Evolution) side of a
+  // Dashboard navigation target, reusing the exact same P4 selection
+  // handlers a PatientCalendar click uses (same exact-ID matching, same
+  // exclusivity, same scroll/highlight, same "not in currently visible
+  // window" feedback — no second implementation). Waits for records/
+  // predictions to finish their own fetch before attempting the match:
+  // matching against the still-empty initial arrays would wrongly report a
+  // valid target as "not found" before the real data ever had a chance to
+  // arrive (section 12). Applied at most once per patient visit
+  // (navTargetAppliedRef) — independent of whether/when PatientCalendar
+  // itself finishes positioning on its own copy of `dashboardNav`.
+  useEffect(() => {
+    if (!dashboardNav) return
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] APPLY_EFFECT', {
+      targetKind: dashboardNav.target.kind,
+      targetId: dashboardNav.target.id,
+      recordsLoading,
+      predictionsLoading,
+      recordsLength: records.length,
+      predictionsLength: predictions.length,
+      navTargetAppliedRefCurrent: navTargetAppliedRef.current,
+    })
+    if (navTargetAppliedRef.current) {
+      // eslint-disable-next-line no-console
+      console.log('[U4-DEEPLINK] APPLY_SKIP_ALREADY_APPLIED')
+      return
+    }
+    if (recordsLoading) {
+      // eslint-disable-next-line no-console
+      console.log('[U4-DEEPLINK] APPLY_SKIP_RECORDS_LOADING')
+      return
+    }
+    if (predictionsLoading) {
+      // eslint-disable-next-line no-console
+      console.log('[U4-DEEPLINK] APPLY_SKIP_PREDICTIONS_LOADING')
+      return
+    }
+    const isHealthRecord = dashboardNav.target.kind === 'HEALTH_RECORD'
+    const collectionContainsTarget = isHealthRecord
+      ? records.some(r => r.id === dashboardNav.target.id)
+      : predictions.some(p => p.id === dashboardNav.target.id)
+    const matchingIndex = isHealthRecord
+      ? records.findIndex(r => r.id === dashboardNav.target.id)
+      : predictions.findIndex(p => p.id === dashboardNav.target.id)
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] MARK_APPLIED', {
+      targetKind: dashboardNav.target.kind,
+      targetId: dashboardNav.target.id,
+      targetFoundInCollection: collectionContainsTarget,
+    })
     navTargetAppliedRef.current = true
-    if (dashboardNav.target.kind === 'HEALTH_RECORD') handleSelectHealthRecord(dashboardNav.target.id)
-    else handleSelectPrediction(dashboardNav.target.id)
+    if (isHealthRecord) {
+      // eslint-disable-next-line no-console
+      console.log('[U4-DEEPLINK] DISPATCH_RECORD_TARGET', {
+        targetId: dashboardNav.target.id, collectionContainsTarget, matchingIndex,
+      })
+      handleSelectHealthRecord(dashboardNav.target.id)
+    } else {
+      // eslint-disable-next-line no-console
+      console.log('[U4-DEEPLINK] DISPATCH_PREDICTION_TARGET', {
+        targetId: dashboardNav.target.id, collectionContainsTarget, matchingIndex,
+      })
+      handleSelectPrediction(dashboardNav.target.id)
+    }
   }, [dashboardNav, recordsLoading, predictionsLoading, handleSelectHealthRecord, handleSelectPrediction])
 
   // Edit patient
-  const [editing, setEditing] = useState(false)
-  const [editForm, setEditForm] = useState<EditFormState>({ firstName: '', lastName: '', phone: '' })
-  const [editSaving, setEditSaving] = useState(false)
-  const [editError, setEditError] = useState<string | null>(null)
+  // U4-DEEPLINK — temporary, read-only observation effects (no control-flow
+  // changes anywhere else). Log whenever the selection state actually
+  // commits, and whether the DOM/collection can actually support the
+  // highlight at that moment.
+  useEffect(() => {
+    selectedHealthRecordIdRef.current = selectedHealthRecordId
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] RECORD_SELECTED_STATE', { selectedHealthRecordId })
+  }, [selectedHealthRecordId])
+
+  useEffect(() => {
+    if (!selectedHealthRecordId) return
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] RECORD_RENDER_STATUS', {
+      selectedHealthRecordId,
+      recordExistsInCollection: records.some(r => r.id === selectedHealthRecordId),
+      clinicalHistorySectionRendered: records.length > 1,
+      refFound: recordRowRefs.current.has(selectedHealthRecordId),
+    })
+  }, [selectedHealthRecordId, records])
+
+  useEffect(() => {
+    selectedPredictionIdRef.current = selectedPredictionId
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] PREDICTION_SELECTED_STATE', { selectedPredictionId })
+  }, [selectedPredictionId])
+
+  useEffect(() => {
+    if (!selectedPredictionId) return
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] PREDICTION_RENDER_STATUS', {
+      selectedPredictionId,
+      predictionExistsInCollection: predictions.some(p => p.id === selectedPredictionId),
+      riskEvolutionRefFound: riskEvolutionRef.current != null,
+      chartDataContainsPrediction: predictions.some(p => p.id === selectedPredictionId),
+    })
+    // eslint-disable-next-line no-console
+    console.log('[U4-DEEPLINK] PREDICTION_HIGHLIGHT_COMMIT', {
+      selectedPredictionId,
+      chartDataContainsPrediction: predictions.some(p => p.id === selectedPredictionId),
+      riskEvolutionRefFound: riskEvolutionRef.current != null,
+    })
+  }, [selectedPredictionId, predictions])
+
+  // U4-DEEPLINK — temporary: tracks when the DOM node behind
+  // riskEvolutionRef becomes available/unavailable, independent of
+  // selection state. Answers whether the genuine PREDICTION_REF_STATUS
+  // riskEvolutionRefFound:false observation was a timing issue (ref not
+  // yet attached) or something else (ref never attaches at all for some
+  // render path). Polled on a rAF loop purely for observation — never
+  // writes application state, never affects rendering.
+  useEffect(() => {
+    let cancelled = false
+    let wasAvailable = riskEvolutionRef.current != null
+    const check = () => {
+      if (cancelled) return
+      const isAvailable = riskEvolutionRef.current != null
+      if (isAvailable !== wasAvailable) {
+        wasAvailable = isAvailable
+        // eslint-disable-next-line no-console
+        console.log(isAvailable ? '[U4-DEEPLINK] RISK_REF_AVAILABLE' : '[U4-DEEPLINK] RISK_REF_UNAVAILABLE', {
+          selectedPredictionId,
+        })
+      }
+      requestAnimationFrame(check)
+    }
+    const raf = requestAnimationFrame(check)
+    return () => { cancelled = true; cancelAnimationFrame(raf) }
+  }, [selectedPredictionId])
+
+
+  // U4.2A — New Personal Information modal (replaces the previous inline
+  // firstName/lastName/phone-only editor entirely — no editing/editForm/
+  // editSaving/editError state remains; EditPatientModal owns its own
+  // draft/saving/error state, prefilled directly from the canonical
+  // `patient` object each time it opens).
+  const [editPatientModalOpen, setEditPatientModalOpen] = useState(false)
 
   // U3.2 — New Record modal (replaces the previous inline expandable form
   // and its showRecordForm/recordForm/recordSavingRef/etc. state — all of
@@ -242,16 +530,25 @@ export default function PatientDetailPage() {
   // the dialog is open).
   const [newRecordModalOpen, setNewRecordModalOpen] = useState(false)
 
+  const patientRequestIdRef = useRef(0)
+
   const loadPatient = useCallback(async (silent = false) => {
     if (!id) return
+    const requestId = ++patientRequestIdRef.current
     if (!silent) setPatientLoading(true)
     setPatientError(null)
     try {
       const p = await patientService.getById(id)
+      if (requestId !== patientRequestIdRef.current) return
       setPatient(p)
-      // Don't clobber an in-progress edit with a background refresh.
-      setEditForm(f => (editing ? f : { firstName: p.firstName, lastName: p.lastName, phone: p.phone ?? '' }))
+      if (dashboardNavRef.current) {
+        // eslint-disable-next-line no-console
+        console.log('[U4-DEEPLINK] PATIENT_REFETCH_COMPLETE', {
+          patientId: id, targetKind: dashboardNavRef.current.target.kind, targetId: dashboardNavRef.current.target.id,
+        })
+      }
     } catch (err) {
+      if (requestId !== patientRequestIdRef.current) return
       if (!silent) {
         setPatientError(
           isAxiosError(err) && err.response?.status === 404
@@ -260,9 +557,9 @@ export default function PatientDetailPage() {
         )
       }
     } finally {
-      if (!silent) setPatientLoading(false)
+      if (requestId === patientRequestIdRef.current && !silent) setPatientLoading(false)
     }
-  }, [id, editing])
+  }, [id])
 
   // GET /api/patients/:id/history (INT-08) — only `records` is consumed;
   // `predictions` in the response is intentionally not rendered here.
@@ -273,6 +570,8 @@ export default function PatientDetailPage() {
     try {
       const history = await patientService.getHistory(id)
       setRecords(history.records)
+      // eslint-disable-next-line no-console
+      console.log('[U4-DEEPLINK] RECORDS_READY', { count: history.records.length, ids: history.records.map(r => r.id) })
     } catch {
       if (!silent) setRecordsError('No se pudo cargar el historial clínico')
     } finally {
@@ -290,6 +589,8 @@ export default function PatientDetailPage() {
     try {
       const result = await predictionService.getHistory(id)
       setPredictions(result.data)
+      // eslint-disable-next-line no-console
+      console.log('[U4-DEEPLINK] PREDICTIONS_READY', { count: result.data.length, ids: result.data.map(p => p.id) })
     } catch {
       if (!silent) setPredictionsError('No se pudo cargar el historial de predicciones')
     } finally {
@@ -334,42 +635,28 @@ export default function PatientDetailPage() {
     clearLastHealthRecord()
   }, [id, lastHealthRecord, loadHistory, clearLastHealthRecord])
 
-  // INT-21 — patient_updated: payload carries exactly firstName/lastName/
-  // isActive (the only fields UpdatePatientDto/deactivate can change) — a
-  // direct merge is safe and avoids an unnecessary refetch.
+  // U4.2A — patient_updated is invalidation-only (kept intentionally
+  // lightweight — see EditPatientModal/patient.service.ts, no
+  // curp/birthDate/sex/phone added to its payload). This effect no longer
+  // merges fields manually from the socket payload (that only worked while
+  // firstName/lastName/isActive were the only editable fields) — now that
+  // curp/birthDate/sex are also editable, the canonical GET below is the
+  // only correct source for the full Patient. The creator's own tab
+  // updates immediately from its PUT response instead (see
+  // handlePatientUpdated below) — this effect exists for OTHER tabs/
+  // sessions to converge.
   useEffect(() => {
     if (!id || !lastPatientUpdate || lastPatientUpdate.patientId !== id) return
-    setPatient(p => p ? {
-      ...p,
-      firstName: lastPatientUpdate.firstName,
-      lastName:  lastPatientUpdate.lastName,
-      isActive:  lastPatientUpdate.isActive,
-    } : p)
+    loadPatient(true)
     clearLastPatientUpdate()
-  }, [id, lastPatientUpdate, clearLastPatientUpdate])
+  }, [id, lastPatientUpdate, loadPatient, clearLastPatientUpdate])
 
-  const saveEdit = async () => {
-    if (!id) return
-    setEditSaving(true)
-    setEditError(null)
-    try {
-      const payload: UpdatePatientRequest = {
-        firstName: editForm.firstName.trim(),
-        lastName: editForm.lastName.trim(),
-        phone: editForm.phone.trim() || undefined,
-      }
-      const updated = await patientService.update(id, payload)
-      setPatient(updated)
-      setEditing(false)
-    } catch (err) {
-      setEditError(
-        isAxiosError(err) && err.response?.data?.error
-          ? err.response.data.error
-          : 'No se pudo actualizar el paciente',
-      )
-    } finally {
-      setEditSaving(false)
-    }
+  // U4.2A — passed as EditPatientModal's onUpdated. The PUT response is
+  // already the authoritative, complete Patient — replace local state
+  // directly with it (never wait for the socket echo, matching Q3's own
+  // "creator updates itself from its own response" principle).
+  const handlePatientUpdated = (updated: Patient) => {
+    setPatient(updated)
   }
 
   // U3.2 — passed as NewRecordModal's onCreated. Reuses the EXACT Q3
@@ -454,7 +741,7 @@ export default function PatientDetailPage() {
             Nueva predicción
           </button>
           <button
-            onClick={() => setEditing(e => !e)}
+            onClick={() => setEditPatientModalOpen(true)}
             className="p-2 rounded-lg border border-border hover:bg-accent transition-colors"
           >
             <Edit className="w-4 h-4 text-muted-foreground" />
@@ -468,6 +755,13 @@ export default function PatientDetailPage() {
         open={newRecordModalOpen}
         onOpenChange={setNewRecordModalOpen}
         onCreated={handleRecordCreated}
+      />
+
+      <EditPatientModal
+        patient={patient}
+        open={editPatientModalOpen}
+        onOpenChange={setEditPatientModalOpen}
+        onUpdated={handlePatientUpdated}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -534,75 +828,29 @@ export default function PatientDetailPage() {
               </h3>
             </div>
 
-            {editing ? (
-              <div className="space-y-3">
-                {editError && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
-                    {editError}
-                  </div>
-                )}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Nombre(s)</label>
-                  <input
-                    className={inputClass}
-                    value={editForm.firstName}
-                    onChange={e => setEditForm(f => ({ ...f, firstName: e.target.value }))}
-                  />
+            {/* U4.2A — editing now happens exclusively via EditPatientModal
+                (opened from the header action bar) — the old inline
+                editing branch (editing/editForm/editSaving/editError/
+                saveEdit) was removed entirely, not just hidden. This is
+                always the read-only display. */}
+            <div>
+              {patient.curp && (
+                <InfoRow label="CURP" value={patient.curp} />
+              )}
+              <InfoRow label="Fecha de nacimiento" value={formatDate(patient.birthDate)} />
+              <InfoRow label="Edad" value={age} unit="años" />
+              <InfoRow label="Sexo" value={sexLabel(patient.sex)} />
+              {patient.phone && (
+                <div className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
+                  <span className="text-sm text-muted-foreground">Teléfono</span>
+                  <a href={`tel:${patient.phone}`} className="text-sm font-semibold text-primary flex items-center gap-1">
+                    <Phone className="w-3.5 h-3.5" />
+                    {patient.phone}
+                  </a>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Apellidos</label>
-                  <input
-                    className={inputClass}
-                    value={editForm.lastName}
-                    onChange={e => setEditForm(f => ({ ...f, lastName: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Teléfono</label>
-                  <input
-                    className={inputClass}
-                    value={editForm.phone}
-                    onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))}
-                  />
-                </div>
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    onClick={saveEdit}
-                    disabled={editSaving}
-                    className="flex items-center gap-1.5 bg-primary text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    {editSaving ? 'Guardando...' : 'Guardar'}
-                  </button>
-                  <button
-                    onClick={() => { setEditing(false); setEditError(null) }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-accent transition-colors"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                {patient.curp && (
-                  <InfoRow label="CURP" value={patient.curp} />
-                )}
-                <InfoRow label="Fecha de nacimiento" value={formatDate(patient.birthDate)} />
-                <InfoRow label="Edad" value={age} unit="años" />
-                <InfoRow label="Sexo" value={sexLabel(patient.sex)} />
-                {patient.phone && (
-                  <div className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
-                    <span className="text-sm text-muted-foreground">Teléfono</span>
-                    <a href={`tel:${patient.phone}`} className="text-sm font-semibold text-primary flex items-center gap-1">
-                      <Phone className="w-3.5 h-3.5" />
-                      {patient.phone}
-                    </a>
-                  </div>
-                )}
-                <InfoRow label="Registrado" value={formatDate(patient.createdAt)} />
-              </div>
-            )}
+              )}
+              <InfoRow label="Registrado" value={formatDate(patient.createdAt)} />
+            </div>
           </div>
 
           {/* Patient Calendar (P3-FIX) — moved into the left column, right
