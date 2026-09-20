@@ -2,7 +2,7 @@ import { api } from './api'
 import { normalizeHealthRecord } from './recordService'
 import type {
   Patient, RiskLevel, PaginatedResponse,
-  CreatePatientRequest, UpdatePatientRequest, PatientHistoryResponse,
+  CreatePatientRequest, UpdatePatientRequest, PatientHistoryResponse, HistoryQueryParams,
 } from '@/types'
 
 // ─── Backend wire shape ───────────────────────────────────────────────────
@@ -113,16 +113,16 @@ export const patientService = {
     return normalizePatient(data)
   },
 
-  // GET /api/patients/:id/history — only the `records` portion (Health
-  // Records) is normalized/consumed; `predictions` is passed through
+  // GET /api/patients/:id/history — U5.2: `records` is now server-side
+  // paginated/sorted; `predictions` continues to be passed through
   // untouched and intentionally not rendered (out of scope — Bloque C).
-  async getHistory(id: string): Promise<PatientHistoryResponse> {
+  async getHistory(id: string, params: HistoryQueryParams): Promise<PatientHistoryResponse> {
     const { data } = await api.get<{
-      records: Parameters<typeof normalizeHealthRecord>[0][]
+      records: { data: Parameters<typeof normalizeHealthRecord>[0][]; total: number; page: number; limit: number; totalPages: number }
       predictions: unknown[]
-    }>(`/patients/${id}/history`)
+    }>(`/patients/${id}/history`, { params })
     return {
-      records: data.records.map(normalizeHealthRecord),
+      records: { ...data.records, data: data.records.data.map(normalizeHealthRecord) },
       predictions: data.predictions,
     }
   },

@@ -157,11 +157,30 @@ export interface CreateHealthRecordRequest {
 }
 
 // GET /api/patients/:id/history — the backend also returns recent
-// Predictions in this payload; only `records` is consumed in this block
-// (Predictions integration belongs to Bloque C).
+// U5.2 — `records` is now server-side paginated/sorted; `predictions`
+// remains unused by this block (Risk Evolution has its own independent
+// endpoint) — kept only for API backward compatibility, unchanged shape.
+export interface PaginatedHealthRecords {
+  data: HealthRecord[]
+  total: number
+  page: number
+  limit: number
+  totalPages: number
+}
+
 export interface PatientHistoryResponse {
-  records: HealthRecord[]
+  records: PaginatedHealthRecords
   predictions: unknown[]
+}
+
+export type HistorySortBy = 'recordedAt' | 'sysBP' | 'diaBP' | 'totChol' | 'glucose' | 'bmi'
+export type HistorySortOrder = 'asc' | 'desc'
+
+export interface HistoryQueryParams {
+  page: number
+  limit: number
+  sortBy: HistorySortBy
+  sortOrder: HistorySortOrder
 }
 
 // ─── Prediction ───────────────────────────────────────────────────────────────

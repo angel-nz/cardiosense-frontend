@@ -19,7 +19,8 @@ import { cn, formatDate, formatDateTime, calcAge, sexLabel, timeAgo } from '@/li
 import { patientService } from '@/services/patientService'
 import { predictionService } from '@/services/predictionService'
 import { useSocket } from '@/context/SocketContext'
-import type { Patient, HealthRecord, Prediction, DashboardEventNavigationState } from '@/types'
+import type { Patient, HealthRecord, Prediction, DashboardEventNavigationState, HistorySortBy, HistorySortOrder } from '@/types'
+import { recordService } from '@/services/recordService'
 
 interface InfoRowProps {
   label: string
@@ -91,6 +92,24 @@ export default function PatientDetailPage() {
   const [records, setRecords] = useState<HealthRecord[]>([])
   const [recordsLoading, setRecordsLoading] = useState(true)
   const [recordsError, setRecordsError] = useState<string | null>(null)
+
+  // U5.2 — server-side pagination/sorting state for Clinical History.
+  // `records` above now holds only the CURRENT page's rows.
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyLimit, setHistoryLimit] = useState(10)
+  const [historySortBy, setHistorySortBy] = useState<HistorySortBy>('recordedAt')
+  const [historySortOrder, setHistorySortOrder] = useState<HistorySortOrder>('desc')
+  const [historyTotal, setHistoryTotal] = useState(0)
+  const [historyTotalPages, setHistoryTotalPages] = useState(0)
+
+  // U5.2 — canonical latest HealthRecord, independent of Clinical History's
+  // page/sort state (GET /health-records/patient/:id/latest, the same
+  // endpoint U3 introduced for NewRecordModal's prefill). "Indicadores
+  // clínicos" must never again read `records[0]`, since that array no
+  // longer reliably represents the most recent record once the user sorts
+  // by a non-date column or navigates away from page 1.
+  const [latestRecord, setLatestRecord] = useState<HealthRecord | null>(null)
+  const [latestRecordLoading, setLatestRecordLoading] = useState(true)
 
   // GET /api/predictions/patient/:id (predictionService.getHistory — same
   // real infrastructure already used/validated by PredictionHistoryPage).
@@ -461,7 +480,7 @@ export default function PatientDetailPage() {
     console.log('[U4-DEEPLINK] RECORD_RENDER_STATUS', {
       selectedHealthRecordId,
       recordExistsInCollection: records.some(r => r.id === selectedHealthRecordId),
-      clinicalHistorySectionRendered: records.length > 1,
+      clinicalHistorySectionRendered: historyTotal > 1,
       refFound: recordRowRefs.current.has(selectedHealthRecordId),
     })
   }, [selectedHealthRecordId, records])
@@ -561,21 +580,63 @@ export default function PatientDetailPage() {
     }
   }, [id])
 
-  // GET /api/patients/:id/history (INT-08) — only `records` is consumed;
-  // `predictions` in the response is intentionally not rendered here.
+  // GET /api/patients/:id/history — U5.2: `records` is now server-side
+  // paginated/sorted (page/limit/sortBy/sortOrder); `predictions` in the
+  // response remains unused here (Risk Evolution has its own independent
+  // endpoint below). requestId-guarded: rapid sort/page/limit changes must
+  // never let a stale response overwrite newer UI state.
+  const historyRequestIdRef = useRef(0)
   const loadHistory = useCallback(async (silent = false) => {
     if (!id) return
+    const requestId = ++historyRequestIdRef.current
     if (!silent) setRecordsLoading(true)
     setRecordsError(null)
     try {
-      const history = await patientService.getHistory(id)
-      setRecords(history.records)
+      const history = await patientService.getHistory(id, {
+        page: historyPage, limit: historyLimit, sortBy: historySortBy, sortOrder: historySortOrder,
+      })
+      if (requestId !== historyRequestIdRef.current) return
+      setRecords(history.records.data)
+      setHistoryTotal(history.records.total)
+      setHistoryTotalPages(history.records.totalPages)
+      // Out-of-range correction (U5.2 §3): the backend never clamps `page`
+      // itself — an out-of-range page legitimately comes back with an
+      // empty `data` array and the real total/totalPages. This page owns
+      // correcting its own visual page state from that, exactly once
+      // (idempotent: re-evaluating against the corrected page no longer
+      // satisfies the condition, so this cannot loop).
+      if (history.records.total > 0 && historyPage > history.records.totalPages) {
+        setHistoryPage(history.records.totalPages)
+      } else if (history.records.total === 0 && historyPage !== 1) {
+        setHistoryPage(1)
+      }
       // eslint-disable-next-line no-console
-      console.log('[U4-DEEPLINK] RECORDS_READY', { count: history.records.length, ids: history.records.map(r => r.id) })
+      console.log('[U4-DEEPLINK] RECORDS_READY', { count: history.records.data.length, ids: history.records.data.map(r => r.id) })
     } catch {
+      if (requestId !== historyRequestIdRef.current) return
       if (!silent) setRecordsError('No se pudo cargar el historial clínico')
     } finally {
-      if (!silent) setRecordsLoading(false)
+      if (requestId === historyRequestIdRef.current && !silent) setRecordsLoading(false)
+    }
+  }, [id, historyPage, historyLimit, historySortBy, historySortOrder])
+
+  // U5.2 — canonical latest record, independent of Clinical History's own
+  // page/sort — reuses U3's dedicated endpoint (same one NewRecordModal
+  // already uses), never `records[0]`.
+  const latestRecordRequestIdRef = useRef(0)
+  const loadLatestRecord = useCallback(async (silent = false) => {
+    if (!id) return
+    const requestId = ++latestRecordRequestIdRef.current
+    if (!silent) setLatestRecordLoading(true)
+    try {
+      const latest = await recordService.getLatest(id)
+      if (requestId !== latestRecordRequestIdRef.current) return
+      setLatestRecord(latest)
+    } catch {
+      // Silent failure keeps whatever was last shown — same pattern used
+      // elsewhere for background/realtime-triggered loaders in this file.
+    } finally {
+      if (requestId === latestRecordRequestIdRef.current && !silent) setLatestRecordLoading(false)
     }
   }, [id])
 
@@ -600,6 +661,7 @@ export default function PatientDetailPage() {
 
   useEffect(() => { loadPatient() }, [loadPatient])
   useEffect(() => { loadHistory() }, [loadHistory])
+  useEffect(() => { loadLatestRecord() }, [loadLatestRecord])
   useEffect(() => { loadPredictions() }, [loadPredictions])
 
   // INT-19 — prediction_completed: refresh both the patient (latestRisk/
@@ -615,25 +677,36 @@ export default function PatientDetailPage() {
     clearLastPrediction()
   }, [id, lastPrediction, loadPatient, loadPredictions, clearLastPrediction])
 
-  // INT-20 — health_record_created. Q3: dedup by record.id before deciding
-  // whether to refetch. The payload is too thin (ids + recordedAt only) to
-  // build a full HealthRecord, so when the record is genuinely new to this
-  // client's local state, this still refetches the authoritative list
-  // (same as before) — but when the creator's own POST already inserted it
-  // (see submitRecord above), this becomes a no-op: no redundant GET, and
-  // no dependency on event ordering between the HTTP response and the
-  // socket delivery (whichever arrives first "wins" the insert; the other
-  // sees it's already present and does nothing).
+  // U5.2 — health_record_created. Server-side pagination/sorting means a
+  // newly created row's position in the CURRENT page/sort view is
+  // unknowable from the thin socket payload alone (unlike the pre-U5
+  // "prepend to the top" assumption, valid only when the visible list was
+  // always the full, always-recordedAt-desc collection). Canonical refetch
+  // of the current page/limit/sort is the only correct response — coalesced
+  // ~400ms (same window already validated elsewhere in this project) so a
+  // creation's own POST success and its own realtime echo collapse into a
+  // single pair of refreshes rather than two.
+  const historyCoalesceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleHistoryRefresh = useCallback(() => {
+    if (historyCoalesceTimerRef.current) clearTimeout(historyCoalesceTimerRef.current)
+    historyCoalesceTimerRef.current = setTimeout(() => {
+      historyCoalesceTimerRef.current = null
+      loadHistory(true)
+      loadLatestRecord(true)
+    }, 400)
+  }, [loadHistory, loadLatestRecord])
+
   useEffect(() => {
     if (!id || !lastHealthRecord || lastHealthRecord.patientId !== id) return
-    let alreadyPresent = false
-    setRecords(prev => {
-      alreadyPresent = prev.some(r => r.id === lastHealthRecord.recordId)
-      return prev
-    })
-    if (!alreadyPresent) loadHistory(true)
+    scheduleHistoryRefresh()
     clearLastHealthRecord()
-  }, [id, lastHealthRecord, loadHistory, clearLastHealthRecord])
+  }, [id, lastHealthRecord, scheduleHistoryRefresh, clearLastHealthRecord])
+
+  useEffect(() => {
+    return () => {
+      if (historyCoalesceTimerRef.current) clearTimeout(historyCoalesceTimerRef.current)
+    }
+  }, [])
 
   // U4.2A — patient_updated is invalidation-only (kept intentionally
   // lightweight — see EditPatientModal/patient.service.ts, no
@@ -659,13 +732,32 @@ export default function PatientDetailPage() {
     setPatient(updated)
   }
 
-  // U3.2 — passed as NewRecordModal's onCreated. Reuses the EXACT Q3
-  // insertion logic the previous inline form used (dedup by id, prepend —
-  // recordedAt-desc is the same order GET /:id/history already returns) —
-  // never reimplemented inside the modal, which only knows how to POST and
-  // hand the result back.
-  const handleRecordCreated = (created: HealthRecord) => {
-    setRecords(prev => (prev.some(r => r.id === created.id) ? prev : [created, ...prev]))
+  // U5.2 — passed as NewRecordModal's onCreated. The pre-U5 "prepend
+  // locally" assumption (recordedAt-desc was always the visible order, and
+  // records[] always held the FULL collection) no longer holds once
+  // Clinical History is server-side paginated/sorted — the newly created
+  // row's position within the current page/sort view can't be inferred
+  // from the client alone. Canonical refetch of both concerns instead:
+  // the current Clinical History page/limit/sort, and the independent
+  // latest-record state that "Indicadores clínicos" reads.
+  const handleRecordCreated = () => {
+    loadHistory(true)
+    loadLatestRecord(true)
+  }
+
+  // U5.2 — Clinical History sort/pagination interaction handlers.
+  const handleSortClick = (field: HistorySortBy) => {
+    if (historySortBy === field) {
+      setHistorySortOrder(o => (o === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setHistorySortBy(field)
+      setHistorySortOrder('desc')
+    }
+    setHistoryPage(1)
+  }
+  const handleLimitChange = (limit: number) => {
+    setHistoryLimit(limit)
+    setHistoryPage(1)
   }
 
   // ── Loading / error states for the patient fetch ──────────────────────
@@ -694,7 +786,6 @@ export default function PatientDetailPage() {
   }
 
   const latestPrediction = predictions[0]
-  const latestRecord = records[0]
   const age = calcAge(patient.birthDate)
 
   return (
@@ -942,12 +1033,10 @@ export default function PatientDetailPage() {
           <div className="bg-card rounded-xl border border-border p-5">
             <h3 className="font-semibold text-foreground mb-4">Indicadores clínicos</h3>
 
-            {recordsLoading ? (
+            {latestRecordLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-5 h-5 text-primary animate-spin" />
               </div>
-            ) : recordsError ? (
-              <p className="text-sm text-red-600 text-center py-4">{recordsError}</p>
             ) : !latestRecord ? (
               <p className="text-sm text-muted-foreground text-center py-4">
                 Este paciente aún no tiene registros clínicos.
@@ -991,26 +1080,50 @@ export default function PatientDetailPage() {
           </div>
 
           {/* Clinical history (INT-08) — past records from GET /:id/history */}
-          {records.length > 1 && (
+          {historyTotal > 1 && (
             <div className="bg-card rounded-xl border border-border p-5">
-              <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-muted-foreground" />
-                Historial de registros clínicos
-              </h3>
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <h3 className="font-semibold text-foreground flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                  Historial de registros clínicos
+                </h3>
+                <span className="text-xs text-muted-foreground">{historyTotal} registro{historyTotal === 1 ? '' : 's'}</span>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs text-muted-foreground uppercase tracking-wide border-b border-border">
-                      <th className="py-2 pr-4">Fecha</th>
-                      <th className="py-2 pr-4">Sistólica</th>
-                      <th className="py-2 pr-4">Diastólica</th>
-                      <th className="py-2 pr-4">Colesterol</th>
-                      <th className="py-2 pr-4">Glucosa</th>
-                      <th className="py-2">IMC</th>
+                      {([
+                        ['recordedAt', 'Fecha'],
+                        ['sysBP', 'Sistólica'],
+                        ['diaBP', 'Diastólica'],
+                        ['totChol', 'Colesterol'],
+                        ['glucose', 'Glucosa'],
+                        ['bmi', 'IMC'],
+                      ] as [HistorySortBy, string][]).map(([field, label]) => (
+                        <th key={field} className="py-2 pr-4">
+                          <button
+                            type="button"
+                            onClick={() => handleSortClick(field)}
+                            className="flex items-center gap-1 hover:text-foreground transition-colors"
+                          >
+                            {label}
+                            {historySortBy === field && (
+                              <span>{historySortOrder === 'asc' ? '▲' : '▼'}</span>
+                            )}
+                          </button>
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {records.map(r => (
+                    {recordsLoading ? (
+                      <tr><td colSpan={6} className="py-8 text-center">
+                        <Loader2 className="w-5 h-5 text-primary animate-spin inline-block" />
+                      </td></tr>
+                    ) : recordsError ? (
+                      <tr><td colSpan={6} className="py-4 text-center text-red-600">{recordsError}</td></tr>
+                    ) : records.map(r => (
                       <tr
                         key={r.id}
                         ref={el => {
@@ -1032,6 +1145,46 @@ export default function PatientDetailPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              {/* U5.2 — pagination controls */}
+              <div className="flex items-center justify-between flex-wrap gap-3 mt-4 pt-3 border-t border-border">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>Mostrar</span>
+                  <select
+                    value={historyLimit}
+                    onChange={e => handleLimitChange(Number(e.target.value))}
+                    className="border border-border rounded-md px-2 py-1 bg-card cursor-pointer"
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                  </select>
+                  <span>por página</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs">
+                  <span className="text-muted-foreground">
+                    Página {Math.min(historyPage, Math.max(historyTotalPages, 1))} de {Math.max(historyTotalPages, 1)}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                      disabled={historyPage <= 1}
+                      className="px-2.5 py-1 rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHistoryPage(p => Math.min(historyTotalPages, p + 1))}
+                      disabled={historyPage >= historyTotalPages}
+                      className="px-2.5 py-1 rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
