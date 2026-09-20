@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Users, Bell, Activity, AlertTriangle, Loader2 } from 'lucide-react'
 import { StatCard } from '@/components/ui/StatCard'
 import { cn } from '@/lib/utils'
@@ -7,8 +7,17 @@ import { useAuth } from '@/context/AuthContext'
 import { usePatients } from '@/hooks/usePatients'
 import { useAlerts } from '@/context/AlertsContext'
 import { dashboardService } from '@/services/dashboardService'
+import { patientService } from '@/services/patientService'
 import { DashboardCalendar } from '@/components/dashboard/DashboardCalendar'
+import { useSocket } from '@/context/SocketContext'
 import type { DashboardMetrics } from '@/types'
+
+// U2.2 — same coalescing window already validated for DashboardCalendar
+// (O4.2)/PatientCalendar (P5). Independent timers per U2.1's explicit
+// requirement: dashboard_activity_changed (stats) and patient_created
+// (patient total) are unrelated signals with unrelated canonical sources —
+// coalescing one must never delay or drop the other.
+const REALTIME_COALESCE_MS = 400
 
 // Bounded, single-page sample used only for the "high-risk patients"
 // spotlight list below — NOT a global count. The KPI "Riesgo alto" and the
@@ -37,16 +46,31 @@ export default function DashboardPage() {
 
   // GET /api/patients — `total` here is a real, backend-computed global
   // count (patientService.list -> paginate()), safe to use as-is for the
-  // "Total pacientes" KPI. The `patients` array/loading flag are no longer
-  // consumed here (O3-FIX-2 removed the "Pacientes de alto riesgo" card
-  // that used them) — default params, since only `total`/`error` matter now.
-  const { total: totalPatients, error: patientsError } = usePatients()
+  // INITIAL "Total pacientes" KPI value. The `patients` array/loading flag
+  // are no longer consumed here (O3-FIX-2 removed the "Pacientes de alto
+  // riesgo" card that used them) — default params, since only
+  // `total`/`error` matter now. Left completely unmodified/unextended
+  // (U2.2 Option B) — realtime silent refreshes below use their own
+  // minimal loader instead, so this hook's existing behavior/callers
+  // elsewhere are never at risk of regressing.
+  const { total: initialTotalPatients, error: patientsError } = usePatients()
+
+  // U2.2 — mirrors usePatients()'s initial value, then independently
+  // updated by loadPatientTotal(silent) below on patient_created/reconnect.
+  const [totalPatients, setTotalPatients] = useState(0)
+  useEffect(() => { setTotalPatients(initialTotalPatients) }, [initialTotalPatients])
 
   // Reuses the already-mounted global AlertsContext (fetched once at app
   // root) — visiting the Dashboard does NOT trigger an additional
   // GET /api/alerts request. unreadCount is backend-computed across ALL of
   // the doctor's alerts (not just the loaded page), safe to use directly.
+  // Already fully realtime via lastAlert (U2.1) — untouched by U2.2.
   const { unreadCount, error: alertsError } = useAlerts()
+
+  // U2.2 — passive listener only: this page never calls subscribe_patient.
+  // dashboard_activity_changed/patient_created both already arrive via the
+  // user:{userId} room every authenticated socket auto-joins on connect.
+  const { connected, lastDashboardActivity, clearLastDashboardActivity, lastPatientCreated, clearLastPatientCreated } = useSocket()
 
   // GET /api/dashboard/stats (Bloque I) — predictionsToday, riskDistribution
   // (highRiskPatients included), predictionsThisWeek. Medico-scoped
@@ -54,16 +78,108 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
   const [metricsError, setMetricsError] = useState<string | null>(null)
+  const statsRequestIdRef = useRef(0)
+  const statsCoalesceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const statsHasConnectedOnceRef = useRef(false)
 
+  // silent=true (realtime/reconnect-triggered): fetch and replace `metrics`
+  // exactly as normal, but never toggle the loading spinner and never
+  // surface a fetch error — a background sync failing shouldn't blank out
+  // already-valid, already-visible KPI cards. The initial mount load below
+  // always calls this non-silent.
+  const loadStats = useCallback(async (silent = false) => {
+    const requestId = ++statsRequestIdRef.current
+    if (!silent) { setMetricsLoading(true); setMetricsError(null) }
+    try {
+      const data = await dashboardService.getStats()
+      if (requestId !== statsRequestIdRef.current) return
+      setMetrics(data)
+    } catch {
+      if (requestId !== statsRequestIdRef.current || silent) return
+      setMetricsError('No se pudieron cargar las métricas.')
+    } finally {
+      if (requestId === statsRequestIdRef.current && !silent) setMetricsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { loadStats() }, [loadStats])
+
+  const scheduleStatsRefresh = useCallback(() => {
+    if (statsCoalesceTimerRef.current) clearTimeout(statsCoalesceTimerRef.current)
+    statsCoalesceTimerRef.current = setTimeout(() => {
+      statsCoalesceTimerRef.current = null
+      loadStats(true)
+    }, REALTIME_COALESCE_MS)
+  }, [loadStats])
+
+  // dashboard_activity_changed — canonical refetch only, never a manually
+  // recomputed predictionsToday/riskDistribution/etc. from the (intentionally
+  // minimal) socket payload.
   useEffect(() => {
-    let cancelled = false
-    setMetricsLoading(true)
-    setMetricsError(null)
-    dashboardService.getStats()
-      .then(data => { if (!cancelled) setMetrics(data) })
-      .catch(() => { if (!cancelled) setMetricsError('No se pudieron cargar las métricas.') })
-      .finally(() => { if (!cancelled) setMetricsLoading(false) })
-    return () => { cancelled = true }
+    if (!lastDashboardActivity) return
+    scheduleStatsRefresh()
+    clearLastDashboardActivity()
+  }, [lastDashboardActivity, scheduleStatsRefresh, clearLastDashboardActivity])
+
+  // U2.2 — Total pacientes realtime. Independent, minimal canonical loader
+  // (Option B from U2.1/section 12) — deliberately NOT usePatients().refetch(),
+  // which has no silent mode and would flicker the KPI's loading state.
+  // limit:1 keeps the request minimal; `total` is backend-computed
+  // independent of `limit`.
+  const patientTotalRequestIdRef = useRef(0)
+  const patientTotalCoalesceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const patientsHasConnectedOnceRef = useRef(false)
+
+  const loadPatientTotal = useCallback(async () => {
+    const requestId = ++patientTotalRequestIdRef.current
+    try {
+      const result = await patientService.list({ limit: 1 })
+      if (requestId !== patientTotalRequestIdRef.current) return
+      setTotalPatients(result.total)
+    } catch {
+      // Silent failure only (this loader is never called non-silently —
+      // the initial value already comes from usePatients() above) — keep
+      // whatever total is currently shown.
+    }
+  }, [])
+
+  const schedulePatientTotalRefresh = useCallback(() => {
+    if (patientTotalCoalesceTimerRef.current) clearTimeout(patientTotalCoalesceTimerRef.current)
+    patientTotalCoalesceTimerRef.current = setTimeout(() => {
+      patientTotalCoalesceTimerRef.current = null
+      loadPatientTotal()
+    }, REALTIME_COALESCE_MS)
+  }, [loadPatientTotal])
+
+  // patient_created — canonical refetch only, never a manual `total + 1`.
+  useEffect(() => {
+    if (!lastPatientCreated) return
+    schedulePatientTotalRefresh()
+    clearLastPatientCreated()
+  }, [lastPatientCreated, schedulePatientTotalRefresh, clearLastPatientCreated])
+
+  // Reconnect resync — independent hasConnectedOnceRef per signal (stats vs
+  // patient total), same reasoning as DashboardCalendar/PatientCalendar:
+  // `connected` also becomes true on the very first successful connection —
+  // skip exactly that one occurrence (the mount-driven loads above already
+  // cover it); every SUBSEQUENT true is a genuine reconnect, during which
+  // any dashboard_activity_changed/patient_created emitted while offline
+  // was simply lost (Socket.IO does not replay it) — silent canonical
+  // resync of BOTH is the only way to converge.
+  useEffect(() => {
+    if (!connected) return
+    if (!statsHasConnectedOnceRef.current) { statsHasConnectedOnceRef.current = true }
+    else scheduleStatsRefresh()
+    if (!patientsHasConnectedOnceRef.current) { patientsHasConnectedOnceRef.current = true }
+    else schedulePatientTotalRefresh()
+  }, [connected, scheduleStatsRefresh, schedulePatientTotalRefresh])
+
+  // Cleanup pending timers on unmount — no setState after this page is gone.
+  useEffect(() => {
+    return () => {
+      if (statsCoalesceTimerRef.current) clearTimeout(statsCoalesceTimerRef.current)
+      if (patientTotalCoalesceTimerRef.current) clearTimeout(patientTotalCoalesceTimerRef.current)
+    }
   }, [])
 
   // (highRiskSample removed — O3-FIX-2 removed the "Pacientes de alto

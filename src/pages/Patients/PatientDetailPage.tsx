@@ -13,12 +13,12 @@ import { RiskBadge } from '@/components/ui/RiskBadge'
 import { RiskGauge } from '@/components/charts/RiskGauge'
 import { FeatureImportanceBar } from '@/components/charts/FeatureImportanceBar'
 import { PatientCalendar } from '@/components/patients/PatientCalendar'
+import { NewRecordModal } from '@/components/patients/NewRecordModal'
 import { cn, formatDate, formatDateTime, calcAge, sexLabel, timeAgo } from '@/lib/utils'
 import { patientService } from '@/services/patientService'
-import { recordService } from '@/services/recordService'
 import { predictionService } from '@/services/predictionService'
 import { useSocket } from '@/context/SocketContext'
-import type { Patient, HealthRecord, Prediction, UpdatePatientRequest, CreateHealthRecordRequest, DashboardEventNavigationState } from '@/types'
+import type { Patient, HealthRecord, Prediction, UpdatePatientRequest, DashboardEventNavigationState } from '@/types'
 
 interface InfoRowProps {
   label: string
@@ -55,26 +55,10 @@ interface EditFormState {
   phone: string
 }
 
-// ─── New health record (INT-09) ───────────────────────────────────────────
-interface RecordFormState {
-  age: string
-  currentSmoker: boolean
-  cigsPerDay: string
-  bpMeds: boolean
-  diabetes: boolean
-  totChol: string
-  sysBP: string
-  diaBP: string
-  bmi: string
-  heartRate: string
-  glucose: string
-  notes: string
-}
-
-const RECORD_INITIAL: RecordFormState = {
-  age: '', currentSmoker: false, cigsPerDay: '0', bpMeds: false, diabetes: false,
-  totChol: '', sysBP: '', diaBP: '', bmi: '', heartRate: '', glucose: '', notes: '',
-}
+// U3.2 — New Record form state/logic now lives entirely in
+// NewRecordModal.tsx (extracted from the previous inline expandable
+// section) — RecordFormState/RECORD_INITIAL removed from here, no longer
+// duplicated.
 
 // O3-FIX-4/5 — defensively validates react-router `location.state` before
 // trusting it as a Dashboard Calendar navigation payload. `location.state`
@@ -251,18 +235,12 @@ export default function PatientDetailPage() {
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
 
-  // New health record
-  const [showRecordForm, setShowRecordForm] = useState(false)
-  const [recordForm, setRecordForm] = useState<RecordFormState>(RECORD_INITIAL)
-  const [recordSaving, setRecordSaving] = useState(false)
-  // Synchronous guard against double-submit (Q2): `disabled={recordSaving}`
-  // on the button already existed, but a React state update only disables
-  // the DOM after a re-render — two clicks close enough together can both
-  // fire before that happens. A ref is read/written synchronously, so it
-  // closes that race window completely.
-  const recordSavingRef = useRef(false)
-  const [recordFormError, setRecordFormError] = useState<string | null>(null)
-  const [recordFieldErrors, setRecordFieldErrors] = useState<Record<string, string>>({})
+  // U3.2 — New Record modal (replaces the previous inline expandable form
+  // and its showRecordForm/recordForm/recordSavingRef/etc. state — all of
+  // that now lives inside NewRecordModal.tsx, which owns its own submit/
+  // double-submit-guard/error state; this page only needs to know whether
+  // the dialog is open).
+  const [newRecordModalOpen, setNewRecordModalOpen] = useState(false)
 
   const loadPatient = useCallback(async (silent = false) => {
     if (!id) return
@@ -394,52 +372,13 @@ export default function PatientDetailPage() {
     }
   }
 
-  const submitRecord = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!id || recordSavingRef.current) return
-    recordSavingRef.current = true
-    setRecordFormError(null)
-    setRecordFieldErrors({})
-    setRecordSaving(true)
-    try {
-      const payload: CreateHealthRecordRequest = {
-        patientId: id,
-        age: Number(recordForm.age),
-        currentSmoker: recordForm.currentSmoker,
-        cigsPerDay: Number(recordForm.cigsPerDay || 0),
-        bpMeds: recordForm.bpMeds,
-        diabetes: recordForm.diabetes,
-        totChol: Number(recordForm.totChol),
-        sysBP: Number(recordForm.sysBP),
-        diaBP: Number(recordForm.diaBP),
-        bmi: Number(recordForm.bmi),
-        heartRate: Number(recordForm.heartRate),
-        glucose: Number(recordForm.glucose),
-        notes: recordForm.notes.trim() || undefined,
-      }
-      const created = await recordService.create(payload)
-      // Q3 — the creator updates its own local state directly from the
-      // 201 response instead of waiting for health_record_created: an
-      // operation this client just executed successfully shouldn't depend
-      // on realtime delivery to be reflected locally (the bug Q3 fixes —
-      // see the dedup-aware socket effect below for the other half of this).
-      // recordedAt-desc is the same order GET /patients/:id/history already
-      // returns (patient.repository.ts), so prepending keeps it correct.
-      setRecords(prev => (prev.some(r => r.id === created.id) ? prev : [created, ...prev]))
-      setRecordForm(RECORD_INITIAL)
-      setShowRecordForm(false)
-    } catch (err) {
-      if (isAxiosError(err) && err.response?.status === 400 && err.response.data?.details) {
-        setRecordFieldErrors(err.response.data.details as Record<string, string>)
-      } else if (isAxiosError(err) && err.response?.data?.error) {
-        setRecordFormError(err.response.data.error)
-      } else {
-        setRecordFormError('No se pudo guardar el registro clínico. Intenta de nuevo.')
-      }
-    } finally {
-      setRecordSaving(false)
-      recordSavingRef.current = false
-    }
+  // U3.2 — passed as NewRecordModal's onCreated. Reuses the EXACT Q3
+  // insertion logic the previous inline form used (dedup by id, prepend —
+  // recordedAt-desc is the same order GET /:id/history already returns) —
+  // never reimplemented inside the modal, which only knows how to POST and
+  // hand the result back.
+  const handleRecordCreated = (created: HealthRecord) => {
+    setRecords(prev => (prev.some(r => r.id === created.id) ? prev : [created, ...prev]))
   }
 
   // ── Loading / error states for the patient fetch ──────────────────────
@@ -494,7 +433,19 @@ export default function PatientDetailPage() {
             {age} años · {sexLabel(patient.sex)} · Última actualización {timeAgo(patient.updatedAt)}
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+          {/* U3.2 — action order: Nuevo registro, Nueva predicción, Editar
+              información (repositioned only — its inline-edit behavior is
+              unchanged; U4 will replace it with the full personal-info
+              modal). flex-wrap keeps this from overflowing horizontally on
+              narrow viewports. */}
+          <button
+            onClick={() => setNewRecordModalOpen(true)}
+            className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Nuevo registro
+          </button>
           <button
             onClick={() => navigate(`/predictions/${patient.id}`)}
             className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
@@ -510,6 +461,14 @@ export default function PatientDetailPage() {
           </button>
         </div>
       </div>
+
+      <NewRecordModal
+        patientId={patient.id}
+        birthDate={patient.birthDate}
+        open={newRecordModalOpen}
+        onOpenChange={setNewRecordModalOpen}
+        onCreated={handleRecordCreated}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
@@ -606,9 +565,6 @@ export default function PatientDetailPage() {
                     onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))}
                   />
                 </div>
-                <p className="text-[11px] text-muted-foreground italic">
-                  Fecha de nacimiento, sexo y CURP no son editables.
-                </p>
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     onClick={saveEdit}
@@ -736,16 +692,7 @@ export default function PatientDetailPage() {
 
           {/* Clinical indicators — from the most recent real Health Record (INT-08/INT-10) */}
           <div className="bg-card rounded-xl border border-border p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-foreground">Indicadores clínicos</h3>
-              <button
-                onClick={() => setShowRecordForm(s => !s)}
-                className="flex items-center gap-1.5 text-xs font-medium text-primary hover:bg-primary/10 px-2.5 py-1.5 rounded-lg transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Nuevo registro
-              </button>
-            </div>
+            <h3 className="font-semibold text-foreground mb-4">Indicadores clínicos</h3>
 
             {recordsLoading ? (
               <div className="flex items-center justify-center py-8">
@@ -793,114 +740,6 @@ export default function PatientDetailPage() {
             )}
 
             {/* New health record form (INT-09) */}
-            {showRecordForm && (
-              <form onSubmit={submitRecord} className="mt-5 pt-5 border-t border-border space-y-4">
-                {recordFormError && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
-                    {recordFormError}
-                  </div>
-                )}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Edad</label>
-                    <input type="number" min={18} max={120} required className={inputClass}
-                      value={recordForm.age}
-                      onChange={e => setRecordForm(f => ({ ...f, age: e.target.value }))} />
-                    {recordFieldErrors.age && <p className="text-[11px] text-red-600">{recordFieldErrors.age}</p>}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Presión sistólica</label>
-                    <input type="number" min={60} max={300} required className={inputClass}
-                      value={recordForm.sysBP}
-                      onChange={e => setRecordForm(f => ({ ...f, sysBP: e.target.value }))} />
-                    {recordFieldErrors.sysBP && <p className="text-[11px] text-red-600">{recordFieldErrors.sysBP}</p>}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Presión diastólica</label>
-                    <input type="number" min={40} max={200} required className={inputClass}
-                      value={recordForm.diaBP}
-                      onChange={e => setRecordForm(f => ({ ...f, diaBP: e.target.value }))} />
-                    {recordFieldErrors.diaBP && <p className="text-[11px] text-red-600">{recordFieldErrors.diaBP}</p>}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Colesterol total</label>
-                    <input type="number" min={50} max={800} required className={inputClass}
-                      value={recordForm.totChol}
-                      onChange={e => setRecordForm(f => ({ ...f, totChol: e.target.value }))} />
-                    {recordFieldErrors.totChol && <p className="text-[11px] text-red-600">{recordFieldErrors.totChol}</p>}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">IMC</label>
-                    <input type="number" step="0.1" min={10} max={80} required className={inputClass}
-                      value={recordForm.bmi}
-                      onChange={e => setRecordForm(f => ({ ...f, bmi: e.target.value }))} />
-                    {recordFieldErrors.bmi && <p className="text-[11px] text-red-600">{recordFieldErrors.bmi}</p>}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Frec. cardíaca</label>
-                    <input type="number" min={30} max={250} required className={inputClass}
-                      value={recordForm.heartRate}
-                      onChange={e => setRecordForm(f => ({ ...f, heartRate: e.target.value }))} />
-                    {recordFieldErrors.heartRate && <p className="text-[11px] text-red-600">{recordFieldErrors.heartRate}</p>}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Glucosa</label>
-                    <input type="number" min={30} max={500} required className={inputClass}
-                      value={recordForm.glucose}
-                      onChange={e => setRecordForm(f => ({ ...f, glucose: e.target.value }))} />
-                    {recordFieldErrors.glucose && <p className="text-[11px] text-red-600">{recordFieldErrors.glucose}</p>}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Cigarrillos/día</label>
-                    <input type="number" min={0} max={100} className={inputClass}
-                      value={recordForm.cigsPerDay}
-                      onChange={e => setRecordForm(f => ({ ...f, cigsPerDay: e.target.value }))} />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-4 text-sm">
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={recordForm.currentSmoker}
-                      onChange={e => setRecordForm(f => ({ ...f, currentSmoker: e.target.checked }))} />
-                    Fumador actual
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={recordForm.bpMeds}
-                      onChange={e => setRecordForm(f => ({ ...f, bpMeds: e.target.checked }))} />
-                    Medicamento para presión
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={recordForm.diabetes}
-                      onChange={e => setRecordForm(f => ({ ...f, diabetes: e.target.checked }))} />
-                    Diabetes
-                  </label>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">Notas</label>
-                  <textarea rows={2} className={inputClass} maxLength={1000}
-                    value={recordForm.notes}
-                    onChange={e => setRecordForm(f => ({ ...f, notes: e.target.value }))} />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="submit"
-                    disabled={recordSaving}
-                    className="flex items-center gap-1.5 bg-primary text-white px-4 py-2 rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors"
-                  >
-                    {recordSaving ? 'Guardando...' : 'Guardar registro'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setShowRecordForm(false); setRecordFormError(null); setRecordFieldErrors({}) }}
-                    className="px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-accent rounded-lg transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </form>
-            )}
           </div>
 
           {/* Clinical history (INT-08) — past records from GET /:id/history */}

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 import { io, type Socket } from 'socket.io-client'
-import type { SocketAlert, SocketPrediction, SocketHealthRecord, SocketPatientUpdate, SocketDashboardActivity } from '@/types'
+import type { SocketAlert, SocketPrediction, SocketHealthRecord, SocketPatientUpdate, SocketDashboardActivity, SocketPatientCreated } from '@/types'
 import { useAuth } from './AuthContext'
 
 // Same host as the backend, without the /api prefix (Socket.IO attaches to
@@ -28,6 +28,9 @@ interface SocketContextValue {
   // Invalidation-only: no timeline data, just "refetch your canonical
   // Dashboard Calendar state" for whichever consumer cares.
   lastDashboardActivity: SocketDashboardActivity | null
+  // U2.2 — patient_created, same user:{userId} room. Invalidation-only:
+  // "Total pacientes" may have changed, receiver must GET /patients again.
+  lastPatientCreated: SocketPatientCreated | null
   subscribeToPatient: (patientId: string) => void
   unsubscribeFromPatient: (patientId: string) => void
   clearLastAlert: () => void
@@ -35,6 +38,7 @@ interface SocketContextValue {
   clearLastHealthRecord: () => void
   clearLastPatientUpdate: () => void
   clearLastDashboardActivity: () => void
+  clearLastPatientCreated: () => void
 }
 
 const SocketContext = createContext<SocketContextValue | null>(null)
@@ -53,6 +57,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [lastHealthRecord, setLastHealthRecord] = useState<SocketHealthRecord | null>(null)
   const [lastPatientUpdate, setLastPatientUpdate] = useState<SocketPatientUpdate | null>(null)
   const [lastDashboardActivity, setLastDashboardActivity] = useState<SocketDashboardActivity | null>(null)
+  const [lastPatientCreated, setLastPatientCreated] = useState<SocketPatientCreated | null>(null)
   const socketRef = useRef<Socket | null>(null)
 
   // ─── INT-16/17 subscription reconciliation ──────────────────────────────
@@ -161,6 +166,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     // invalidation-only signal consumed via canonical refetch, a coalesced
     // burst collapsing into the latest value is harmless, not lossy.
     socket.on('dashboard_activity_changed', (data: SocketDashboardActivity) => setLastDashboardActivity(data))
+    // U2.2 — same user:{userId} room, same "last event" scalar pattern.
+    socket.on('patient_created', (data: SocketPatientCreated) => setLastPatientCreated(data))
 
     // INT-19/20/21 — all three are emitted to patient:{patientId} (see
     // socketServer.ts room joins via subscribe_patient/INT-16), so this
@@ -238,6 +245,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const clearLastHealthRecord = useCallback(() => setLastHealthRecord(null), [])
   const clearLastPatientUpdate = useCallback(() => setLastPatientUpdate(null), [])
   const clearLastDashboardActivity = useCallback(() => setLastDashboardActivity(null), [])
+  const clearLastPatientCreated = useCallback(() => setLastPatientCreated(null), [])
 
   return (
     <SocketContext.Provider value={{
@@ -247,6 +255,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       lastHealthRecord,
       lastPatientUpdate,
       lastDashboardActivity,
+      lastPatientCreated,
       subscribeToPatient,
       unsubscribeFromPatient,
       clearLastAlert,
@@ -254,6 +263,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       clearLastHealthRecord,
       clearLastPatientUpdate,
       clearLastDashboardActivity,
+      clearLastPatientCreated,
     }}>
       {children}
     </SocketContext.Provider>

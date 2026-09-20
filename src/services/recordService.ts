@@ -62,4 +62,16 @@ export const recordService = {
     const { data } = await api.post<BackendHealthRecord>('/health-records', payload)
     return normalizeHealthRecord(data)
   },
+
+  // U3.2 — GET /health-records/patient/:patientId/latest. Canonical prefill
+  // source for NewRecordModal — never `records[0]` from a possibly-paginated
+  // Clinical History list (U5 will paginate that list; this endpoint won't
+  // be affected). Returns `null` when the patient has no prior HealthRecord
+  // — a normal state, not an error.
+  async getLatest(patientId: string): Promise<HealthRecord | null> {
+    const { data } = await api.get<BackendHealthRecord | null>(
+      `/health-records/patient/${patientId}/latest`,
+    )
+    return data ? normalizeHealthRecord(data) : null
+  },
 }

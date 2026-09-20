@@ -130,7 +130,11 @@ export interface HealthRecord {
 
 export interface CreateHealthRecordRequest {
   patientId: string
-  age: number
+  // U3.2 — optional (was required): backend now derives+overwrites age
+  // authoritatively from Paciente.birthDate (record.service.ts). Kept
+  // optional rather than removed for backward compatibility with any
+  // existing caller — NewRecordModal simply omits it.
+  age?: number
   currentSmoker: boolean
   cigsPerDay: number
   bpMeds: boolean
@@ -391,6 +395,14 @@ export interface SocketPatientUpdate {
 export interface SocketDashboardActivity {
   patientId: string
   eventDate: string
+}
+
+// U2.2 — patient_created. Invalidation-only, user:{userId} room — signals
+// "Total pacientes" may have changed. Deliberately minimal: no
+// patientName/CURP/clinical data, since the canonical source is always a
+// GET /patients refetch, never this payload.
+export interface SocketPatientCreated {
+  patientId: string
 }
 
 // ─── API ─────────────────────────────────────────────────────────────────────
