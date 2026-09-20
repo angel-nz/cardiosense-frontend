@@ -1,5 +1,5 @@
 import { api } from './api'
-import type { Prediction, RiskLevel, CreatePredictionRequest, PaginatedResponse } from '@/types'
+import type { Prediction, RiskLevel, CreatePredictionRequest, PaginatedResponse, GlobalPredictionQueryParams } from '@/types'
 
 // ─── Backend wire shape ───────────────────────────────────────────────────
 // Real routes (see prediction.routes.ts / app.ts):
@@ -80,13 +80,13 @@ export const predictionService = {
   },
 
   // GET /api/predictions — global history for the authenticated médico.
-  // Backend now scopes this by patient.medicoId (Bloque J security fix);
-  // server-side paginated, ordered predictedAt desc — no client-side
-  // re-sort or "fetch all" needed.
-  async listAll(page = 1, limit = 20): Promise<PaginatedResponse<Prediction>> {
+  // Backend scopes this by patient.medicoId; server-side paginated,
+  // filtered (search/from/to/riskLevel — U6.2), ordered predictedAt desc —
+  // no client-side re-sort, filter, or "fetch all" needed.
+  async listAll(params: GlobalPredictionQueryParams): Promise<PaginatedResponse<Prediction>> {
     const { data } = await api.get<BackendPaginated<BackendPrediction>>(
       '/predictions',
-      { params: { page, limit } },
+      { params },
     )
     return {
       data: data.data.map(normalizePrediction),

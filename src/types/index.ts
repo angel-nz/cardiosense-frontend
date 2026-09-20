@@ -310,6 +310,20 @@ export interface Prediction {
   patientName?: string
 }
 
+// U6.2 — GET /api/predictions (global history) query contract. riskLevel is
+// the exact wire-level enum (uppercase, matching Prisma's RiskLevel) — not
+// the lowercase display RiskLevel type used elsewhere in this file.
+export type PredictionRiskFilter = 'LOW' | 'MODERATE' | 'HIGH'
+
+export interface GlobalPredictionQueryParams {
+  page: number
+  limit: number
+  search?: string
+  from?: string
+  to?: string
+  riskLevel?: PredictionRiskFilter
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 // GET /api/dashboard/stats (Bloque I) — medico-scoped aggregate metrics.
 // Named DashboardMetrics (not DashboardStats) to avoid colliding with the

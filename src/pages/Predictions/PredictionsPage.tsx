@@ -1,31 +1,48 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Activity, AlertTriangle, CheckCircle, Loader2, Info,
-  FileWarning, History, Sparkles, ChevronLeft, ChevronRight,
+  FileWarning, History, Sparkles, ChevronLeft, ChevronRight, Search,
 } from 'lucide-react'
 import { RiskGauge } from '@/components/charts/RiskGauge'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import { FeatureImportanceBar } from '@/components/charts/FeatureImportanceBar'
 import { cn, formatScore, formatDateTime } from '@/lib/utils'
+import { getBusinessDateKey, BUSINESS_TIMEZONE } from '@/lib/businessDate'
 import { patientService } from '@/services/patientService'
 import { recordService } from '@/services/recordService'
 import { predictionService } from '@/services/predictionService'
 import { usePredictions } from '@/hooks/usePredictions'
 import { useSocket } from '@/context/SocketContext'
 import PredictionHistoryPage from './PredictionHistoryPage'
-import type { Patient, HealthRecord, Prediction } from '@/types'
+import type { Patient, HealthRecord, Prediction, PredictionRiskFilter, DashboardEventNavigationState } from '@/types'
 
 const GLOBAL_PAGE_LIMIT = 20
+const REALTIME_COALESCE_MS = 400
+
+const MONTH_FORMATTER = new Intl.DateTimeFormat('es-MX', { timeZone: BUSINESS_TIMEZONE, month: 'long', year: 'numeric' })
+const DAY_FORMATTER   = new Intl.DateTimeFormat('es-MX', { timeZone: BUSINESS_TIMEZONE, weekday: 'long', day: 'numeric' })
+
+function monthLabel(dateKey: string): string {
+  const label = MONTH_FORMATTER.format(new Date(`${dateKey}T12:00:00Z`))
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+function dayLabel(dateKey: string): string {
+  const label = DAY_FORMATTER.format(new Date(`${dateKey}T12:00:00Z`))
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
 
 // Reached when the route has no :patientId (e.g. the Sidebar links to the
 // bare /predictions — see router.tsx). Shows the médico's own global
 // prediction history — GET /api/predictions, scoped server-side by
-// patient.medicoId (Bloque J security fix) — instead of the Bloque I
-// patient picker, which duplicated PatientsPage's own search. Real
-// server-side pagination; no "fetch all and paginate client-side".
+// patient.medicoId — instead of the Bloque I patient picker, which
+// duplicated PatientsPage's own search. Real server-side pagination,
+// search, date/risk filtering (U6.2); no "fetch all and filter/paginate
+// client-side".
 function GlobalPredictionHistory() {
   const navigate = useNavigate()
+  const { connected, lastDashboardActivity, clearLastDashboardActivity } = useSocket()
+
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -33,22 +50,126 @@ function GlobalPredictionHistory() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  // U6.2 — filters. `search` is the raw input (updates every keystroke);
+  // `debouncedSearch` is what's actually sent, ~350ms after the user stops
+  // typing. Date/risk controls fetch immediately (discrete actions, not a
+  // typing stream).
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [riskLevel, setRiskLevel] = useState<PredictionRiskFilter | ''>('')
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 350)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  // Any filter change resets to page 1 — mirrors the U5 principle.
+  useEffect(() => { setPage(1) }, [debouncedSearch, from, to, riskLevel])
+
+  const requestIdRef = useRef(0)
+  const load = useCallback(async (silent = false) => {
+    const requestId = ++requestIdRef.current
+    if (!silent) setLoading(true)
     setError(null)
     try {
-      const result = await predictionService.listAll(page, GLOBAL_PAGE_LIMIT)
+      const result = await predictionService.listAll({
+        page, limit: GLOBAL_PAGE_LIMIT,
+        search: debouncedSearch || undefined,
+        from: from || undefined,
+        to: to || undefined,
+        riskLevel: riskLevel || undefined,
+      })
+      if (requestId !== requestIdRef.current) return
       setPredictions(result.data)
       setTotal(result.total)
       setTotalPages(result.totalPages)
+      // Out-of-range correction (same principle as U5): backend never
+      // clamps `page` itself.
+      if (result.total > 0 && page > result.totalPages) {
+        setPage(result.totalPages)
+      } else if (result.total === 0 && page !== 1) {
+        setPage(1)
+      }
     } catch {
-      setError('No se pudo cargar el historial de predicciones')
+      if (requestId !== requestIdRef.current) return
+      if (!silent) setError('No se pudo cargar el historial de predicciones')
     } finally {
-      setLoading(false)
+      if (requestId === requestIdRef.current && !silent) setLoading(false)
     }
-  }, [page])
+  }, [page, debouncedSearch, from, to, riskLevel])
 
   useEffect(() => { load() }, [load])
+
+  // U6.2 — dashboard_activity_changed is reused as-is (already emitted to
+  // user:{userId} after every persisted Prediction, no new event, no
+  // per-patient subscription needed for a doctor-scoped global view).
+  // Treated strictly as invalidation: never infer from the payload whether
+  // a new Prediction matches the active filters — canonical HTTP always
+  // decides. Coalesced ~400ms so a burst of nearby activity collapses into
+  // one refetch.
+  const coalesceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleRefresh = useCallback(() => {
+    if (coalesceTimerRef.current) clearTimeout(coalesceTimerRef.current)
+    coalesceTimerRef.current = setTimeout(() => {
+      coalesceTimerRef.current = null
+      load(true)
+    }, REALTIME_COALESCE_MS)
+  }, [load])
+
+  useEffect(() => {
+    if (!lastDashboardActivity) return
+    scheduleRefresh()
+    clearLastDashboardActivity()
+  }, [lastDashboardActivity, scheduleRefresh, clearLastDashboardActivity])
+
+  // Reconnect resync — same pattern already validated in O4.2/U2: skip the
+  // very first connection (the mount-driven load above already covers it),
+  // treat any subsequent `connected` transition as a genuine reconnect.
+  const hasConnectedOnceRef = useRef(false)
+  useEffect(() => {
+    if (!connected) return
+    if (!hasConnectedOnceRef.current) { hasConnectedOnceRef.current = true; return }
+    scheduleRefresh()
+  }, [connected, scheduleRefresh])
+
+  useEffect(() => {
+    return () => { if (coalesceTimerRef.current) clearTimeout(coalesceTimerRef.current) }
+  }, [])
+
+  // U6.2 §13 — binding decision: reuse the existing DashboardEventNavigationState
+  // mechanism (O3-FIX-4/5) rather than the old `/predictions/:patientId`
+  // navigation. Known, documented limitation (not solved here): if this
+  // Prediction is outside PatientDetail's currently-loaded Risk Evolution
+  // window, exact highlighting may not apply — deferred to U8.
+  const goToPrediction = (pred: Prediction) => {
+    const nav: DashboardEventNavigationState = {
+      target: { kind: 'PREDICTION', id: pred.id },
+      calendarEventId: pred.id,
+      eventDate: pred.predictedAt,
+    }
+    navigate(`/patients/${pred.patientId}`, { state: { dashboardEventNav: nav } })
+  }
+
+  // U6.2 — presentation-only grouping of the CURRENT page's already
+  // chronologically-ordered predictions, by business month/day
+  // (America/Mexico_City). A day/month may legitimately repeat on another
+  // page if the page boundary splits it — never distorted to avoid that.
+  const groups: { monthKey: string; dayKey: string; items: Prediction[] }[] = []
+  for (const pred of predictions) {
+    const dayKey = getBusinessDateKey(pred.predictedAt)
+    const monthKey = dayKey.slice(0, 7)
+    const last = groups[groups.length - 1]
+    if (last && last.dayKey === dayKey) {
+      last.items.push(pred)
+    } else {
+      groups.push({ monthKey, dayKey, items: [pred] })
+    }
+  }
+
+  const clearFilters = () => { setSearch(''); setFrom(''); setTo('') ; setRiskLevel('') }
+  const hasActiveFilters = debouncedSearch || from || to || riskLevel
 
   return (
     <div className="max-w-2xl mx-auto mt-4 space-y-4">
@@ -62,6 +183,53 @@ function GlobalPredictionHistory() {
         </p>
       </div>
 
+      {/* U6.2 — filter controls */}
+      <div className="bg-card rounded-xl border border-border p-4 space-y-3">
+        <div className="relative">
+          <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar por nombre o CURP..."
+            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+          />
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="date"
+            value={from}
+            onChange={e => setFrom(e.target.value)}
+            className="px-2.5 py-1.5 text-xs rounded-lg border border-border bg-card"
+          />
+          <span className="text-xs text-muted-foreground">a</span>
+          <input
+            type="date"
+            value={to}
+            onChange={e => setTo(e.target.value)}
+            className="px-2.5 py-1.5 text-xs rounded-lg border border-border bg-card"
+          />
+          <select
+            value={riskLevel}
+            onChange={e => setRiskLevel(e.target.value as PredictionRiskFilter | '')}
+            className="px-2.5 py-1.5 text-xs rounded-lg border border-border bg-card cursor-pointer"
+          >
+            <option value="">Todos los niveles</option>
+            <option value="LOW">Bajo</option>
+            <option value="MODERATE">Moderado</option>
+            <option value="HIGH">Alto</option>
+          </select>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="text-xs text-primary hover:underline ml-auto"
+            >
+              Limpiar filtros
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -72,7 +240,7 @@ function GlobalPredictionHistory() {
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <p className="font-medium text-red-600">{error}</p>
             <button
-              onClick={load}
+              onClick={() => load()}
               className="mt-3 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
             >
               Reintentar
@@ -81,30 +249,46 @@ function GlobalPredictionHistory() {
         ) : predictions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <History className="w-12 h-12 text-muted-foreground/30 mb-3" />
-            <p className="font-medium text-foreground">Aún no tienes predicciones registradas.</p>
+            <p className="font-medium text-foreground">
+              {hasActiveFilters ? 'Ningún resultado para estos filtros.' : 'Aún no tienes predicciones registradas.'}
+            </p>
           </div>
         ) : (
-          <div className="divide-y divide-border">
-            {predictions.map(pred => (
-              <button
-                key={pred.id}
-                onClick={() => navigate(`/predictions/${pred.patientId}`)}
-                className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-accent/50 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
-                    {pred.patientName ?? pred.patientId}
-                  </p>
-                  <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
-                    <span className="font-mono">Score: {formatScore(pred.riskScore)}</span>
-                    {pred.isAnomaly && (
-                      <span className="text-purple-600 font-medium">⚠ Anomalía</span>
-                    )}
-                    <span>{formatDateTime(pred.predictedAt)}</span>
+          <div>
+            {groups.map(group => (
+              <div key={group.dayKey}>
+                {(groups.indexOf(group) === 0 || groups[groups.indexOf(group) - 1].monthKey !== group.monthKey) && (
+                  <div className="px-4 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide bg-accent/30">
+                    {monthLabel(group.monthKey + '-01')}
                   </div>
+                )}
+                <div className="px-4 pt-2 pb-1 text-[11px] font-medium text-muted-foreground">
+                  {dayLabel(group.dayKey)}
                 </div>
-                <RiskBadge level={pred.riskLevel} size="sm" />
-              </button>
+                <div className="divide-y divide-border">
+                  {group.items.map(pred => (
+                    <button
+                      key={pred.id}
+                      onClick={() => goToPrediction(pred)}
+                      className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-accent/50 transition-colors"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {pred.patientName ?? pred.patientId}
+                        </p>
+                        <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
+                          <span className="font-mono">Score: {formatScore(pred.riskScore)}</span>
+                          {pred.isAnomaly && (
+                            <span className="text-purple-600 font-medium">⚠ Anomalía</span>
+                          )}
+                          <span>{formatDateTime(pred.predictedAt)}</span>
+                        </div>
+                      </div>
+                      <RiskBadge level={pred.riskLevel} size="sm" />
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}
