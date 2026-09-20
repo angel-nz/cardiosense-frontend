@@ -47,17 +47,21 @@ export interface AlertListParams {
   limit?: number
   unread?: boolean
   severity?: AlertSeverity
+  // U7.2 — server-side search: patient CURP, patient name, or alert
+  // message (see alert.repository.ts for the exact predicate).
+  search?: string
 }
 
 export const alertService = {
-  // GET /api/alerts — supports page/limit/unread/severity (severity sent
-  // uppercase to match the backend's Zod enum).
+  // GET /api/alerts — supports page/limit/unread/severity/search (severity
+  // sent uppercase to match the backend's Zod enum).
   async list(params: AlertListParams = {}): Promise<AlertListResponse> {
     const query: Record<string, unknown> = {}
     if (params.page) query.page = params.page
     if (params.limit) query.limit = params.limit
     if (params.unread !== undefined) query.unread = params.unread
     if (params.severity) query.severity = params.severity.toUpperCase()
+    if (params.search) query.search = params.search
 
     const { data } = await api.get<BackendAlertList>('/alerts', { params: query })
     return {

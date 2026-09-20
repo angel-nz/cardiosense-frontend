@@ -1,9 +1,11 @@
-import { useState } from 'react'
-import { Bell, CheckCheck, AlertTriangle, Info, Search, Loader2 } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Bell, CheckCheck, AlertTriangle, Info, Search, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn, SEVERITY_CONFIG, timeAgo, formatScore } from '@/lib/utils'
-import type { AlertSeverity } from '@/types'
+import type { AlertSeverity, Alert } from '@/types'
 import { useNavigate } from 'react-router-dom'
 import { useAlerts } from '@/context/AlertsContext'
+import { useSocket } from '@/context/SocketContext'
+import { alertService } from '@/services/alertService'
 
 const FILTER_OPTIONS: Array<{ value: AlertSeverity | 'all'; label: string; icon: React.ElementType }> = [
   { value: 'all',      label: 'Todas',       icon: Bell },
@@ -12,27 +14,174 @@ const FILTER_OPTIONS: Array<{ value: AlertSeverity | 'all'; label: string; icon:
   { value: 'info',     label: 'Información', icon: Info },
 ]
 
+const LIMIT_OPTIONS = [10, 25, 50] as const
+const REALTIME_COALESCE_MS = 400
+
 export default function AlertsPage() {
   const navigate = useNavigate()
-  const { alerts, unreadCount, loading, error, refetch, markAsRead, markAllRead } = useAlerts()
+  // U7.2 — global concerns (badge/topbar unreadCount, markAsRead/
+  // markAllRead mutations) stay sourced from the shared AlertsContext,
+  // untouched. The VISIBLE, paginated list below is now this page's own
+  // independent canonical HTTP state — no longer `useAlerts().alerts`.
+  const { unreadCount, markAsRead, markAllRead } = useAlerts()
+  const { connected, lastAlert } = useSocket()
+
+  const [alerts, setAlerts] = useState<Alert[]>([])
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(10)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
   const [severityFilter, setSeverityFilter] = useState<AlertSeverity | 'all'>('all')
   const [readFilter, setReadFilter] = useState<'all' | 'unread' | 'read'>('all')
   const [search, setSearch] = useState('')
-  const [actionError, setActionError] = useState<string | null>(null)
+  const [debouncedSearch, setDebouncedSearch] = useState('')
 
-  const filtered = alerts.filter(a => {
-    if (severityFilter !== 'all' && a.severity !== severityFilter) return false
-    if (readFilter === 'unread' && a.isRead) return false
-    if (readFilter === 'read' && !a.isRead) return false
-    if (search && !a.patientName.toLowerCase().includes(search.toLowerCase()) &&
-        !a.message.toLowerCase().includes(search.toLowerCase())) return false
-    return true
-  })
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 350)
+    return () => clearTimeout(timer)
+  }, [search])
 
+  // Any filter/search/limit change resets to page 1 (U5/U6 principle).
+  useEffect(() => { setPage(1) }, [debouncedSearch, severityFilter, readFilter, limit])
+
+  const requestIdRef = useRef(0)
+  // U7.2-FIX-2 — pure lifecycle bookkeeping (never read directly by JSX —
+  // only used inside load() to decide whether THIS settling request may
+  // touch the visible loading/error state; the actual visible state stays
+  // ordinary React state via setLoading/setError, satisfying "don't derive
+  // render from a ref"). Separates two previously-conflated concerns:
+  // requestIdRef answers "is this response still current enough to update
+  // canonical data", while initialLoadDoneRef answers "has the page ever
+  // successfully established its canonical UI". A newer request's `silent`
+  // flag must never be able to strand an older request's loading=true —
+  // under React.StrictMode's intentional double-invoke of this mount
+  // effect (see below), the SECOND invocation starts a `silent` request
+  // before the first one resolves, which used to bump requestIdRef and
+  // make the original non-silent request stale by the time it settled —
+  // with neither request left able to clear `loading` (the stale one is
+  // skipped by the requestId check, the silent one skipped clearing by
+  // design). Gating on initialLoadDoneRef instead of `silent` fixes this:
+  // whichever request is actually current when it settles clears the
+  // spinner/surfaces the error, regardless of which flag it happened to
+  // carry.
+  const initialLoadDoneRef = useRef(false)
+  // `_silent` is kept as a parameter purely so call sites can still
+  // document their own intent (a background/realtime/mutation refresh vs.
+  // a deliberate foreground one) — it is deliberately NOT consulted below;
+  // initialLoadDoneRef alone decides whether this settling request may
+  // touch loading/error, which is the whole point of this fix.
+  const load = useCallback(async (_silent = false) => {
+    const requestId = ++requestIdRef.current
+    if (!initialLoadDoneRef.current) setLoading(true)
+    setError(null)
+    try {
+      const result = await alertService.list({
+        page, limit,
+        search: debouncedSearch || undefined,
+        severity: severityFilter === 'all' ? undefined : severityFilter,
+        // "unread"/"read" map to the existing boolean API meaning exactly
+        // (unread=true → isRead:false server-side); "all" omits it.
+        unread: readFilter === 'all' ? undefined : readFilter === 'unread',
+      })
+      if (requestId !== requestIdRef.current) return
+      setAlerts(result.data)
+      setTotal(result.total)
+      setTotalPages(result.totalPages)
+      // Out-of-range correction (U5/U6 principle) — backend never clamps
+      // `page` itself; especially relevant right after mark-read mutations
+      // under readFilter === 'unread'.
+      if (result.total > 0 && page > result.totalPages) {
+        setPage(result.totalPages)
+      } else if (result.total === 0 && page !== 1) {
+        setPage(1)
+      }
+      // First successful settlement of the current request establishes
+      // canonical UI and clears the spinner — unconditionally, whether or
+      // not THIS call was invoked with silent=true (StrictMode can make
+      // the authoritative settling request a silent one). Once
+      // established, later calls (all genuinely silent — search/filter/
+      // realtime/reconnect/mutations) never touch loading/error again,
+      // regardless of their own `silent` value.
+      if (!initialLoadDoneRef.current) {
+        initialLoadDoneRef.current = true
+        setLoading(false)
+      }
+    } catch {
+      if (requestId !== requestIdRef.current) return
+      // Before initial establishment, the current request's failure must
+      // surface the error and end loading even if it happened to be
+      // invoked as silent — otherwise the page is stuck on a spinner with
+      // no way to reach the error/retry UI at all. After establishment, a
+      // failed background refresh must NOT destroy already-visible
+      // canonical rows with a full-page error — silently keep the
+      // existing `alerts` as-is.
+      if (!initialLoadDoneRef.current) {
+        setError('No se pudieron cargar las alertas')
+        setLoading(false)
+      }
+    }
+  }, [page, limit, debouncedSearch, severityFilter, readFilter])
+
+  // U7.2-FIX-1 — reactively reloads on every filter/search/page/limit
+  // change (all in `load`'s own useCallback deps above). Whether THIS
+  // particular invocation shows the full-page spinner or silently
+  // refreshes is now decided entirely inside load() via
+  // initialLoadDoneRef, not by which of load()/load(true) is called here
+  // — so this effect no longer needs its own first-vs-subsequent
+  // bookkeeping (the previous hasLoadedOnceRef branching is gone; it
+  // could itself be double-invoked identically under StrictMode without
+  // reintroducing the stranded-loading bug, since load()'s own internal
+  // gate is what actually matters).
+  useEffect(() => { load() }, [load])
+
+  // U7.2 — new_alert is consumed here independently of AlertsContext's own
+  // (unchanged) handling — multiple independent consumers of the same
+  // SocketContext scalar is an already-established pattern (P5/O4.2).
+  // Never locally prepended into this page's canonical collection — HTTP
+  // always decides whether/where a new Alert fits the active page/filters.
+  const coalesceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleRefresh = useCallback(() => {
+    if (coalesceTimerRef.current) clearTimeout(coalesceTimerRef.current)
+    coalesceTimerRef.current = setTimeout(() => {
+      coalesceTimerRef.current = null
+      load(true)
+    }, REALTIME_COALESCE_MS)
+  }, [load])
+
+  useEffect(() => {
+    if (!lastAlert) return
+    scheduleRefresh()
+    // Deliberately NOT calling clearLastAlert() here — AlertsContext's own
+    // effect already consumes/clears it for the global badge; this page is
+    // a passive second observer of the same signal.
+  }, [lastAlert, scheduleRefresh])
+
+  const hasConnectedOnceRef = useRef(false)
+  useEffect(() => {
+    if (!connected) return
+    if (!hasConnectedOnceRef.current) { hasConnectedOnceRef.current = true; return }
+    scheduleRefresh()
+  }, [connected, scheduleRefresh])
+
+  useEffect(() => {
+    return () => { if (coalesceTimerRef.current) clearTimeout(coalesceTimerRef.current) }
+  }, [])
+
+  // U7.2 — mark-read/mark-all-read: the existing AlertsContext action
+  // persists + updates its OWN global state as before (unreadCount/badge).
+  // This page never mutates its own paginated `alerts` as the source of
+  // truth — it always converges via a canonical refetch afterward, since
+  // the marked Alert(s) may no longer belong to the active filtered
+  // collection (e.g. readFilter === 'unread').
   const handleMarkAsRead = async (id: string) => {
     setActionError(null)
     try {
       await markAsRead(id)
+      load(true)
     } catch {
       setActionError('No se pudo marcar la alerta como leída. Intenta de nuevo.')
     }
@@ -42,10 +191,13 @@ export default function AlertsPage() {
     setActionError(null)
     try {
       await markAllRead()
+      load(true)
     } catch {
       setActionError('No se pudieron marcar todas las alertas como leídas. Intenta de nuevo.')
     }
   }
+
+  const handleLimitChange = (next: number) => setLimit(next)
 
   if (loading) {
     return (
@@ -62,7 +214,7 @@ export default function AlertsPage() {
         <AlertTriangle className="w-10 h-10 text-red-400 mb-3" />
         <p className="font-medium text-foreground">{error}</p>
         <button
-          onClick={refetch}
+          onClick={() => load()}
           className="mt-4 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
         >
           Reintentar
@@ -79,8 +231,8 @@ export default function AlertsPage() {
           <h1 className="text-2xl font-bold text-foreground">Centro de Alertas</h1>
           <p className="text-muted-foreground text-sm mt-1">
             {unreadCount > 0
-              ? <><span className="text-red-600 font-semibold">{unreadCount} alertas sin leer</span> · {alerts.length} en total</>
-              : `${alerts.length} alertas · Todo al día`
+              ? <><span className="text-red-600 font-semibold">{unreadCount} alertas sin leer</span> · {total} en total</>
+              : `${total} alertas · Todo al día`
             }
           </p>
         </div>
@@ -102,24 +254,6 @@ export default function AlertsPage() {
         </div>
       )}
 
-      {/* Severity summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: 'Críticas',     count: alerts.filter(a => a.severity === 'critical').length, color: 'text-red-600',   bg: 'bg-red-50',   border: 'border-red-200',   dot: 'bg-red-500' },
-          { label: 'Advertencias', count: alerts.filter(a => a.severity === 'warning').length,  color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', dot: 'bg-amber-500' },
-          { label: 'Informativas', count: alerts.filter(a => a.severity === 'info').length,     color: 'text-blue-600',  bg: 'bg-blue-50',  border: 'border-blue-200',  dot: 'bg-blue-500' },
-          { label: 'Sin leer',     count: unreadCount,                                          color: 'text-foreground',bg: 'bg-card',     border: 'border-border',    dot: 'bg-gray-400' },
-        ].map(item => (
-          <div key={item.label} className={cn('rounded-xl border px-4 py-3 text-center', item.bg, item.border)}>
-            <div className="flex items-center justify-center gap-1.5">
-              <div className={cn('w-2 h-2 rounded-full', item.dot)} />
-              <p className={cn('text-2xl font-bold', item.color)}>{item.count}</p>
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">{item.label}</p>
-          </div>
-        ))}
-      </div>
-
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
@@ -128,11 +262,11 @@ export default function AlertsPage() {
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar por paciente o mensaje..."
+            placeholder="Buscar por paciente, CURP o mensaje..."
             className="w-full pl-9 pr-4 py-2.5 text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all"
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {FILTER_OPTIONS.map(opt => (
             <button
               key={opt.value}
@@ -162,7 +296,7 @@ export default function AlertsPage() {
 
       {/* Alert list */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
-        {filtered.length === 0 ? (
+        {alerts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Bell className="w-12 h-12 text-muted-foreground/30 mb-3" />
             <p className="font-medium text-foreground">Sin alertas</p>
@@ -170,7 +304,7 @@ export default function AlertsPage() {
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {filtered.map(alert => {
+            {alerts.map(alert => {
               const cfg = SEVERITY_CONFIG[alert.severity]
               return (
                 <div
@@ -224,11 +358,42 @@ export default function AlertsPage() {
             })}
           </div>
         )}
-        {filtered.length > 0 && (
-          <div className="px-5 py-3 border-t border-border text-xs text-muted-foreground">
-            Mostrando {filtered.length} de {alerts.length} alertas
+
+        {/* U7.2 — pagination controls */}
+        <div className="flex items-center justify-between flex-wrap gap-3 px-5 py-3 border-t border-border text-xs text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <span>Mostrar</span>
+            <select
+              value={limit}
+              onChange={e => handleLimitChange(Number(e.target.value))}
+              className="border border-border rounded-md px-2 py-1 bg-card cursor-pointer"
+            >
+              {LIMIT_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+            <span>por página · {total} alerta{total === 1 ? '' : 's'}</span>
           </div>
-        )}
+          {totalPages > 1 && (
+            <div className="flex items-center gap-3">
+              <span>Página {page} de {totalPages}</span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                  className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
