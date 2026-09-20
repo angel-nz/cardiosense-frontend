@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 import { io, type Socket } from 'socket.io-client'
-import type { SocketAlert, SocketPrediction, SocketHealthRecord, SocketPatientUpdate } from '@/types'
+import type { SocketAlert, SocketPrediction, SocketHealthRecord, SocketPatientUpdate, SocketDashboardActivity } from '@/types'
 import { useAuth } from './AuthContext'
 
 // Same host as the backend, without the /api prefix (Socket.IO attaches to
@@ -24,12 +24,17 @@ interface SocketContextValue {
   lastPrediction: SocketPrediction | null
   lastHealthRecord: SocketHealthRecord | null
   lastPatientUpdate: SocketPatientUpdate | null
+  // O4.2 — dashboard_activity_changed, same user:{userId} room as lastAlert.
+  // Invalidation-only: no timeline data, just "refetch your canonical
+  // Dashboard Calendar state" for whichever consumer cares.
+  lastDashboardActivity: SocketDashboardActivity | null
   subscribeToPatient: (patientId: string) => void
   unsubscribeFromPatient: (patientId: string) => void
   clearLastAlert: () => void
   clearLastPrediction: () => void
   clearLastHealthRecord: () => void
   clearLastPatientUpdate: () => void
+  clearLastDashboardActivity: () => void
 }
 
 const SocketContext = createContext<SocketContextValue | null>(null)
@@ -47,6 +52,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [lastPrediction, setLastPrediction] = useState<SocketPrediction | null>(null)
   const [lastHealthRecord, setLastHealthRecord] = useState<SocketHealthRecord | null>(null)
   const [lastPatientUpdate, setLastPatientUpdate] = useState<SocketPatientUpdate | null>(null)
+  const [lastDashboardActivity, setLastDashboardActivity] = useState<SocketDashboardActivity | null>(null)
   const socketRef = useRef<Socket | null>(null)
 
   // ─── INT-16/17 subscription reconciliation ──────────────────────────────
@@ -148,6 +154,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     // INT-18 — new_alert → user:{userId} (personal room, always joined).
     socket.on('new_alert', (data: SocketAlert) => setLastAlert(data))
 
+    // O4.2 — dashboard_activity_changed → same user:{userId} room, no
+    // subscribe_patient needed. Same "last event" scalar pattern as the
+    // other three below — not a queue (documented limitation already
+    // accepted for lastAlert/lastPrediction/lastHealthRecord); for an
+    // invalidation-only signal consumed via canonical refetch, a coalesced
+    // burst collapsing into the latest value is harmless, not lossy.
+    socket.on('dashboard_activity_changed', (data: SocketDashboardActivity) => setLastDashboardActivity(data))
+
     // INT-19/20/21 — all three are emitted to patient:{patientId} (see
     // socketServer.ts room joins via subscribe_patient/INT-16), so this
     // client only ever receives them for whichever patient is currently
@@ -223,6 +237,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const clearLastPrediction = useCallback(() => setLastPrediction(null), [])
   const clearLastHealthRecord = useCallback(() => setLastHealthRecord(null), [])
   const clearLastPatientUpdate = useCallback(() => setLastPatientUpdate(null), [])
+  const clearLastDashboardActivity = useCallback(() => setLastDashboardActivity(null), [])
 
   return (
     <SocketContext.Provider value={{
@@ -231,12 +246,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       lastPrediction,
       lastHealthRecord,
       lastPatientUpdate,
+      lastDashboardActivity,
       subscribeToPatient,
       unsubscribeFromPatient,
       clearLastAlert,
       clearLastPrediction,
       clearLastHealthRecord,
       clearLastPatientUpdate,
+      clearLastDashboardActivity,
     }}>
       {children}
     </SocketContext.Provider>

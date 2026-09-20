@@ -8,7 +8,7 @@ import type {
 // riskLevel/fromLevel/toLevel/severity arrive uppercase from Prisma enums,
 // same as every other prediction/alert endpoint — normalized to lowercase
 // here, exactly like predictionService.ts/alertService.ts already do.
-interface BackendTimelineEvent {
+export interface BackendTimelineEvent {
   id: string
   patientId: string
   eventType: 'CLINICAL_RECORD' | 'PREDICTION' | 'ALERT' | 'RISK_CHANGE'
@@ -16,7 +16,7 @@ interface BackendTimelineEvent {
   metadata: Record<string, unknown>
 }
 
-function normalizeEvent(raw: BackendTimelineEvent): PatientTimelineEvent {
+export function normalizeEvent(raw: BackendTimelineEvent): PatientTimelineEvent {
   const base = { id: raw.id, patientId: raw.patientId, eventDate: raw.eventDate }
   switch (raw.eventType) {
     case 'CLINICAL_RECORD':

@@ -225,6 +225,37 @@ export type PatientTimelineEvent =
   | AlertTimelineEvent
   | RiskChangeTimelineEvent
 
+// GET /api/dashboard/calendar (O2) — same discriminated union as
+// PatientTimelineEvent, decorated with patientName. Deliberately NOT added
+// to PatientTimelineEvent itself: Patient Timeline is a single-patient
+// context (P2/P3) and never needed it — same separation backend already
+// applies (dashboard.calendar.ts intersection type, not a change to
+// patient.timeline.ts).
+export type DashboardCalendarEvent = PatientTimelineEvent & { patientName: string }
+
+// O3-FIX-4 — carried via React Router navigation `state` (Dashboard
+// Calendar → PatientDetailPage) so a click on a specific event can select
+// the exact same target P4 already knows how to select/highlight, instead
+// of just opening the patient's page with no selection. RISK_CHANGE maps
+// to 'PREDICTION' with its currentPredictionId — never previousPredictionId
+// — reusing the same mechanism rather than needing a third kind.
+export type PatientDetailNavigationTarget =
+  | { kind: 'HEALTH_RECORD'; id: string }
+  | { kind: 'PREDICTION'; id: string }
+
+// O3-FIX-5 — extends the above with what PatientCalendar itself needs to
+// reposition/select on arrival: `calendarEventId` is the Dashboard timeline
+// event's OWN `.id` — for RISK_CHANGE this is `risk-change:{currentPredictionId}`
+// (P2's derived-event id format), which is NOT the same string as `target.id`
+// above (that one is always a real Prediction/HealthRecord id, since
+// RISK_CHANGE's external target is its currentPredictionId in Risk
+// Evolution). `eventDate` resolves which business month/day to open.
+export interface DashboardEventNavigationState {
+  target: PatientDetailNavigationTarget
+  calendarEventId: string
+  eventDate: string
+}
+
 export interface CreatePredictionRequest {
   patientId: string
   healthRecordId?: string
@@ -350,6 +381,16 @@ export interface SocketPatientUpdate {
   firstName: string
   lastName: string
   isActive: boolean
+}
+
+// O4.2 — dashboard_activity_changed. Invalidation-only signal (user:{userId}
+// room, no subscribe_patient needed) for Dashboard Calendar — deliberately
+// NOT a timeline event: no eventType, no patientName, no risk data. Receivers
+// must always do a canonical GET /api/dashboard/calendar refetch, never
+// build/insert a CLINICAL_RECORD/PREDICTION/RISK_CHANGE/ALERT from this.
+export interface SocketDashboardActivity {
+  patientId: string
+  eventDate: string
 }
 
 // ─── API ─────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, Activity, Heart, Phone, Calendar,
   User, FileText, AlertTriangle, Plus, Edit, Loader2, X, Check,
@@ -18,7 +18,7 @@ import { patientService } from '@/services/patientService'
 import { recordService } from '@/services/recordService'
 import { predictionService } from '@/services/predictionService'
 import { useSocket } from '@/context/SocketContext'
-import type { Patient, HealthRecord, Prediction, UpdatePatientRequest, CreateHealthRecordRequest } from '@/types'
+import type { Patient, HealthRecord, Prediction, UpdatePatientRequest, CreateHealthRecordRequest, DashboardEventNavigationState } from '@/types'
 
 interface InfoRowProps {
   label: string
@@ -76,9 +76,27 @@ const RECORD_INITIAL: RecordFormState = {
   totChol: '', sysBP: '', diaBP: '', bmi: '', heartRate: '', glucose: '', notes: '',
 }
 
+// O3-FIX-4/5 — defensively validates react-router `location.state` before
+// trusting it as a Dashboard Calendar navigation payload. `location.state`
+// is `unknown` by nature (anything could have pushed a history entry with
+// arbitrary state) — never cast it directly.
+function readDashboardEventNav(state: unknown): DashboardEventNavigationState | null {
+  if (!state || typeof state !== 'object') return null
+  const nav = (state as Record<string, unknown>).dashboardEventNav
+  if (!nav || typeof nav !== 'object') return null
+  const { target, calendarEventId, eventDate } = nav as Record<string, unknown>
+  if (typeof calendarEventId !== 'string' || typeof eventDate !== 'string') return null
+  if (!target || typeof target !== 'object') return null
+  const { kind, id } = target as Record<string, unknown>
+  if (typeof id !== 'string') return null
+  if (kind !== 'HEALTH_RECORD' && kind !== 'PREDICTION') return null
+  return { target: { kind, id }, calendarEventId, eventDate }
+}
+
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const { subscribeToPatient, unsubscribeFromPatient, lastPrediction, lastHealthRecord, lastPatientUpdate,
           clearLastPrediction, clearLastHealthRecord, clearLastPatientUpdate } = useSocket()
 
@@ -114,6 +132,16 @@ export default function PatientDetailPage() {
   const [timelineFeedback, setTimelineFeedback] = useState<string | null>(null)
   const recordRowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map())
   const riskEvolutionRef = useRef<HTMLDivElement>(null)
+  // O3-FIX-4/5 — `dashboardNav` is the copy of location.state's payload,
+  // read once and kept in React state for the rest of this patient visit
+  // (independent of the router's own history-state lifecycle, which gets
+  // cleared right after reading — section 19). `navTargetAppliedRef` guards
+  // only the EXTERNAL (History/Risk Evolution) side of it; PatientCalendar
+  // consumes `dashboardNav`'s calendar fields independently, on its own
+  // timing (its own month may still be loading) — the two must not be
+  // coupled into a single "done" flag (section 20).
+  const [dashboardNav, setDashboardNav] = useState<DashboardEventNavigationState | null>(null)
+  const navTargetAppliedRef = useRef(false)
 
   // Patient switch (A→B): clear cross-navigation state — a highlighted
   // record/prediction from the previous patient must never survive.
@@ -121,6 +149,8 @@ export default function PatientDetailPage() {
     setSelectedHealthRecordId(null)
     setSelectedPredictionId(null)
     setTimelineFeedback(null)
+    setDashboardNav(null)
+    navTargetAppliedRef.current = false
   }, [id])
 
   // CLINICAL_RECORD click. `records` (loadHistory, GET /:id/history) is
@@ -168,6 +198,52 @@ export default function PatientDetailPage() {
     setSelectedPredictionId(null)
     setTimelineFeedback(null)
   }, [])
+
+  // O3-FIX-4 — apply a Dashboard Calendar navigation target, if present,
+  // reusing the exact same P4 selection handlers a PatientCalendar click
+  // uses (same exact-ID matching, same exclusivity, same scroll/highlight,
+  // same "not in currently visible window" feedback — no second
+  // implementation). Waits for records/predictions to finish their own
+  // fetch before attempting the match: matching against the still-empty
+  // initial arrays would wrongly report a valid target as "not found"
+  // before the real data ever had a chance to arrive (section 12).
+  // Consumed at most once per patient visit (navTargetConsumedRef); the
+  // history entry's own state is also cleared via `replace` so a later
+  // refresh doesn't hand the same target back.
+  // O3-FIX-4/5 — read the Dashboard Calendar navigation payload (if any)
+  // from location.state exactly once per patient visit, into `dashboardNav`
+  // (React state — persists independent of the router's own history-state
+  // lifecycle). Clears the history entry's state right after copying it,
+  // so a later refresh/back doesn't hand the same payload back — safe to
+  // do immediately, since `dashboardNav` already holds everything both
+  // consumers (external selection below, and PatientCalendar via its own
+  // prop) need, on their own independent timing (section 19/20).
+  useEffect(() => {
+    if (dashboardNav) return
+    const nav = readDashboardEventNav(location.state)
+    if (!nav) return
+    setDashboardNav(nav)
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, location.pathname, dashboardNav, navigate])
+
+  // O3-FIX-4 — apply the EXTERNAL (History/Risk Evolution) side of a
+  // Dashboard navigation target, reusing the exact same P4 selection
+  // handlers a PatientCalendar click uses (same exact-ID matching, same
+  // exclusivity, same scroll/highlight, same "not in currently visible
+  // window" feedback — no second implementation). Waits for records/
+  // predictions to finish their own fetch before attempting the match:
+  // matching against the still-empty initial arrays would wrongly report a
+  // valid target as "not found" before the real data ever had a chance to
+  // arrive (section 12). Applied at most once per patient visit
+  // (navTargetAppliedRef) — independent of whether/when PatientCalendar
+  // itself finishes positioning on its own copy of `dashboardNav`.
+  useEffect(() => {
+    if (!dashboardNav || navTargetAppliedRef.current) return
+    if (recordsLoading || predictionsLoading) return
+    navTargetAppliedRef.current = true
+    if (dashboardNav.target.kind === 'HEALTH_RECORD') handleSelectHealthRecord(dashboardNav.target.id)
+    else handleSelectPrediction(dashboardNav.target.id)
+  }, [dashboardNav, recordsLoading, predictionsLoading, handleSelectHealthRecord, handleSelectPrediction])
 
   // Edit patient
   const [editing, setEditing] = useState(false)
@@ -584,6 +660,7 @@ export default function PatientDetailPage() {
             onSelectPrediction={handleSelectPrediction}
             onSelectionClear={handleClearTimelineSelection}
             feedback={timelineFeedback}
+            navigationTarget={dashboardNav ? { eventId: dashboardNav.calendarEventId, eventDate: dashboardNav.eventDate } : null}
           />
         </div>
 

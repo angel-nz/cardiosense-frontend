@@ -1,20 +1,22 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Users, Bell, Activity, AlertTriangle, Heart, Loader2 } from 'lucide-react'
+import { Users, Bell, Activity, AlertTriangle, Loader2 } from 'lucide-react'
 import { StatCard } from '@/components/ui/StatCard'
-import { RiskBadge } from '@/components/ui/RiskBadge'
-import { formatScore, timeAgo, SEVERITY_CONFIG, cn, calcAge } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { usePatients } from '@/hooks/usePatients'
 import { useAlerts } from '@/context/AlertsContext'
 import { dashboardService } from '@/services/dashboardService'
+import { DashboardCalendar } from '@/components/dashboard/DashboardCalendar'
 import type { DashboardMetrics } from '@/types'
 
 // Bounded, single-page sample used only for the "high-risk patients"
 // spotlight list below — NOT a global count. The KPI "Riesgo alto" and the
 // "Distribución de riesgo" panel now use the real, médico-scoped aggregate
 // from GET /api/dashboard/stats (Bloque I) instead.
-const HIGH_RISK_SAMPLE_LIMIT = 20
+// (HIGH_RISK_SAMPLE_LIMIT removed — O3-FIX-2 removed the "Pacientes de
+// alto riesgo" spotlight card that used it; only `total`/`error` from
+// usePatients() are still needed, for the "Total pacientes" KPI below.)
 
 const WEEKDAY_LABELS: Record<string, string> = {
   Mon: 'Lun', Tue: 'Mar', Wed: 'Mié', Thu: 'Jue', Fri: 'Vie', Sat: 'Sáb', Sun: 'Dom',
@@ -33,18 +35,18 @@ export default function DashboardPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
 
-  // GET /api/patients?page=1&limit=20 — `total` here is a real, backend-
-  // computed global count (patientService.list -> paginate()), safe to use
-  // as-is. The `patients` array itself is only the first page, used below
-  // strictly as a bounded sample, never presented as "all patients".
-  const { patients, total: totalPatients, loading: patientsLoading, error: patientsError } =
-    usePatients({ limit: HIGH_RISK_SAMPLE_LIMIT })
+  // GET /api/patients — `total` here is a real, backend-computed global
+  // count (patientService.list -> paginate()), safe to use as-is for the
+  // "Total pacientes" KPI. The `patients` array/loading flag are no longer
+  // consumed here (O3-FIX-2 removed the "Pacientes de alto riesgo" card
+  // that used them) — default params, since only `total`/`error` matter now.
+  const { total: totalPatients, error: patientsError } = usePatients()
 
   // Reuses the already-mounted global AlertsContext (fetched once at app
   // root) — visiting the Dashboard does NOT trigger an additional
   // GET /api/alerts request. unreadCount is backend-computed across ALL of
   // the doctor's alerts (not just the loaded page), safe to use directly.
-  const { alerts, unreadCount, loading: alertsLoading, error: alertsError } = useAlerts()
+  const { unreadCount, error: alertsError } = useAlerts()
 
   // GET /api/dashboard/stats (Bloque I) — predictionsToday, riskDistribution
   // (highRiskPatients included), predictionsThisWeek. Medico-scoped
@@ -64,11 +66,11 @@ export default function DashboardPage() {
     return () => { cancelled = true }
   }, [])
 
-  const highRiskSample = useMemo(
-    () => patients.filter(p => p.latestRisk === 'high').slice(0, 5),
-    [patients],
-  )
-  const recentAlerts = useMemo(() => alerts.slice(0, 3), [alerts])
+  // (highRiskSample removed — O3-FIX-2 removed the "Pacientes de alto
+  // riesgo" spotlight card. KPI cards/charts above are untouched.)
+  // (Recent Alerts derived list removed — O3-FIX replaced that Dashboard
+  // section with DashboardCalendar. AlertsContext/alertService/AlertsPage
+  // and the "Alertas activas" KPI above are untouched.)
 
   const weekMaxCount = useMemo(
     () => Math.max(1, ...(metrics?.predictionsThisWeek.map(d => d.count) ?? [0])),
@@ -213,114 +215,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Bottom Row ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-        {/* Recent alerts — real data from the shared AlertsContext */}
-        <div className="bg-card rounded-xl border border-border">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-            <div>
-              <h3 className="font-semibold text-foreground">Alertas recientes</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">Últimas notificaciones</p>
-            </div>
-            <button
-              onClick={() => navigate('/alerts')}
-              className="text-xs text-primary font-medium hover:underline"
-            >
-              Ver todas →
-            </button>
-          </div>
-          {alertsLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 text-primary animate-spin" />
-            </div>
-          ) : alertsError ? (
-            <p className="text-sm text-red-600 text-center py-6">{alertsError}</p>
-          ) : recentAlerts.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">
-              No hay alertas recientes.
-            </p>
-          ) : (
-            <div className="divide-y divide-border">
-              {recentAlerts.map(alert => {
-                const cfg = SEVERITY_CONFIG[alert.severity]
-                return (
-                  <div
-                    key={alert.id}
-                    onClick={() => navigate('/alerts')}
-                    className="flex items-start gap-3 px-5 py-3.5 hover:bg-accent/50 cursor-pointer transition-colors"
-                  >
-                    <div className={cn('w-2 h-2 rounded-full mt-1.5 flex-shrink-0', cfg.dot)} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{alert.patientName}</p>
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">{alert.message}</p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                      <span className={cn('text-[10px] font-bold uppercase', cfg.text)}>{cfg.label}</span>
-                      <span className="text-[10px] text-muted-foreground">{timeAgo(alert.createdAt)}</span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* High-risk patients — bounded sample from the first loaded page
-            only (backend's `risk` filter is a documented no-op — see
-            Bloque B report), explicitly NOT presented as exhaustive. */}
-        <div className="bg-card rounded-xl border border-border">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-            <div>
-              <h3 className="font-semibold text-foreground">Pacientes de alto riesgo</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Entre los {HIGH_RISK_SAMPLE_LIMIT} pacientes más recientes
-              </p>
-            </div>
-            <button
-              onClick={() => navigate('/patients')}
-              className="text-xs text-primary font-medium hover:underline"
-            >
-              Ver todos →
-            </button>
-          </div>
-          {patientsLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 text-primary animate-spin" />
-            </div>
-          ) : patientsError ? (
-            <p className="text-sm text-red-600 text-center py-6">{patientsError}</p>
-          ) : highRiskSample.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">
-              No se encontraron pacientes de alto riesgo entre los más recientes.
-            </p>
-          ) : (
-            <div className="divide-y divide-border">
-              {highRiskSample.map(patient => (
-                <div
-                  key={patient.id}
-                  onClick={() => navigate(`/patients/${patient.id}`)}
-                  className="flex items-center gap-3 px-5 py-3.5 hover:bg-accent/50 cursor-pointer transition-colors group"
-                >
-                  <div className="w-9 h-9 rounded-full bg-red-50 border border-red-200 flex items-center justify-center flex-shrink-0">
-                    <Heart className="w-4 h-4 text-red-500" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {patient.firstName} {patient.lastName}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {patient.latestScore !== undefined && `${formatScore(patient.latestScore)} · `}
-                      {patient.age ?? calcAge(patient.birthDate)} años
-                    </p>
-                  </div>
-                  <RiskBadge level="high" size="sm" />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Dashboard Calendar (O3-FIX-2) — now the entire longitudinal
+          section: DashboardCalendar owns its own internal two-column
+          layout (calendar pane + selected-day events pane), replacing
+          both the old single-card placement (O3-FIX) and the removed
+          "Pacientes de alto riesgo" card entirely. No realtime/polling
+          added (O4 still pending). */}
+      <DashboardCalendar />
     </div>
   )
 }

@@ -45,10 +45,19 @@ interface PatientCalendarProps {
   // longitudinal window (e.g. a Prediction older than the last 20) — owned
   // by the parent, since only it knows what's actually loaded.
   feedback?: string | null
+  // O3-FIX-5 — an external instruction to position and select a specific
+  // timeline event on arrival (Dashboard Calendar → PatientDetailPage →
+  // here). `eventId` is the Calendar event's own `.id` (for RISK_CHANGE
+  // this is `risk-change:{currentPredictionId}`, NOT a Prediction id — see
+  // PatientDetailPage/DashboardCalendar). `eventDate` resolves which
+  // business month/day to open. PatientCalendar remains the sole owner of
+  // its own viewYear/viewMonth/events/fetch — this is a one-shot "go here"
+  // request, not a hand-over of control (section 10/11).
+  navigationTarget?: { eventId: string; eventDate: string } | null
 }
 
 export function PatientCalendar({
-  patientId, onSelectHealthRecord, onSelectPrediction, onSelectionClear, feedback,
+  patientId, onSelectHealthRecord, onSelectPrediction, onSelectionClear, feedback, navigationTarget,
 }: PatientCalendarProps) {
   const now = new Date()
   // P5 — passive listener only: reads the already-flowing signals from the
@@ -64,6 +73,19 @@ export function PatientCalendar({
   const [viewYear, setViewYear] = useState(now.getFullYear())
   const [viewMonth, setViewMonth] = useState(now.getMonth() + 1) // 1-12
   const [events, setEvents] = useState<PatientTimelineEvent[]>([])
+  // O3-FIX-5A — which month `events` currently represents ("YYYY-MM"),
+  // set atomically together with setEvents inside loadMonth. This is the
+  // ground-truth readiness signal for the navigationTarget effect below —
+  // `loading` alone is NOT reliable for that purpose: within the SAME
+  // commit where the mount effect (`useEffect(() => { loadMonth() },
+  // [loadMonth])`, declared earlier) calls loadMonth() and synchronously
+  // sets loading=true, an effect declared later in this component (the
+  // navigationTarget one) still sees that render's STALE loading=false —
+  // state updates from an earlier effect in the same flush aren't visible
+  // to a later effect until the next render. That stale read is exactly
+  // what let a same-month target be marked "consumed" against a still-
+  // empty `events` before the real fetch had a chance to resolve.
+  const [loadedMonthKey, setLoadedMonthKey] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   // P3-02 UX fix: initializes to *today*, not null — opening the calendar
@@ -81,7 +103,6 @@ export function PatientCalendar({
   const requestIdRef = useRef(0)
   const coalesceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasConnectedOnceRef = useRef(false)
-
   // P4-FIX — single explicit cleanup point, called directly from every
   // action that changes the Calendar's temporal context (day click, month
   // nav, "Hoy", patient switch) rather than reactively from a `useEffect`
@@ -114,8 +135,13 @@ export function PatientCalendar({
     setSelectedDateKey(todayKey)
     setSelectedEventId(null)
     setEvents([])
+    setLoadedMonthKey(null)
     setError('')
     onSelectionClear?.()
+    // A Dashboard navigation target belongs to whichever patient it named —
+    // switching patients must not let a stale, already-consumed (or
+    // not-yet-consumed) target from Patient A apply itself to Patient B.
+    navTargetConsumedIdRef.current = null
     // A pending coalesced refresh belongs to whichever patient scheduled
     // it — switching patients must not let a stale timer for the PREVIOUS
     // patient later overwrite this component's (now Patient B's) events
@@ -141,6 +167,7 @@ export function PatientCalendar({
       // a slow Sep response must never overwrite Nov's already-rendered data.
       if (requestId !== requestIdRef.current) return
       setEvents(result)
+      setLoadedMonthKey(`${viewYear}-${String(viewMonth).padStart(2, '0')}`)
     } catch {
       if (requestId !== requestIdRef.current || silent) return
       setError('No se pudo cargar la actividad cardiovascular de este periodo.')
@@ -225,6 +252,66 @@ export function PatientCalendar({
       onSelectionClear?.()
     }
   }, [events, selectedEventId, onSelectionClear])
+
+  // O3-FIX-5/5A — external navigation target (Dashboard Calendar → this
+  // patient's Calendar). Consumed at most once per distinct target
+  // (navTargetConsumedIdRef, compared by eventId — robust to the parent
+  // passing a fresh object each render, since only the underlying id is
+  // compared, not object identity). Three phases:
+  //   1. Target's business month differs from the one currently shown →
+  //      switch viewYear/viewMonth directly (NOT goToPrevMonth/
+  //      goToNextMonth — those call clearEventSelection(), which would
+  //      wrongly clear the EXTERNAL selection PatientDetailPage just
+  //      applied from the very same navigation). loadMonth's own reactive
+  //      effect (keyed on viewYear/viewMonth) fetches the new month; this
+  //      effect re-runs again once that resolves.
+  //   2. `loadedMonthKey` (set atomically with `events` inside loadMonth —
+  //      see its declaration) doesn't yet match the target's month → wait.
+  //      This is the O3-FIX-5A correction: the previous version gated on
+  //      `loading` instead, which is unreliable in the exact same-render
+  //      case demonstrated in that report (a same-month target could see
+  //      loading's stale pre-fetch value in the same commit the mount
+  //      effect kicked off the request, and get marked "consumed" against
+  //      a still-empty `events`). `loadedMonthKey` has no such staleness
+  //      window: it's set in the same state batch as the `events` it
+  //      describes, so "does it match the target's month" is always an
+  //      accurate answer to "is `events` the canonical data I need".
+  //   3. Correct month's data is in → select the business day always
+  //      (useful context even if the specific event turns out to be
+  //      missing), and select/highlight the event ONLY if its exact id is
+  //      present — never an approximate match (section 18 of FIX-5).
+  const navTargetConsumedIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!navigationTarget) return
+    if (navTargetConsumedIdRef.current === navigationTarget.eventId) return
+
+    const targetDateKey = getBusinessDateKey(navigationTarget.eventDate)
+    const [targetYear, targetMonth] = targetDateKey.split('-').map(Number)
+    const targetMonthKey = `${targetYear}-${String(targetMonth).padStart(2, '0')}`
+
+    if (targetYear !== viewYear || targetMonth !== viewMonth) {
+      setSelectedEventId(null)
+      setViewYear(targetYear)
+      setViewMonth(targetMonth)
+      return
+    }
+    if (loadedMonthKey !== targetMonthKey) return
+
+    navTargetConsumedIdRef.current = navigationTarget.eventId
+    setSelectedDateKey(targetDateKey)
+    if (events.some(e => e.id === navigationTarget.eventId)) {
+      setSelectedEventId(navigationTarget.eventId)
+    }
+    // else: day is still selected as useful context, but no event is
+    // highlighted — this month's canonical timeline simply doesn't
+    // contain that id (e.g. a real gap, not something to guess around).
+    // Marked consumed regardless (section 7 of FIX-5A) — a genuinely
+    // missing event must resolve once, not retry indefinitely; if the
+    // fetch itself had FAILED instead (not just "not found"), loadedMonthKey
+    // would simply never reach targetMonthKey and this effect keeps
+    // waiting harmlessly (no automatic retry loop, no polling) until the
+    // user's own Retry succeeds.
+  }, [navigationTarget, viewYear, viewMonth, loadedMonthKey, events])
 
   const days = useMemo(() => buildCalendarDays(viewYear, viewMonth, todayKey), [viewYear, viewMonth, todayKey])
   const eventsByDay = useMemo(() => groupEventsByBusinessDay(events), [events])
