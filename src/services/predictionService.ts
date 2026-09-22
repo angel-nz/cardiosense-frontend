@@ -64,11 +64,16 @@ export const predictionService = {
     return normalizePrediction(data)
   },
 
-  // GET /api/predictions/patient/:patientId
-  async getHistory(patientId: string, limit = 20): Promise<PaginatedResponse<Prediction>> {
-    const { data } = await api.get<BackendPaginated<BackendPrediction>>(
+  // GET /api/predictions/patient/:patientId — U8.2B: optional `targetId`
+  // deep-link resolution. When provided, the backend ignores `page` and
+  // instead returns the canonical page that actually contains the target
+  // Prediction, with `targetResolved` indicating whether it was found —
+  // never a merged/fabricated dataset, always a genuine contiguous page.
+  async getHistory(patientId: string, opts: { limit?: number; targetId?: string } = {}): Promise<PaginatedResponse<Prediction>> {
+    const { limit = 20, targetId } = opts
+    const { data } = await api.get<BackendPaginated<BackendPrediction> & { targetResolved?: boolean }>(
       `/predictions/patient/${patientId}`,
-      { params: { limit } },
+      { params: { limit, ...(targetId ? { targetId } : {}) } },
     )
     return {
       data: data.data.map(normalizePrediction),
@@ -76,6 +81,7 @@ export const predictionService = {
       page: data.page,
       limit: data.limit,
       totalPages: data.totalPages,
+      ...(targetId ? { targetResolved: data.targetResolved } : {}),
     }
   },
 

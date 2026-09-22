@@ -120,10 +120,12 @@ export const patientService = {
     const { data } = await api.get<{
       records: { data: Parameters<typeof normalizeHealthRecord>[0][]; total: number; page: number; limit: number; totalPages: number }
       predictions: unknown[]
+      targetResolved?: boolean
     }>(`/patients/${id}/history`, { params })
     return {
       records: { ...data.records, data: data.records.data.map(normalizeHealthRecord) },
       predictions: data.predictions,
+      ...(params.targetId ? { targetResolved: data.targetResolved } : {}),
     }
   },
 }

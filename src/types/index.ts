@@ -171,6 +171,8 @@ export interface PaginatedHealthRecords {
 export interface PatientHistoryResponse {
   records: PaginatedHealthRecords
   predictions: unknown[]
+  // U8.2B — only present when `targetId` was supplied in the request.
+  targetResolved?: boolean
 }
 
 export type HistorySortBy = 'recordedAt' | 'sysBP' | 'diaBP' | 'totChol' | 'glucose' | 'bmi'
@@ -181,6 +183,9 @@ export interface HistoryQueryParams {
   limit: number
   sortBy: HistorySortBy
   sortOrder: HistorySortOrder
+  // U8.2B — optional deep-link target resolution (see
+  // patient.repository.ts::getHistory). Omitted for every ordinary call.
+  targetId?: string
 }
 
 // ─── Prediction ───────────────────────────────────────────────────────────────
@@ -458,6 +463,9 @@ export interface PaginatedResponse<T> {
   page: number
   limit: number
   totalPages: number
+  // U8.2B — only present when a `targetId` deep-link resolution was
+  // requested; absent (undefined) for every ordinary paginated call.
+  targetResolved?: boolean
 }
 
 export interface ApiError {

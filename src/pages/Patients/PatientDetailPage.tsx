@@ -122,18 +122,6 @@ export default function PatientDetailPage() {
   // (record.id / prediction.id) — never matched by date/score proximity.
   const [selectedHealthRecordId, setSelectedHealthRecordId] = useState<string | null>(null)
   const [selectedPredictionId, setSelectedPredictionId] = useState<string | null>(null)
-  // U4-DEEPLINK — temporary: lets handleClearTimelineSelection's diagnostic
-  // log read the current selection accurately, without adding either state
-  // to its useCallback deps (deliberately `[]`/referentially stable — see
-  // its own comment; adding deps there would be a functional change this
-  // instrumentation-only block must not make). Kept in sync by the existing
-  // RECORD_SELECTED_STATE/PREDICTION_SELECTED_STATE observation effects.
-  const selectedHealthRecordIdRef = useRef<string | null>(null)
-  const selectedPredictionIdRef = useRef<string | null>(null)
-  // U4-DEEPLINK — temporary: holds the one-shot diagnostic timeout from
-  // captureGeometry('RECORD_SCROLL_DELAYED') so it can be cleared on
-  // unmount (see cleanup effect further below), never left dangling.
-  const recordScrollDelayedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [timelineFeedback, setTimelineFeedback] = useState<string | null>(null)
   const recordRowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map())
   const riskEvolutionRef = useRef<HTMLDivElement>(null)
@@ -146,173 +134,103 @@ export default function PatientDetailPage() {
   // timing (its own month may still be loading) — the two must not be
   // coupled into a single "done" flag (section 20).
   const [dashboardNav, setDashboardNav] = useState<DashboardEventNavigationState | null>(null)
-  // U4-DEEPLINK — temporary: lets loadPatient's instrumentation read the
-  // latest dashboardNav without adding it to loadPatient's own useCallback
-  // deps (which would change its re-creation frequency — a functional
-  // change this instrumentation-only block must not make). Kept in sync by
-  // the DASHBOARD_NAV_READY observation effect below.
-  const dashboardNavRef = useRef<DashboardEventNavigationState | null>(null)
   const navTargetAppliedRef = useRef(false)
-
-  // U4-DEEPLINK — temporary: layout-phase transitions logged only for
-  // completion (loading → not loading), so a scroll target that landed
-  // correctly before one of these can be checked against whatever moved
-  // afterward.
-  useEffect(() => {
-    if (patientLoading) return
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] LAYOUT_PHASE', { phase: 'patient-loaded', scrollY: window.scrollY, documentHeight: document.documentElement.scrollHeight })
-  }, [patientLoading])
-
-  useEffect(() => {
-    if (recordsLoading) return
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] LAYOUT_PHASE', { phase: 'records-loaded', scrollY: window.scrollY, documentHeight: document.documentElement.scrollHeight })
-  }, [recordsLoading])
-
-  useEffect(() => {
-    if (predictionsLoading) return
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] LAYOUT_PHASE', { phase: 'predictions-loaded', scrollY: window.scrollY, documentHeight: document.documentElement.scrollHeight })
-  }, [predictionsLoading])
-
-  // U4-DEEPLINK — temporary: clears the one-shot RECORD_SCROLL_DELAYED
-  // diagnostic timeout if the component unmounts before it fires.
-  useEffect(() => {
-    return () => {
-      if (recordScrollDelayedTimeoutRef.current) clearTimeout(recordScrollDelayedTimeoutRef.current)
-    }
-  }, [])
 
   // Patient switch (A→B): clear cross-navigation state — a highlighted
   // record/prediction from the previous patient must never survive.
   useEffect(() => {
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] RECORD_CLEAR', { reason: 'patient-switch', previousSelectedHealthRecordId: selectedHealthRecordId })
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] PREDICTION_CLEAR', { reason: 'patient-switch', previousSelectedPredictionId: selectedPredictionId })
     setSelectedHealthRecordId(null)
     setSelectedPredictionId(null)
     setTimelineFeedback(null)
     setDashboardNav(null)
-    dashboardNavRef.current = null
     navTargetAppliedRef.current = false
   }, [id])
 
-  // CLINICAL_RECORD click. `records` (loadHistory, GET /:id/history) is
-  // unbounded — no page/limit — so in practice a Calendar clinical event
-  // should always resolve here. Still checked explicitly rather than
-  // assumed (section 24/25): a not-found record never highlights a
-  // different, wrong row.
-  const handleSelectHealthRecord = useCallback((healthRecordId: string) => {
-    const matchingIndex = records.findIndex(r => r.id === healthRecordId)
-    const exists = matchingIndex !== -1
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] RECORD_HANDLER_ENTER', {
-      id: healthRecordId, recordsLength: records.length, found: exists, matchingIndex,
-    })
-    if (!exists) {
-      // eslint-disable-next-line no-console
-      console.log('[U4-DEEPLINK] RECORD_NOT_FOUND', { id: healthRecordId })
+  // U8.2B — CLINICAL_RECORD selection (PatientCalendar manual click, or the
+  // Dashboard navigation target applied below). If the target is already
+  // on the currently loaded Clinical History page, select/scroll to it
+  // immediately — no network request. Otherwise, resolve its actual page
+  // server-side (GET /patients/:id/history?targetId=..., preserving the
+  // current sortBy/sortOrder/limit — U5's pagination/sorting is never
+  // bypassed) and adopt that canonical page as the new current page,
+  // never fabricating/inserting the row locally. A conclusively
+  // unavailable target (foreign patient, nonexistent, or excluded by
+  // active filters) surfaces the same single feedback message either way
+  // — never distinguishing which case occurred.
+  const handleSelectHealthRecord = useCallback(async (healthRecordId: string) => {
+    if (records.some(r => r.id === healthRecordId)) {
+      setTimelineFeedback(null)
+      setSelectedPredictionId(null)
+      setSelectedHealthRecordId(healthRecordId)
+      recordRowRefs.current.get(healthRecordId)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
+    if (!id) return
+    const requestId = ++historyRequestIdRef.current
+    try {
+      const history = await patientService.getHistory(id, {
+        page: historyPage, limit: historyLimit, sortBy: historySortBy, sortOrder: historySortOrder,
+        targetId: healthRecordId,
+      })
+      if (requestId !== historyRequestIdRef.current) return
+      if (!history.targetResolved) {
+        setTimelineFeedback('Este registro no está incluido en el historial clínico actualmente visible.')
+        return
+      }
+      setRecords(history.records.data)
+      setHistoryTotal(history.records.total)
+      setHistoryTotalPages(history.records.totalPages)
+      setHistoryPage(history.records.page)
+      setTimelineFeedback(null)
+      setSelectedPredictionId(null)
+      setSelectedHealthRecordId(healthRecordId)
+      // The target's row ref only attaches once this new page's table body
+      // actually renders — wait a frame before scrolling to it.
+      requestAnimationFrame(() => {
+        recordRowRefs.current.get(healthRecordId)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    } catch {
+      if (requestId !== historyRequestIdRef.current) return
       setTimelineFeedback('Este registro no está incluido en el historial clínico actualmente visible.')
+    }
+  }, [records, id, historyPage, historyLimit, historySortBy, historySortOrder])
+
+  // U8.2B — PREDICTION / RISK_CHANGE selection (RISK_CHANGE passes its
+  // currentPredictionId here — same target, same mechanism). If already in
+  // the currently loaded window, select/scroll immediately. Otherwise,
+  // resolve the canonical patient-prediction page that actually contains
+  // it (GET /predictions/patient/:id?targetId=..., same limit=20) and
+  // REPLACE the entire chart dataset with that genuine, contiguous page —
+  // never merged with the previous latest-20 view, never a fabricated
+  // point. A later realtime Prediction event may legitimately revert this
+  // to the normal latest-20 window once the target has already been
+  // applied (see loadPredictions's own realtime effect, unchanged).
+  const handleSelectPrediction = useCallback(async (predictionId: string) => {
+    if (predictions.some(p => p.id === predictionId)) {
+      setTimelineFeedback(null)
+      setSelectedHealthRecordId(null)
+      setSelectedPredictionId(predictionId)
+      riskEvolutionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       return
     }
-    setTimelineFeedback(null)
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] PREDICTION_CLEAR', { reason: 'record-select-exclusivity', healthRecordId })
-    setSelectedPredictionId(null)
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] RECORD_SELECT_SET', { id: healthRecordId })
-    setSelectedHealthRecordId(healthRecordId)
-    const refFound = recordRowRefs.current.has(healthRecordId)
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] RECORD_REF_STATUS', { id: healthRecordId, refFound })
-
-    // U4-DEEPLINK — temporary geometry probe, observation only (never
-    // calls scrollIntoView again, never touches state). Captures the
-    // target row's viewport position at 4 points in time to determine
-    // whether a later layout shift moves it out of view after the
-    // original scroll already completed.
-    const captureGeometry = (tag: string) => {
-      const el = recordRowRefs.current.get(healthRecordId)
-      const rect = el?.getBoundingClientRect()
-      const viewportHeight = window.innerHeight
-      // eslint-disable-next-line no-console
-      console.log(`[U4-DEEPLINK] ${tag}`, {
-        id: healthRecordId,
-        refFound: !!el,
-        scrollY: window.scrollY,
-        rectTop: rect?.top,
-        rectBottom: rect?.bottom,
-        viewportHeight,
-        isInViewport: rect ? rect.bottom > 0 && rect.top < viewportHeight : null,
+    if (!id) return
+    try {
+      const result = await predictionService.getHistory(id, { limit: 20, targetId: predictionId })
+      if (!result.targetResolved) {
+        setTimelineFeedback('Esta predicción no está disponible en el historial de este paciente.')
+        return
+      }
+      setPredictions(result.data)
+      setTimelineFeedback(null)
+      setSelectedHealthRecordId(null)
+      setSelectedPredictionId(predictionId)
+      requestAnimationFrame(() => {
+        riskEvolutionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       })
+    } catch {
+      setTimelineFeedback('Esta predicción no está disponible en el historial de este paciente.')
     }
-    captureGeometry('RECORD_SCROLL_BEFORE')
-    requestAnimationFrame(() => {
-      captureGeometry('RECORD_SCROLL_RAF1')
-      requestAnimationFrame(() => captureGeometry('RECORD_SCROLL_RAF2'))
-    })
-    const delayedTimeout = setTimeout(() => captureGeometry('RECORD_SCROLL_DELAYED'), 400)
-    recordScrollDelayedTimeoutRef.current = delayedTimeout
-
-    const el = recordRowRefs.current.get(healthRecordId)
-    if (el) {
-      // eslint-disable-next-line no-console
-      console.log('[U4-DEEPLINK] RECORD_HIGHLIGHT_DOM', {
-        id: healthRecordId,
-        hasExpectedHighlightClass: el.className.includes('ring-primary'),
-        className: el.className,
-      })
-    }
-
-    recordRowRefs.current.get(healthRecordId)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }, [records])
-
-  // PREDICTION / RISK_CHANGE click (RISK_CHANGE passes its
-  // currentPredictionId here — same target, same mechanism, no duplicate
-  // navigation flow). `predictions` (predictionService.getHistory) is
-  // capped at the latest 20 — a Calendar month can legitimately reference
-  // an older Prediction outside that window; that case is reported
-  // honestly instead of guessing a nearby point.
-  const handleSelectPrediction = useCallback((predictionId: string) => {
-    const matchingIndex = predictions.findIndex(p => p.id === predictionId)
-    const exists = matchingIndex !== -1
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] PREDICTION_HANDLER_ENTER', {
-      id: predictionId, predictionsLength: predictions.length, found: exists, matchingIndex,
-    })
-    if (!exists) {
-      // eslint-disable-next-line no-console
-      console.log('[U4-DEEPLINK] PREDICTION_NOT_FOUND', { id: predictionId })
-      setTimelineFeedback('Esta predicción no está incluida en la ventana actualmente visible del historial (últimas 20).')
-      return
-    }
-    setTimelineFeedback(null)
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] RECORD_CLEAR', { reason: 'prediction-select-exclusivity', predictionId })
-    setSelectedHealthRecordId(null)
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] PREDICTION_SELECT_SET', { id: predictionId })
-    setSelectedPredictionId(predictionId)
-    const riskEvolutionRefFound = riskEvolutionRef.current != null
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] PREDICTION_REF_STATUS', { id: predictionId, riskEvolutionRefFound })
-    // U4-DEEPLINK — geometry probe before scroll, observation only.
-    {
-      const el = riskEvolutionRef.current
-      const rect = el?.getBoundingClientRect()
-      // eslint-disable-next-line no-console
-      console.log('[U4-DEEPLINK] PREDICTION_SCROLL_BEFORE', {
-        id: predictionId,
-        refFound: !!el,
-        scrollY: window.scrollY,
-        rectTop: rect?.top,
-        rectBottom: rect?.bottom,
-      })
-    }
-    riskEvolutionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }, [predictions])
+  }, [predictions, id])
 
   // P4-FIX — called by PatientCalendar whenever its own temporal context
   // changes (day, month, "Hoy") in a way that invalidates whichever
@@ -320,31 +238,11 @@ export default function PatientDetailPage() {
   // stable (useCallback, no deps) so it never causes PatientCalendar's
   // patient-switch effect to re-run for the wrong reason.
   const handleClearTimelineSelection = useCallback(() => {
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] CALENDAR_CLEAR_CALLBACK', {
-      clearingSelectedHealthRecordId: selectedHealthRecordIdRef.current,
-      clearingSelectedPredictionId: selectedPredictionIdRef.current,
-    })
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] RECORD_CLEAR', { reason: 'calendar-context-change' })
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] PREDICTION_CLEAR', { reason: 'calendar-context-change' })
     setSelectedHealthRecordId(null)
     setSelectedPredictionId(null)
     setTimelineFeedback(null)
   }, [])
 
-  // O3-FIX-4 — apply a Dashboard Calendar navigation target, if present,
-  // reusing the exact same P4 selection handlers a PatientCalendar click
-  // uses (same exact-ID matching, same exclusivity, same scroll/highlight,
-  // same "not in currently visible window" feedback — no second
-  // implementation). Waits for records/predictions to finish their own
-  // fetch before attempting the match: matching against the still-empty
-  // initial arrays would wrongly report a valid target as "not found"
-  // before the real data ever had a chance to arrive (section 12).
-  // Consumed at most once per patient visit (navTargetConsumedRef); the
-  // history entry's own state is also cleared via `replace` so a later
-  // refresh doesn't hand the same target back.
   // O3-FIX-4/5 — read the Dashboard Calendar navigation payload (if any)
   // from location.state exactly once per patient visit, into `dashboardNav`
   // (React state — persists independent of the router's own history-state
@@ -357,189 +255,41 @@ export default function PatientDetailPage() {
     if (dashboardNav) return
     const nav = readDashboardEventNav(location.state)
     if (!nav) return
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] NAV_RECEIVED', {
-      patientId: id,
-      targetKind: nav.target.kind,
-      targetId: nav.target.id,
-      calendarEventId: nav.calendarEventId,
-      eventDate: nav.eventDate,
-    })
     setDashboardNav(nav)
     navigate(location.pathname, { replace: true, state: null })
   }, [location.state, location.pathname, dashboardNav, navigate])
 
-  // O3-FIX-4 — apply the EXTERNAL (History/Risk Evolution) side of a
-  // Dashboard navigation target, reusing the exact same P4 selection
-  // handlers a PatientCalendar click uses (same exact-ID matching, same
-  // exclusivity, same scroll/highlight, same "not in currently visible
-  // window" feedback — no second implementation). Waits for records/
-  // predictions to finish their own fetch before attempting the match:
-  // matching against the still-empty initial arrays would wrongly report a
-  // valid target as "not found" before the real data ever had a chance to
-  // arrive (section 12). Applied at most once per patient visit
-  // (navTargetAppliedRef) — independent of whether/when PatientCalendar
-  // itself finishes positioning on its own copy of `dashboardNav`.
-  // U4-DEEPLINK — temporary observation-only effect (does not replace/alter
-  // the existing dashboardNav lifecycle above); logs once whenever
-  // dashboardNav transitions to non-null.
+  // O3-FIX-4 / U8.2B — apply the EXTERNAL (History/Risk Evolution) side of
+  // a Dashboard navigation target, reusing the exact same P4 selection
+  // handlers a PatientCalendar click uses. Waits for records/predictions
+  // to finish their own initial fetch before attempting the match
+  // (section 12 of O3-FIX-4). Consumed (navTargetAppliedRef set) only once
+  // the handler's own resolution — synchronous fast path or the async
+  // targeted-page fetch — has actually SETTLED (found-and-applied, or
+  // conclusively unavailable) — never merely upon dispatch, which would
+  // reintroduce the premature-consumption defect U8.2A diagnosed. The
+  // `cancelled` guard prevents a resolution that outlives this effect
+  // (e.g. the patient changed mid-resolution) from marking the WRONG
+  // patient visit's target as already applied.
   useEffect(() => {
     if (!dashboardNav) return
-    dashboardNavRef.current = dashboardNav
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] DASHBOARD_NAV_READY', {
-      targetKind: dashboardNav.target.kind,
-      targetId: dashboardNav.target.id,
-      calendarEventId: dashboardNav.calendarEventId,
-      eventDate: dashboardNav.eventDate,
-      navTargetAppliedRefCurrent: navTargetAppliedRef.current,
-    })
-  }, [dashboardNav])
-
-  // O3-FIX-4 — apply the EXTERNAL (History/Risk Evolution) side of a
-  // Dashboard navigation target, reusing the exact same P4 selection
-  // handlers a PatientCalendar click uses (same exact-ID matching, same
-  // exclusivity, same scroll/highlight, same "not in currently visible
-  // window" feedback — no second implementation). Waits for records/
-  // predictions to finish their own fetch before attempting the match:
-  // matching against the still-empty initial arrays would wrongly report a
-  // valid target as "not found" before the real data ever had a chance to
-  // arrive (section 12). Applied at most once per patient visit
-  // (navTargetAppliedRef) — independent of whether/when PatientCalendar
-  // itself finishes positioning on its own copy of `dashboardNav`.
-  useEffect(() => {
-    if (!dashboardNav) return
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] APPLY_EFFECT', {
-      targetKind: dashboardNav.target.kind,
-      targetId: dashboardNav.target.id,
-      recordsLoading,
-      predictionsLoading,
-      recordsLength: records.length,
-      predictionsLength: predictions.length,
-      navTargetAppliedRefCurrent: navTargetAppliedRef.current,
-    })
-    if (navTargetAppliedRef.current) {
-      // eslint-disable-next-line no-console
-      console.log('[U4-DEEPLINK] APPLY_SKIP_ALREADY_APPLIED')
-      return
+    if (navTargetAppliedRef.current) return
+    if (recordsLoading) return
+    if (predictionsLoading) return
+    let cancelled = false
+    const target = dashboardNav.target
+    const run = async () => {
+      if (target.kind === 'HEALTH_RECORD') {
+        await handleSelectHealthRecord(target.id)
+      } else {
+        await handleSelectPrediction(target.id)
+      }
+      if (!cancelled) navTargetAppliedRef.current = true
     }
-    if (recordsLoading) {
-      // eslint-disable-next-line no-console
-      console.log('[U4-DEEPLINK] APPLY_SKIP_RECORDS_LOADING')
-      return
-    }
-    if (predictionsLoading) {
-      // eslint-disable-next-line no-console
-      console.log('[U4-DEEPLINK] APPLY_SKIP_PREDICTIONS_LOADING')
-      return
-    }
-    const isHealthRecord = dashboardNav.target.kind === 'HEALTH_RECORD'
-    const collectionContainsTarget = isHealthRecord
-      ? records.some(r => r.id === dashboardNav.target.id)
-      : predictions.some(p => p.id === dashboardNav.target.id)
-    const matchingIndex = isHealthRecord
-      ? records.findIndex(r => r.id === dashboardNav.target.id)
-      : predictions.findIndex(p => p.id === dashboardNav.target.id)
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] MARK_APPLIED', {
-      targetKind: dashboardNav.target.kind,
-      targetId: dashboardNav.target.id,
-      targetFoundInCollection: collectionContainsTarget,
-    })
-    navTargetAppliedRef.current = true
-    if (isHealthRecord) {
-      // eslint-disable-next-line no-console
-      console.log('[U4-DEEPLINK] DISPATCH_RECORD_TARGET', {
-        targetId: dashboardNav.target.id, collectionContainsTarget, matchingIndex,
-      })
-      handleSelectHealthRecord(dashboardNav.target.id)
-    } else {
-      // eslint-disable-next-line no-console
-      console.log('[U4-DEEPLINK] DISPATCH_PREDICTION_TARGET', {
-        targetId: dashboardNav.target.id, collectionContainsTarget, matchingIndex,
-      })
-      handleSelectPrediction(dashboardNav.target.id)
-    }
+    run()
+    return () => { cancelled = true }
   }, [dashboardNav, recordsLoading, predictionsLoading, handleSelectHealthRecord, handleSelectPrediction])
 
-  // Edit patient
-  // U4-DEEPLINK — temporary, read-only observation effects (no control-flow
-  // changes anywhere else). Log whenever the selection state actually
-  // commits, and whether the DOM/collection can actually support the
-  // highlight at that moment.
-  useEffect(() => {
-    selectedHealthRecordIdRef.current = selectedHealthRecordId
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] RECORD_SELECTED_STATE', { selectedHealthRecordId })
-  }, [selectedHealthRecordId])
-
-  useEffect(() => {
-    if (!selectedHealthRecordId) return
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] RECORD_RENDER_STATUS', {
-      selectedHealthRecordId,
-      recordExistsInCollection: records.some(r => r.id === selectedHealthRecordId),
-      clinicalHistorySectionRendered: historyTotal > 1,
-      refFound: recordRowRefs.current.has(selectedHealthRecordId),
-    })
-  }, [selectedHealthRecordId, records])
-
-  useEffect(() => {
-    selectedPredictionIdRef.current = selectedPredictionId
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] PREDICTION_SELECTED_STATE', { selectedPredictionId })
-  }, [selectedPredictionId])
-
-  useEffect(() => {
-    if (!selectedPredictionId) return
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] PREDICTION_RENDER_STATUS', {
-      selectedPredictionId,
-      predictionExistsInCollection: predictions.some(p => p.id === selectedPredictionId),
-      riskEvolutionRefFound: riskEvolutionRef.current != null,
-      chartDataContainsPrediction: predictions.some(p => p.id === selectedPredictionId),
-    })
-    // eslint-disable-next-line no-console
-    console.log('[U4-DEEPLINK] PREDICTION_HIGHLIGHT_COMMIT', {
-      selectedPredictionId,
-      chartDataContainsPrediction: predictions.some(p => p.id === selectedPredictionId),
-      riskEvolutionRefFound: riskEvolutionRef.current != null,
-    })
-  }, [selectedPredictionId, predictions])
-
-  // U4-DEEPLINK — temporary: tracks when the DOM node behind
-  // riskEvolutionRef becomes available/unavailable, independent of
-  // selection state. Answers whether the genuine PREDICTION_REF_STATUS
-  // riskEvolutionRefFound:false observation was a timing issue (ref not
-  // yet attached) or something else (ref never attaches at all for some
-  // render path). Polled on a rAF loop purely for observation — never
-  // writes application state, never affects rendering.
-  useEffect(() => {
-    let cancelled = false
-    let wasAvailable = riskEvolutionRef.current != null
-    const check = () => {
-      if (cancelled) return
-      const isAvailable = riskEvolutionRef.current != null
-      if (isAvailable !== wasAvailable) {
-        wasAvailable = isAvailable
-        // eslint-disable-next-line no-console
-        console.log(isAvailable ? '[U4-DEEPLINK] RISK_REF_AVAILABLE' : '[U4-DEEPLINK] RISK_REF_UNAVAILABLE', {
-          selectedPredictionId,
-        })
-      }
-      requestAnimationFrame(check)
-    }
-    const raf = requestAnimationFrame(check)
-    return () => { cancelled = true; cancelAnimationFrame(raf) }
-  }, [selectedPredictionId])
-
-
-  // U4.2A — New Personal Information modal (replaces the previous inline
-  // firstName/lastName/phone-only editor entirely — no editing/editForm/
-  // editSaving/editError state remains; EditPatientModal owns its own
-  // draft/saving/error state, prefilled directly from the canonical
-  // `patient` object each time it opens).
   const [editPatientModalOpen, setEditPatientModalOpen] = useState(false)
 
   // U3.2 — New Record modal (replaces the previous inline expandable form
@@ -560,12 +310,6 @@ export default function PatientDetailPage() {
       const p = await patientService.getById(id)
       if (requestId !== patientRequestIdRef.current) return
       setPatient(p)
-      if (dashboardNavRef.current) {
-        // eslint-disable-next-line no-console
-        console.log('[U4-DEEPLINK] PATIENT_REFETCH_COMPLETE', {
-          patientId: id, targetKind: dashboardNavRef.current.target.kind, targetId: dashboardNavRef.current.target.id,
-        })
-      }
     } catch (err) {
       if (requestId !== patientRequestIdRef.current) return
       if (!silent) {
@@ -610,8 +354,6 @@ export default function PatientDetailPage() {
       } else if (history.records.total === 0 && historyPage !== 1) {
         setHistoryPage(1)
       }
-      // eslint-disable-next-line no-console
-      console.log('[U4-DEEPLINK] RECORDS_READY', { count: history.records.data.length, ids: history.records.data.map(r => r.id) })
     } catch {
       if (requestId !== historyRequestIdRef.current) return
       if (!silent) setRecordsError('No se pudo cargar el historial clínico')
@@ -650,8 +392,6 @@ export default function PatientDetailPage() {
     try {
       const result = await predictionService.getHistory(id)
       setPredictions(result.data)
-      // eslint-disable-next-line no-console
-      console.log('[U4-DEEPLINK] PREDICTIONS_READY', { count: result.data.length, ids: result.data.map(p => p.id) })
     } catch {
       if (!silent) setPredictionsError('No se pudo cargar el historial de predicciones')
     } finally {

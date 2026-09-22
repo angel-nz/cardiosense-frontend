@@ -92,20 +92,31 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
   // edits (U4.2A's own principle: this modal's draft is stable while open).
   const initialSnapshotRef = useRef<NormalizedPatientFields>(normalizeForCompare(draftFromPatient(patient)))
 
+  // U8.3-FIX-2 — always holds the newest canonical patient, including
+  // same-patient refetches (prediction_completed / patient_updated) that
+  // arrive while the modal is open. Only read by the init effect below, so
+  // those refetches never touch the in-progress draft.
+  // MUST stay declared BEFORE the init effect: effects run in declaration
+  // order, so on the opening render this syncs first and init reads it.
+  const latestPatientRef = useRef(patient)
+  useEffect(() => {
+    latestPatientRef.current = patient
+  })
+
   // U4.2A — unlike NewRecordModal, no GET here: `patient` is already the
   // canonical PatientDetail state (kept current via its own patient_updated
   // → canonical refetch effect), so re-fetching just to open this modal
-  // would be redundant. Re-initializes from the current `patient` prop
-  // every time the modal transitions closed→open — never reuses an
-  // abandoned draft from a previous opening.
+  // would be redundant. Initializes the draft AND the dirty baseline only on
+  // closed→open, or if a different patient is supplied — never on a
+  // same-patient refetch while open. Do NOT add `patient` to these deps.
   useEffect(() => {
     if (!open) return
-    const draft = draftFromPatient(patient)
+    const draft = draftFromPatient(latestPatientRef.current)
     setForm(draft)
     initialSnapshotRef.current = normalizeForCompare(draft)
     setFormError(null)
     setCurpError(null)
-  }, [open, patient])
+  }, [open, patient.id])
 
   // U4.2A-FIX-3 — recomputed every render (cheap primitive-field
   // comparison); Save is enabled only once the normalized draft actually
