@@ -203,10 +203,10 @@ export function DashboardCalendar() {
         <div className="mb-4">
           <h3 className="font-semibold text-foreground flex items-center gap-2">
             <CalendarDays className="w-4 h-4 text-muted-foreground" />
-            Actividad cardiovascular — todos los pacientes
+            Actividad cardiovascular
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Historial temporal de registros clínicos, predicciones, cambios de riesgo y alertas de tus pacientes.
+            Historial de registros clínicos, predicciones, cambios de riesgo y alertas de tus pacientes.
           </p>
         </div>
 

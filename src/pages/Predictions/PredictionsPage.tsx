@@ -178,7 +178,7 @@ function GlobalPredictionHistory() {
         <h1 className="text-xl font-bold text-foreground">Historial de predicciones</h1>
         <p className="text-sm text-muted-foreground mt-1">
           {total > 0
-            ? `${total} predicción${total === 1 ? '' : 'es'} registrada${total === 1 ? '' : 's'}`
+            ? `· ${total} ·`
             : 'Selecciona un paciente en la lista para ver su detalle'}
         </p>
       </div>
@@ -277,7 +277,7 @@ function GlobalPredictionHistory() {
                           {pred.patientName ?? pred.patientId}
                         </p>
                         <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
-                          <span className="font-mono">Score: {formatScore(pred.riskScore)}</span>
+                          <span className="font-mono">Riesgo: {formatScore(pred.riskScore)}</span>
                           {pred.isAnomaly && (
                             <span className="text-purple-600 font-medium">⚠ Anomalía</span>
                           )}

@@ -110,7 +110,7 @@ export default function PredictionHistoryPage() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <RiskBadge level={pred.riskLevel} score={pred.riskScore} showScore />
+                <RiskBadge level={pred.riskLevel} showScore />
                 {pred.isAnomaly && (
                   <span className="text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full">
                     ⚠ Anomalía
@@ -118,10 +118,6 @@ export default function PredictionHistoryPage() {
                 )}
               </div>
               <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground flex-wrap">
-                <span className="flex items-center gap-1">
-                  <Activity className="w-3.5 h-3.5" />
-                  Score: <span className="font-mono font-semibold text-foreground">{formatScore(pred.riskScore)}</span>
-                </span>
                 {pred.modelVersion && (
                   <span className="flex items-center gap-1">
                     <Cpu className="w-3.5 h-3.5" />

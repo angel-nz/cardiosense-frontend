@@ -188,15 +188,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Demo credentials hint */}
-          <div className="bg-muted/50 border border-border rounded-xl p-4">
-            <p className="text-xs font-semibold text-foreground mb-2">Credenciales de demostración</p>
-            <div className="space-y-1 font-mono text-xs text-muted-foreground">
-              <p>Email: <span className="text-foreground">dr.garcia@cardiosense.mx</span></p>
-              <p>Pass:  <span className="text-foreground">Demo1234!</span></p>
-            </div>
-          </div>
-
           <p className="text-center text-sm text-muted-foreground">
             ¿No tienes una cuenta?{' '}
             <Link to="/register" className="text-primary font-medium hover:underline">

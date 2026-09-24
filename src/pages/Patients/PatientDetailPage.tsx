@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, Activity, Heart, Phone, Calendar,
-  User, FileText, AlertTriangle, Plus, Edit, Loader2,
+  User, FileText, AlertTriangle, Plus, Edit, Loader2, X,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -73,7 +73,8 @@ export default function PatientDetailPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const { subscribeToPatient, unsubscribeFromPatient, lastPrediction, lastHealthRecord, lastPatientUpdate,
-          clearLastPrediction, clearLastHealthRecord, clearLastPatientUpdate } = useSocket()
+          clearLastPrediction, clearLastHealthRecord, clearLastPatientUpdate,
+          lastPredictionUnavailable, clearLastPredictionUnavailable } = useSocket()
 
   // INT-16/17 — join patient:{id} while viewing this patient's page, leave
   // on unmount or when navigating to a different patient (id changes).
@@ -136,6 +137,20 @@ export default function PatientDetailPage() {
   const [dashboardNav, setDashboardNav] = useState<DashboardEventNavigationState | null>(null)
   const navTargetAppliedRef = useRef(false)
 
+  // U8.6C — ephemeral, page-local informational banner. Deliberately
+  // separate from `timelineFeedback` (that one is Calendar deep-link
+  // feedback, rendered inside PatientCalendar's day panel — a different
+  // concern in a different location; sharing one state would let either
+  // silently clobber the other). Cleared on patient switch below; not
+  // persisted anywhere, so a missed event while offline/on another page is
+  // not recoverable (see U8.6-DEBT-1..3 and the reconnect note below —
+  // this notice is intentionally NOT replayed on reconnect).
+  const [predictionUnavailableNotice, setPredictionUnavailableNotice] = useState<{
+    healthRecordId: string
+    modelVersion: string
+    eligibleAgeRange: { min: number; max: number }
+  } | null>(null)
+
   // Patient switch (A→B): clear cross-navigation state — a highlighted
   // record/prediction from the previous patient must never survive.
   useEffect(() => {
@@ -144,7 +159,28 @@ export default function PatientDetailPage() {
     setTimelineFeedback(null)
     setDashboardNav(null)
     navTargetAppliedRef.current = false
+    setPredictionUnavailableNotice(null)
   }, [id])
+
+  // U8.6C — prediction_unavailable, user:{userId} room (auto-joined, no
+  // subscribe_patient needed — same as dashboard_activity_changed/
+  // patient_created). Filtered locally by patientId, exactly like the
+  // existing lastPrediction/lastHealthRecord/lastPatientUpdate effects
+  // below. A second distinct event (a different healthRecordId) replaces
+  // this notice with its own content — each arrival is independently
+  // shown, never permanently suppressed. The only accepted limitation
+  // (same one already documented for every "last event" scalar in
+  // SocketContext) is that two events arriving before the doctor reads the
+  // first would show only the second — not a queue.
+  useEffect(() => {
+    if (!id || !lastPredictionUnavailable || lastPredictionUnavailable.patientId !== id) return
+    setPredictionUnavailableNotice({
+      healthRecordId: lastPredictionUnavailable.healthRecordId,
+      modelVersion: lastPredictionUnavailable.modelVersion,
+      eligibleAgeRange: lastPredictionUnavailable.eligibleAgeRange,
+    })
+    clearLastPredictionUnavailable()
+  }, [id, lastPredictionUnavailable, clearLastPredictionUnavailable])
 
   // U8.2B — CLINICAL_RECORD selection (PatientCalendar manual click, or the
   // Dashboard navigation target applied below). If the target is already
@@ -595,6 +631,32 @@ export default function PatientDetailPage() {
         onUpdated={handlePatientUpdated}
       />
 
+      {/* U8.6C — model-ineligibility notice. Same visual pattern already
+          used for Calendar deep-link feedback (amber warning banner,
+          AlertTriangle icon), but its own separate state — never clinical:
+          no risk label, no Alert, no Risk Evolution point. Dismissible;
+          not persisted, so dismissing it (or navigating away) loses it for
+          good — consistent with U8.6-DEBT-1..3's documented limitation. */}
+      {predictionUnavailableNotice && (
+        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+          <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 text-sm text-amber-800">
+            <p>
+              El registro clínico se guardó correctamente, pero no fue posible generar una predicción:
+              la edad de este registro está fuera del rango de soporte de {predictionUnavailableNotice.modelVersion}{' '}
+              (rango soportado: {predictionUnavailableNotice.eligibleAgeRange.min}-{predictionUnavailableNotice.eligibleAgeRange.max} años).
+            </p>
+          </div>
+          <button
+            onClick={() => setPredictionUnavailableNotice(null)}
+            className="p-1 rounded-lg hover:bg-amber-100 transition-colors flex-shrink-0"
+            aria-label="Cerrar aviso"
+          >
+            <X className="w-3.5 h-3.5 text-amber-600" />
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
         {/* ── Left column ──────────────────────────────────────────── */}
@@ -710,7 +772,7 @@ export default function PatientDetailPage() {
                 <h3 className="font-semibold text-foreground">Evolución del riesgo</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {predictions.length > 0
-                    ? `Últimas ${predictions.length} predicción${predictions.length === 1 ? '' : 'es'} · Score cardiovascular`
+                    ? `Última${predictions.length === 1 ? '' : 's'} ${predictions.length} predicci${predictions.length === 1 ? 'ón' : 'ones'}`
                     : 'Score cardiovascular'}
                 </p>
               </div>
@@ -739,7 +801,7 @@ export default function PatientDetailPage() {
                     axisLine={false}
                     tickLine={false}
                   />
-                  <Tooltip formatter={(v: number) => [`${(v * 100).toFixed(1)}%`, 'Score']} />
+                  <Tooltip formatter={(v: number) => [`${(v * 100).toFixed(1)}%`, 'Riesgo']} />
                   <ReferenceLine y={0.65} stroke="#DC2626" strokeDasharray="4 4" label={{ value: 'Alto', fill: '#DC2626', fontSize: 10 }} />
                   <ReferenceLine y={0.35} stroke="#D97706" strokeDasharray="4 4" label={{ value: 'Moderado', fill: '#D97706', fontSize: 10 }} />
                   <Line

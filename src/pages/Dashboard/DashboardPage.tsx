@@ -208,9 +208,6 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-foreground">
             {greeting}, Dr. {user?.firstName ?? 'Doctor'}
           </h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Resumen de actividad cardiovascular de tus pacientes
-          </p>
         </div>
         <button
           onClick={() => navigate('/patients/new')}
@@ -224,7 +221,7 @@ export default function DashboardPage() {
       {/* ── KPI Cards ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          title="Total pacientes"
+          title="Pacientes"
           value={patientsError ? '—' : totalPatients}
           subtitle={patientsError ? 'No se pudo cargar' : 'Bajo tu cuidado'}
           icon={Users}
@@ -232,15 +229,15 @@ export default function DashboardPage() {
           iconBg="bg-blue-50"
         />
         <StatCard
-          title="Alertas activas"
+          title="Notificaciones"
           value={alertsError ? '—' : unreadCount}
-          subtitle={alertsError ? 'No se pudo cargar' : 'Requieren atención'}
+          subtitle={alertsError ? 'No se pudo cargar' : 'Pendientes'}
           icon={Bell}
           iconColor="text-red-600"
           iconBg="bg-red-50"
         />
         <StatCard
-          title="Predicciones hoy"
+          title="Predicciones"
           value={metricsLoading ? '…' : metricsError ? '—' : metrics!.predictionsToday}
           subtitle={metricsError ? 'No se pudo cargar' : 'Hoy'}
           icon={Activity}
@@ -264,8 +261,7 @@ export default function DashboardPage() {
             lunes–domingo en America/Mexico_City (Bloque I). */}
         <div className="lg:col-span-2 bg-card rounded-xl border border-border p-5">
           <div className="mb-4">
-            <h3 className="font-semibold text-foreground">Predicciones esta semana</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Lunes a domingo</p>
+            <h3 className="font-semibold text-foreground">Predicciones de la semana</h3>
           </div>
           {metricsLoading ? (
             <div className="flex items-center justify-center py-10">
@@ -293,8 +289,7 @@ export default function DashboardPage() {
             última Prediction de cada paciente del médico autenticado. */}
         <div className="bg-card rounded-xl border border-border p-5">
           <div className="mb-4">
-            <h3 className="font-semibold text-foreground">Distribución de riesgo</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Pacientes con predicción</p>
+            <h3 className="font-semibold text-foreground">Pacientes con riesgo</h3>
           </div>
           {metricsLoading ? (
             <div className="flex items-center justify-center py-8">

@@ -33,15 +33,30 @@ export function usePredictions(): UsePredictionsReturn {
 }
 
 function extractPredictError(err: unknown): string {
-  const anyErr = err as { response?: { status?: number; data?: { error?: string } } }
+  const anyErr = err as { response?: { status?: number; data?: { error?: string; code?: string; modelVersion?: string; eligibleAgeRange?: { min: number; max: number } } } }
   const status = anyErr?.response?.status
-  const serverMessage = anyErr?.response?.data?.error
+  const data = anyErr?.response?.data
+  const serverMessage = data?.error
 
   if (status === 404) {
     return serverMessage ?? 'Este paciente no tiene registros clínicos. Crea uno antes de predecir.'
   }
+  if (status === 422 && data?.code === 'MODEL_INELIGIBLE') {
+    // U8.6C — the range/model identity come from the backend response
+    // (which itself reads them from the model's own capabilities) —
+    // NEVER hardcoded here.
+    const range = data.eligibleAgeRange
+    const rangeText = range ? ` (rango soportado: ${range.min}-${range.max} años)` : ''
+    return `Predicción no disponible: la edad de este registro está fuera del rango de soporte de ${data.modelVersion ?? 'el modelo actual'}${rangeText}.`
+  }
+  if (status === 422 && data?.code === 'AI_INPUT_REJECTED') {
+    return 'El servicio de IA rechazó los datos de este registro. Verifica los valores clínicos e intenta de nuevo.'
+  }
   if (status === 503) {
     return 'El servicio de IA no está disponible en este momento. Intenta de nuevo más tarde.'
+  }
+  if (status === 502) {
+    return 'Ocurrió un error técnico al ejecutar la predicción. Intenta de nuevo más tarde.'
   }
   return serverMessage ?? 'No se pudo ejecutar la predicción. Intenta de nuevo.'
 }

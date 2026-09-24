@@ -228,10 +228,9 @@ export default function AlertsPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Centro de Alertas</h1>
           <p className="text-muted-foreground text-sm mt-1">
             {unreadCount > 0
-              ? <><span className="text-red-600 font-semibold">{unreadCount} alertas sin leer</span> · {total} en total</>
+              ? <><span className="text-red-600 font-semibold">{unreadCount} alertas sin leer</span> · {total}</>
               : `${total} alertas · Todo al día`
             }
           </p>

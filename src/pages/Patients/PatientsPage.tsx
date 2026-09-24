@@ -90,23 +90,6 @@ export default function PatientsPage() {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Pacientes</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            {total} paciente{total === 1 ? '' : 's'} registrado{total === 1 ? '' : 's'}
-          </p>
-        </div>
-        <button
-          onClick={() => navigate('/patients/new')}
-          className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Nuevo paciente
-        </button>
-      </div>
-
       {/* Stats strip — computed over the currently loaded page only,
           since the backend doesn't expose aggregate risk counts */}
       <div className="grid grid-cols-3 sm:grid-cols-3 gap-3">
@@ -135,7 +118,6 @@ export default function PatientsPage() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-muted-foreground flex-shrink-0" />
           <select
             value={riskFilter}
             onChange={e => setRiskFilter(e.target.value as RiskLevel | 'all')}
@@ -145,10 +127,14 @@ export default function PatientsPage() {
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
-          <button className="p-2.5 rounded-lg border border-border hover:bg-accent transition-colors" title="Exportar">
-            <Download className="w-4 h-4 text-muted-foreground" />
-          </button>
         </div>
+        <button
+          onClick={() => navigate('/patients/new')}
+          className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+        >
+          <Plus className="w-4 h-4" />
+          Nuevo paciente
+        </button>
       </div>
 
       {/* Table */}

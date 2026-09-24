@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { isAxiosError } from 'axios'
 import { Dialog } from '@/components/ui/Dialog'
 import { cn, calcAge, CURP_REGEX } from '@/lib/utils'
+import { getBusinessDateKey } from '@/lib/businessDate'
 import { patientService } from '@/services/patientService'
 import type { Patient, UpdatePatientRequest, Sex } from '@/types'
 
@@ -194,7 +195,6 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
       open={open}
       onOpenChange={next => { if (!next) handleClose() }}
       title="Editar información personal"
-      description="Los cambios no afectan registros clínicos ni predicciones históricas."
       preventClose={saving}
     >
       <form onSubmit={submit} className="space-y-4">
@@ -232,6 +232,7 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Fecha de nacimiento</label>
               <input type="date" required className={inputClass}
+                max={getBusinessDateKey(new Date().toISOString())}
                 value={form.birthDate}
                 onChange={e => setForm(f => ({ ...f, birthDate: e.target.value }))} />
             </div>

@@ -163,7 +163,7 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
   const provenanceMessage = loadingLatest
     ? 'Cargando el último registro clínico...'
     : hadPreviousRecord
-      ? 'Valores precargados desde el último registro clínico.'
+      ? ''
       : 'Primer registro clínico.'
 
   return (
@@ -171,7 +171,6 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
       open={open}
       onOpenChange={next => { if (!next) handleClose() }}
       title="Nuevo registro clínico"
-      description={provenanceMessage}
       preventClose={saving}
     >
       <form onSubmit={submit} className="space-y-4">

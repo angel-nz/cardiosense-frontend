@@ -443,6 +443,20 @@ export interface SocketDashboardActivity {
   eventDate: string
 }
 
+// U8.6C — prediction_unavailable, same user:{userId} room. Informational
+// only — no Prediction was created for this HealthRecord (the model
+// doesn't support its age). Never merge with SocketPrediction: this is NOT
+// a completed prediction, it has no riskScore/riskLevel/predictionId.
+// Ephemeral — a missed event while offline is not later recoverable (no
+// persistence backs this notification).
+export interface SocketPredictionUnavailable {
+  patientId: string
+  healthRecordId: string
+  reason: 'MODEL_INELIGIBLE'
+  modelVersion: string
+  eligibleAgeRange: { min: number; max: number }
+}
+
 // U2.2 — patient_created. Invalidation-only, user:{userId} room — signals
 // "Total pacientes" may have changed. Deliberately minimal: no
 // patientName/CURP/clinical data, since the canonical source is always a

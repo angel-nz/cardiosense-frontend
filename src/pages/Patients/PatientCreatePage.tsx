@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Save, User } from 'lucide-react'
 import { cn, CURP_REGEX } from '@/lib/utils'
+import { getBusinessDateKey } from '@/lib/businessDate'
 import { patientService } from '@/services/patientService'
 import { isAxiosError } from 'axios'
 
@@ -164,7 +165,7 @@ export default function PatientCreatePage() {
               type="date"
               value={form.birthDate}
               onChange={set('birthDate')}
-              max={new Date().toISOString().split('T')[0]}
+              max={getBusinessDateKey(new Date().toISOString())}
               className={cn(inputClass, errors.birthDate && 'border-red-400 focus:border-red-400')}
             />
           </FormField>
