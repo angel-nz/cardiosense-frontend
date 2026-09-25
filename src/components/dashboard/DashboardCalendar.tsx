@@ -4,7 +4,7 @@ import {
   Activity, ChevronLeft, ChevronRight, FileText, Bell,
   ArrowRight, AlertTriangle, Loader2, CalendarDays,
 } from 'lucide-react'
-import { cn, formatScore, formatLongDate, formatTime, RISK_CONFIG, SEVERITY_CONFIG } from '@/lib/utils'
+import { cn, formatScore, formatLongDate, formatTime, formatRelativeBusinessDate, RISK_CONFIG, SEVERITY_CONFIG } from '@/lib/utils'
 import {
   BUSINESS_TIMEZONE, getBusinessDateKey, getMonthRange,
   buildCalendarDays, groupEventsByBusinessDay,
@@ -302,7 +302,16 @@ export function DashboardCalendar() {
       <div className="bg-card rounded-xl border border-border p-5">
         <div className="mb-4">
           <h3 className="font-semibold text-foreground">
-            {selectedDateKey ? `Eventos del ${formatLongDate(selectedDateKey)}` : 'Eventos del día'}
+            {/* W7 — same "de Hoy"/"de Ayer" vs "del <fecha>" grammar as
+                PatientCalendar's equivalent heading; the no-selection
+                fallback ('Eventos del día') is unrelated to W7 and stays
+                unchanged. */}
+            {selectedDateKey
+              ? (() => {
+                  const rel = formatRelativeBusinessDate(selectedDateKey, d => formatLongDate(String(d)))
+                  return rel.isRelative ? `Eventos de ${rel.label}` : `Eventos del ${rel.label}`
+                })()
+              : 'Eventos del día'}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             {selectedDateKey

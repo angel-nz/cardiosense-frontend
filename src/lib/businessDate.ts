@@ -125,3 +125,29 @@ export function groupEventsByBusinessDay<T extends { eventDate: string }>(
   }
   return map
 }
+
+// W7 — pure "YYYY-MM-DD" business-day arithmetic, no timezone conversion
+// involved (the key is already resolved to its business-timezone calendar
+// day by whoever produced it — getBusinessDateKey or a literal key like
+// PatientCalendar/DashboardCalendar's `selectedDateKey`). Uses Date.UTC
+// purely as a calendar calculator: passing day 0 or day+1 beyond the
+// month's length lets JS normalize the overflow, so month/year/leap-year
+// boundaries (Oct 1 → Sep 30, Jan 1 → Dec 31, Mar 1 → Feb 29) are handled
+// for free without any special-cased branch — same principle already used
+// by calcAge()/backend lib/age.ts for calendar-based (not ms-based) date
+// math. Never touches the wall-clock/timezone conversion step itself.
+export function shiftBusinessDateKey(dateKey: string, days: number): string {
+  const [y, m, d] = dateKey.split('-').map(Number)
+  const shifted = new Date(Date.UTC(y, m - 1, d + days))
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
+}
+
+// W7 — "today" resolved in the business timezone (never the browser's own
+// local timezone or a raw UTC day comparison — see getBusinessDateKey's own
+// comment on why `eventDate.slice(0, 10)` is unsafe near midnight; the same
+// reasoning applies to comparing raw Date objects or `new Date().toISOString()`
+// directly). Re-derived on each call rather than cached, so a session left
+// open across a business-day boundary picks up the new day.
+export function getTodayBusinessDateKey(): string {
+  return getBusinessDateKey(new Date().toISOString())
+}

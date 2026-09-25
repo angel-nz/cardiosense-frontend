@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, Activity } from 'lucide-react'
-import { cn, initials, formatDate, calcAge, sexLabel } from '@/lib/utils'
+import { cn, initials, formatRelativeBusinessDate, calcAge, sexLabel } from '@/lib/utils'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import type { Patient } from '@/types'
 
@@ -59,7 +59,7 @@ export function PatientRow({ patient, className }: PatientRowProps) {
 
       {/* Last update */}
       <td className="px-4 py-3.5 hidden md:table-cell">
-        <p className="text-sm text-muted-foreground">{formatDate(patient.updatedAt)}</p>
+        <p className="text-sm text-muted-foreground">{formatRelativeBusinessDate(patient.updatedAt).label}</p>
       </td>
 
       {/* Status */}

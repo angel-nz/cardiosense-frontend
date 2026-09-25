@@ -3,7 +3,10 @@ import { twMerge } from 'tailwind-merge'
 import { format, formatDistanceToNow, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import type { RiskLevel, AlertSeverity } from '@/types'
-import { BUSINESS_TIMEZONE, parseBusinessDateKeyForDisplay } from './businessDate'
+import {
+  BUSINESS_TIMEZONE, parseBusinessDateKeyForDisplay,
+  getBusinessDateKey, getTodayBusinessDateKey, shiftBusinessDateKey,
+} from './businessDate'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -93,6 +96,59 @@ const LONG_DATE_FORMATTER = new Intl.DateTimeFormat('es-MX', {
 
 export function formatLongDate(businessDateKey: string): string {
   return LONG_DATE_FORMATTER.format(parseBusinessDateKeyForDisplay(businessDateKey))
+}
+
+// W7 — relative business-date presentation ("Hoy"/"Ayer"), display-only.
+// Never used for form inputs, DTO payloads, query params, grouping/sort
+// keys, or storage values — those keep using getBusinessDateKey/raw ISO
+// exactly as before this block.
+export interface RelativeBusinessDateResult {
+  isRelative: boolean
+  // "Hoy" | "Ayer" when isRelative, otherwise the caller's absolute
+  // formatting (whatever style that surface already used before W7).
+  label: string
+}
+
+// Accepts either a full ISO instant (Date or string with a time component —
+// e.g. patient.createdAt, prediction.predictedAt) OR an already-resolved
+// "YYYY-MM-DD" business-date key (e.g. PatientCalendar/DashboardCalendar's
+// `selectedDateKey`). A bare key is compared directly, with NO Date
+// reparsing — reparsing a date-only key as UTC midnight and then
+// re-deriving its business day would itself reintroduce the exact
+// near-midnight rollover bug getBusinessDateKey's own comment warns about,
+// for a negative-offset zone like America/Mexico_City (a bare "YYYY-MM-DD"
+// has no unambiguous UTC instant; parseBusinessDateKeyForDisplay's
+// noon-anchor trick exists only for formatting an already-resolved key, not
+// for re-deriving one). "Today"/"Yesterday" are always computed via
+// getTodayBusinessDateKey()/shiftBusinessDateKey() — CardioSense business
+// timezone, never the browser's local date or a raw UTC comparison.
+function resolveBusinessDateKey(input: string | Date): string {
+  if (typeof input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input)) return input
+  const iso = typeof input === 'string' ? input : input.toISOString()
+  return getBusinessDateKey(iso)
+}
+
+export function formatRelativeBusinessDate(
+  input: string | Date,
+  absoluteFormatter: (input: string | Date) => string = formatDate,
+): RelativeBusinessDateResult {
+  const key = resolveBusinessDateKey(input)
+  const todayKey = getTodayBusinessDateKey()
+  if (key === todayKey) return { isRelative: true, label: 'Hoy' }
+  if (key === shiftBusinessDateKey(todayKey, -1)) return { isRelative: true, label: 'Ayer' }
+  return { isRelative: false, label: absoluteFormatter(input) }
+}
+
+// Date + time convenience wrapper for the many surfaces that previously
+// called formatDateTime() directly. The TIME portion is deliberately
+// unchanged from formatDateTime's existing behavior (viewer-local timezone,
+// same 12-hour a.m./p.m. formatter) — W7 only changes how the DATE portion
+// is chosen (business-date "Hoy"/"Ayer" vs. the prior absolute style), not
+// which clock the time itself is displayed in (avoiding an unrelated
+// visual/timezone change to every date+time surface in the app).
+export function formatRelativeBusinessDateTime(input: string | Date): string {
+  const { label } = formatRelativeBusinessDate(input)
+  return `${label}, ${formatTime(input)}`
 }
 
 export function timeAgo(date: string | Date) {

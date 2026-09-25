@@ -194,7 +194,6 @@ export default function PatientCreatePage() {
               type="text"
               value={form.firstName}
               onChange={set('firstName')}
-              placeholder="Juan Carlos"
               className={cn(inputClass, errors.firstName && 'border-red-400 focus:border-red-400')}
             />
           </FormField>
@@ -204,7 +203,6 @@ export default function PatientCreatePage() {
               type="text"
               value={form.lastName}
               onChange={set('lastName')}
-              placeholder="Ramírez Vega"
               className={cn(inputClass, errors.lastName && 'border-red-400 focus:border-red-400')}
             />
           </FormField>
@@ -236,7 +234,6 @@ export default function PatientCreatePage() {
               type="text"
               value={form.curp}
               onChange={e => setForm(f => ({ ...f, curp: e.target.value.toUpperCase() }))}
-              placeholder="RAVJ680514HMCRNS04"
               maxLength={18}
               className={cn(inputClass, 'font-mono uppercase', errors.curp && 'border-red-400 focus:border-red-400')}
             />

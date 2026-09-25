@@ -15,7 +15,7 @@ import { FeatureImportanceBar } from '@/components/charts/FeatureImportanceBar'
 import { PatientCalendar } from '@/components/patients/PatientCalendar'
 import { NewRecordModal } from '@/components/patients/NewRecordModal'
 import { EditPatientModal } from '@/components/patients/EditPatientModal'
-import { cn, formatDate, formatDateTime, calcAge, sexLabel, timeAgo } from '@/lib/utils'
+import { cn, formatDate, formatRelativeBusinessDate, formatRelativeBusinessDateTime, calcAge, sexLabel, timeAgo } from '@/lib/utils'
 import { getPhoneDisplay } from '@/lib/phone'
 import { patientService } from '@/services/patientService'
 import { predictionService } from '@/services/predictionService'
@@ -775,7 +775,13 @@ export default function PatientDetailPage() {
                   </div>
                 )
               })()}
-              <InfoRow label="Registrado" value={formatDate(patient.createdAt)} />
+              {/* W7 — "Registrado" is a date-only label/value row (no "el"/
+                  "del" preposition to get wrong), so the relative result's
+                  `label` alone ("Hoy"/"Ayer"/absolute) is exactly what this
+                  row already displayed before W7. birthDate above and the
+                  Risk Evolution X-axis below intentionally stay absolute
+                  (§4 — date of birth, chart axis). */}
+              <InfoRow label="Registrado" value={formatRelativeBusinessDate(patient.createdAt).label} />
             </div>
           </div>
 
@@ -879,7 +885,7 @@ export default function PatientDetailPage() {
             ) : (
               <>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Último registro: {formatDateTime(latestRecord.recordedAt)}
+                  Último registro: {formatRelativeBusinessDateTime(latestRecord.recordedAt)}
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   {[
@@ -970,7 +976,7 @@ export default function PatientDetailPage() {
                           r.id === selectedHealthRecordId && 'bg-primary/10 ring-1 ring-inset ring-primary',
                         )}
                       >
-                        <td className="py-2 pr-4 text-muted-foreground">{formatDateTime(r.recordedAt)}</td>
+                        <td className="py-2 pr-4 text-muted-foreground">{formatRelativeBusinessDateTime(r.recordedAt)}</td>
                         <td className="py-2 pr-4">{r.sysBP}</td>
                         <td className="py-2 pr-4">{r.diaBP}</td>
                         <td className="py-2 pr-4">{r.totChol}</td>

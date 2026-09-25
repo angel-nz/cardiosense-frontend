@@ -8,7 +8,7 @@ import { RiskGauge } from '@/components/charts/RiskGauge'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import { ClinicalSourceDisclosure } from '@/components/predictions/ClinicalSourceDisclosure'
 import { FeatureImportanceBar } from '@/components/charts/FeatureImportanceBar'
-import { cn, formatScore, formatDateTime } from '@/lib/utils'
+import { cn, formatScore, formatTime, formatRelativeBusinessDate, formatRelativeBusinessDateTime } from '@/lib/utils'
 import { getBusinessDateKey, BUSINESS_TIMEZONE } from '@/lib/businessDate'
 import { patientService } from '@/services/patientService'
 import { recordService } from '@/services/recordService'
@@ -264,7 +264,12 @@ function GlobalPredictionHistory() {
                   </div>
                 )}
                 <div className="px-4 pt-2 pb-1 text-[11px] font-medium text-muted-foreground">
-                  {dayLabel(group.dayKey)}
+                  {/* W7 — day-group heading: "Hoy"/"Ayer" for the current/
+                      previous business day, otherwise the existing
+                      weekday+day style (dayLabel) unchanged. The month
+                      heading above stays absolute always (§4 — calendar/
+                      section month headers are excluded from W7). */}
+                  {formatRelativeBusinessDate(group.dayKey, d => dayLabel(String(d))).label}
                 </div>
                 <div className="divide-y divide-border">
                   {/* V7 — was a single <button> wrapping the whole row;
@@ -290,7 +295,7 @@ function GlobalPredictionHistory() {
                             {pred.isAnomaly && (
                               <span className="text-purple-600 font-medium">⚠ Anomalía</span>
                             )}
-                            <span>{formatDateTime(pred.predictedAt)}</span>
+                            <span>{formatRelativeBusinessDateTime(pred.predictedAt)}</span>
                           </div>
                         </div>
                         <RiskBadge level={pred.riskLevel} size="sm" />
@@ -523,7 +528,16 @@ export default function PredictionsPage() {
               ) : (
                 <>
                   <p className="text-xs text-muted-foreground">
-                    Registrado el {formatDateTime(latestRecord.recordedAt)}
+                    {/* W7 — "el"/no-preposition grammar: "Registrado el 23
+                        sep 2026, 3:25 p.m." (absolute) vs "Registrado hoy,
+                        3:25 p.m." (relative) — never "Registrado el Hoy". */}
+                    {(() => {
+                      const rel = formatRelativeBusinessDate(latestRecord.recordedAt)
+                      const time = formatTime(latestRecord.recordedAt)
+                      return rel.isRelative
+                        ? `Registrado ${rel.label.toLowerCase()}, ${time}`
+                        : `Registrado el ${rel.label}, ${time}`
+                    })()}
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {[
@@ -628,7 +642,13 @@ export default function PredictionsPage() {
                   <div className="mt-3 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
                     <Info className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
                     <p className="text-xs text-blue-600">
-                      Predicción generada el {formatDateTime(result.predictedAt)}
+                      {(() => {
+                        const rel = formatRelativeBusinessDate(result.predictedAt)
+                        const time = formatTime(result.predictedAt)
+                        return rel.isRelative
+                          ? `Predicción generada ${rel.label.toLowerCase()}, ${time}`
+                          : `Predicción generada el ${rel.label}, ${time}`
+                      })()}
                     </p>
                   </div>
                 </div>

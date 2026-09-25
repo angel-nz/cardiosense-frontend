@@ -4,7 +4,7 @@ import { Activity, Calendar, Cpu, Loader2, History } from 'lucide-react'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import { RiskGauge } from '@/components/charts/RiskGauge'
 import { ClinicalSourceDisclosure } from '@/components/predictions/ClinicalSourceDisclosure'
-import { cn, formatDateTime, formatScore } from '@/lib/utils'
+import { cn, formatRelativeBusinessDateTime, formatScore } from '@/lib/utils'
 import { predictionService } from '@/services/predictionService'
 import { useSocket } from '@/context/SocketContext'
 import type { Prediction } from '@/types'
@@ -127,7 +127,7 @@ export default function PredictionHistoryPage() {
                 )}
                 <span className="flex items-center gap-1">
                   <Calendar className="w-3.5 h-3.5" />
-                  {formatDateTime(pred.predictedAt)}
+                  {formatRelativeBusinessDateTime(pred.predictedAt)}
                 </span>
               </div>
               {/* featureImportance isn't persisted on the Prediction row, so

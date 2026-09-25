@@ -71,10 +71,6 @@ export default function LoginPage() {
               Detecta riesgos<br />
               <span className="text-blue-400">antes de que ocurran</span>
             </h1>
-            <p className="text-white/60 mt-4 text-base leading-relaxed max-w-sm">
-              Plataforma inteligente de predicción cardiovascular basada en Machine Learning
-              y el Framingham Heart Study.
-            </p>
           </div>
           <div className="space-y-3">
             {FEATURES.map(({ icon: Icon, text }) => (

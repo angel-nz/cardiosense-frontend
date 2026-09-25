@@ -4,7 +4,7 @@ import {
   Activity, ChevronLeft, ChevronRight, FileText, Bell,
   ArrowRight, AlertTriangle, Loader2,
 } from 'lucide-react'
-import { cn, formatScore, formatLongDate, formatTime, RISK_CONFIG, SEVERITY_CONFIG } from '@/lib/utils'
+import { cn, formatScore, formatLongDate, formatTime, formatRelativeBusinessDate, RISK_CONFIG, SEVERITY_CONFIG } from '@/lib/utils'
 import { BUSINESS_TIMEZONE, getBusinessDateKey, getMonthRange, buildCalendarDays, groupEventsByBusinessDay } from '@/lib/businessDate'
 import { timelineService } from '@/services/timelineService'
 import { RiskBadge } from '@/components/ui/RiskBadge'
@@ -447,7 +447,14 @@ export function PatientCalendar({
           {selectedDateKey && (
             <div className="mt-4 pt-4 border-t border-border">
               <h4 className="text-sm font-medium text-foreground mb-2">
-                Eventos del {formatLongDate(selectedDateKey)}
+                {/* W7 — "de Hoy"/"de Ayer" vs "del <weekday, día de mes de
+                    año>" (formatLongDate, unchanged for older days) — never
+                    "del Hoy". selectedDateKey is already a business-date
+                    key, compared directly with no Date reparsing. */}
+                {(() => {
+                  const rel = formatRelativeBusinessDate(selectedDateKey, d => formatLongDate(String(d)))
+                  return rel.isRelative ? `Eventos de ${rel.label}` : `Eventos del ${rel.label}`
+                })()}
               </h4>
               {feedback && (
                 <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
