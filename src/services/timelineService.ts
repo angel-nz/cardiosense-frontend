@@ -14,10 +14,16 @@ export interface BackendTimelineEvent {
   eventType: 'CLINICAL_RECORD' | 'PREDICTION' | 'ALERT' | 'RISK_CHANGE'
   eventDate: string
   metadata: Record<string, unknown>
+  // W2.2 — derived, top-level (not nested in metadata), optional/nullable.
+  groupId?: string | null
 }
 
 export function normalizeEvent(raw: BackendTimelineEvent): PatientTimelineEvent {
-  const base = { id: raw.id, patientId: raw.patientId, eventDate: raw.eventDate }
+  // W2.2 — `groupId` carried through unchanged (never recomputed
+  // client-side — lib/timelineGrouping.ts only ever reads it). `?? null`
+  // normalizes an absent field the same way as an explicit null, so
+  // callers never need to distinguish "omitted" from "null".
+  const base = { id: raw.id, patientId: raw.patientId, eventDate: raw.eventDate, groupId: raw.groupId ?? null }
   switch (raw.eventType) {
     case 'CLINICAL_RECORD':
       return {

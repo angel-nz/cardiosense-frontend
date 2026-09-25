@@ -9,6 +9,8 @@ import { BUSINESS_TIMEZONE, getBusinessDateKey, getMonthRange, buildCalendarDays
 import { timelineService } from '@/services/timelineService'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import { useSocket } from '@/context/SocketContext'
+import { groupTimelineEventsForRender } from '@/lib/timelineGrouping'
+import { TimelineEventGroup } from '@/components/timeline/TimelineEventGroup'
 import type { PatientTimelineEvent } from '@/types'
 
 // P5 — how long to wait before actually refetching after a realtime signal,
@@ -467,16 +469,27 @@ export function PatientCalendar({
                   No hay actividad cardiovascular registrada para este día.
                 </p>
               ) : (
+                // W2.2 — the day's events, already in their canonical
+                // chronological order, partitioned into render groups by
+                // the shared timelineGrouping utility. Grouping/ordering is
+                // purely a display concern here: it never touches
+                // `events`/`selectedEvents` themselves, never re-sorts, and
+                // never changes which callback fires on a click — only how
+                // the rows are visually clustered.
                 <div className="space-y-2">
-                  {selectedEvents.map(event => (
-                    <TimelineEventRow
-                      key={event.id}
-                      event={event}
-                      isSelected={event.id === selectedEventId}
-                      onSelectHealthRecord={onSelectHealthRecord}
-                      onSelectPrediction={onSelectPrediction}
-                      onRowClick={() => setSelectedEventId(event.id)}
-                    />
+                  {groupTimelineEventsForRender(selectedEvents).map(group => (
+                    <TimelineEventGroup key={group.events[0].id} memberCount={group.events.length}>
+                      {group.events.map(event => (
+                        <TimelineEventRow
+                          key={event.id}
+                          event={event}
+                          isSelected={event.id === selectedEventId}
+                          onSelectHealthRecord={onSelectHealthRecord}
+                          onSelectPrediction={onSelectPrediction}
+                          onRowClick={() => setSelectedEventId(event.id)}
+                        />
+                      ))}
+                    </TimelineEventGroup>
                   ))}
                 </div>
               )}

@@ -233,6 +233,12 @@ interface TimelineEventBase {
   id: string
   patientId: string
   eventDate: string
+  // W2.2 — derived, API-only field (backend patient.timeline.ts). `null`/
+  // omitted means no deterministic HealthRecord-anchored scenario could be
+  // established for this event — it still renders individually. Never
+  // persisted, never computed client-side (see lib/timelineGrouping.ts,
+  // which only ever READS this field).
+  groupId?: string | null
 }
 
 export interface ClinicalRecordTimelineEvent extends TimelineEventBase {

@@ -12,6 +12,8 @@ import {
 import { dashboardService } from '@/services/dashboardService'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import { useSocket } from '@/context/SocketContext'
+import { groupTimelineEventsForRender } from '@/lib/timelineGrouping'
+import { TimelineEventGroup } from '@/components/timeline/TimelineEventGroup'
 import type { DashboardCalendarEvent, DashboardEventNavigationState, PatientDetailNavigationTarget } from '@/types'
 
 // O4.2 — same coalescing window already validated for PatientCalendar (P5):
@@ -329,9 +331,18 @@ export function DashboardCalendar() {
             No hay actividad para este día.
           </p>
         ) : (
+          // W2.2 — same shared grouping utility/wrapper as PatientCalendar
+          // (§14/§15 of the W2.1 report). groupId is already namespaced by
+          // patientId (patient.timeline.ts::buildHealthRecordGroupId), so
+          // two different patients' events can never land in the same
+          // bucket here, even defensively.
           <div className="space-y-2">
-            {selectedEvents.map(event => (
-              <DashboardEventRow key={event.id} event={event} onNavigateToPatient={navigateToPatientTarget} />
+            {groupTimelineEventsForRender(selectedEvents).map(group => (
+              <TimelineEventGroup key={group.events[0].id} memberCount={group.events.length}>
+                {group.events.map(event => (
+                  <DashboardEventRow key={event.id} event={event} onNavigateToPatient={navigateToPatientTarget} />
+                ))}
+              </TimelineEventGroup>
             ))}
           </div>
         )}
