@@ -734,6 +734,24 @@ export default function PatientDetailPage() {
                 <User className="w-4 h-4 text-muted-foreground" />
                 Información personal
               </h3>
+              {/* W6 — second entry point into the SAME edit workflow as the
+                  action-bar's "Editar información" button above (identical
+                  onClick: setEditPatientModalOpen(true), the one and only
+                  EditPatientModal-open state — no new state, no new handler,
+                  no second modal instance). Visually secondary (smaller,
+                  borderless, muted) so it doesn't compete with the action
+                  bar's control; icon-only with an aria-label/title so it
+                  stays a fixed-size, usable hit target at narrow widths
+                  without ever wrapping the header. */}
+              <button
+                type="button"
+                onClick={() => setEditPatientModalOpen(true)}
+                aria-label="Editar información personal"
+                title="Editar información personal"
+                className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors flex-shrink-0"
+              >
+                <Edit className="w-3.5 h-3.5" />
+              </button>
             </div>
 
             {/* U4.2A — editing now happens exclusively via EditPatientModal
@@ -920,115 +938,138 @@ export default function PatientDetailPage() {
             {/* New health record form (INT-09) */}
           </div>
 
-          {/* Clinical history (INT-08) — past records from GET /:id/history */}
-          {historyTotal > 1 && (
-            <div className="bg-card rounded-xl border border-border p-5">
-              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                <h3 className="font-semibold text-foreground flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-muted-foreground" />
-                  Historial de registros clínicos
-                </h3>
-                <span className="text-xs text-muted-foreground">{historyTotal} registro{historyTotal === 1 ? '' : 's'}</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-muted-foreground uppercase tracking-wide border-b border-border">
-                      {([
-                        ['recordedAt', 'Fecha'],
-                        ['sysBP', 'Sistólica'],
-                        ['diaBP', 'Diastólica'],
-                        ['totChol', 'Colesterol'],
-                        ['glucose', 'Glucosa'],
-                        ['bmi', 'IMC'],
-                      ] as [HistorySortBy, string][]).map(([field, label]) => (
-                        <th key={field} className="py-2 pr-4">
-                          <button
-                            type="button"
-                            onClick={() => handleSortClick(field)}
-                            className="flex items-center gap-1 hover:text-foreground transition-colors"
-                          >
-                            {label}
-                            {historySortBy === field && (
-                              <span>{historySortOrder === 'asc' ? '▲' : '▼'}</span>
-                            )}
-                          </button>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recordsLoading ? (
-                      <tr><td colSpan={6} className="py-8 text-center">
-                        <Loader2 className="w-5 h-5 text-primary animate-spin inline-block" />
-                      </td></tr>
-                    ) : recordsError ? (
-                      <tr><td colSpan={6} className="py-4 text-center text-red-600">{recordsError}</td></tr>
-                    ) : records.map(r => (
-                      <tr
-                        key={r.id}
-                        ref={el => {
-                          if (el) recordRowRefs.current.set(r.id, el)
-                          else recordRowRefs.current.delete(r.id)
-                        }}
-                        className={cn(
-                          'border-b border-border last:border-0 transition-colors',
-                          r.id === selectedHealthRecordId && 'bg-primary/10 ring-1 ring-inset ring-primary',
-                        )}
-                      >
-                        <td className="py-2 pr-4 text-muted-foreground">{formatRelativeBusinessDateTime(r.recordedAt)}</td>
-                        <td className="py-2 pr-4">{r.sysBP}</td>
-                        <td className="py-2 pr-4">{r.diaBP}</td>
-                        <td className="py-2 pr-4">{r.totChol}</td>
-                        <td className="py-2 pr-4">{r.glucose}</td>
-                        <td className="py-2">{r.bmi}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          {/* Clinical history (INT-08) — past records from GET /:id/history.
+              W3 — the card itself is now ALWAYS rendered (the previous
+              `historyTotal > 1` gate hid the entire card — including its
+              loading/error states — whenever a patient had 0 or exactly 1
+              record, which was the defect W1 identified). Precedence inside
+              the card body is now: loading → error → empty → records,
+              evaluated once at the body level instead of only inside the
+              table's <tbody> — this is what makes the loading/error states
+              reachable again at 0/1 records, not just at >1. The table,
+              pagination controls, sorting, and W7 relative-date formatting
+              below are byte-for-byte the same JSX as before W3 (only their
+              container changed, from "always-mounted table with conditional
+              rows" to "one of four mutually exclusive body states"); no
+              backend/API/pagination/sorting contract changed. */}
+          <div className="bg-card rounded-xl border border-border p-5">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <h3 className="font-semibold text-foreground flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-muted-foreground" />
+                Historial de registros clínicos
+              </h3>
+              <span className="text-xs text-muted-foreground">{historyTotal} registro{historyTotal === 1 ? '' : 's'}</span>
+            </div>
 
-              {/* U5.2 — pagination controls */}
-              <div className="flex items-center justify-between flex-wrap gap-3 mt-4 pt-3 border-t border-border">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>Mostrar</span>
-                  <select
-                    value={historyLimit}
-                    onChange={e => handleLimitChange(Number(e.target.value))}
-                    className="border border-border rounded-md px-2 py-1 bg-card cursor-pointer"
-                  >
-                    <option value={10}>10</option>
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                  </select>
-                  <span>por página</span>
+            {recordsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-5 h-5 text-primary animate-spin" />
+              </div>
+            ) : recordsError ? (
+              <p className="text-sm text-red-600 text-center py-4">{recordsError}</p>
+            ) : historyTotal === 0 ? (
+              <div className="text-center py-6">
+                <p className="text-sm text-muted-foreground">No hay registros clínicos todavía.</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Los registros clínicos que agregues para este paciente aparecerán aquí.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-muted-foreground uppercase tracking-wide border-b border-border">
+                        {([
+                          ['recordedAt', 'Fecha'],
+                          ['sysBP', 'Sistólica'],
+                          ['diaBP', 'Diastólica'],
+                          ['totChol', 'Colesterol'],
+                          ['glucose', 'Glucosa'],
+                          ['bmi', 'IMC'],
+                        ] as [HistorySortBy, string][]).map(([field, label]) => (
+                          <th key={field} className="py-2 pr-4">
+                            <button
+                              type="button"
+                              onClick={() => handleSortClick(field)}
+                              className="flex items-center gap-1 hover:text-foreground transition-colors"
+                            >
+                              {label}
+                              {historySortBy === field && (
+                                <span>{historySortOrder === 'asc' ? '▲' : '▼'}</span>
+                              )}
+                            </button>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {records.map(r => (
+                        <tr
+                          key={r.id}
+                          ref={el => {
+                            if (el) recordRowRefs.current.set(r.id, el)
+                            else recordRowRefs.current.delete(r.id)
+                          }}
+                          className={cn(
+                            'border-b border-border last:border-0 transition-colors',
+                            r.id === selectedHealthRecordId && 'bg-primary/10 ring-1 ring-inset ring-primary',
+                          )}
+                        >
+                          <td className="py-2 pr-4 text-muted-foreground">{formatRelativeBusinessDateTime(r.recordedAt)}</td>
+                          <td className="py-2 pr-4">{r.sysBP}</td>
+                          <td className="py-2 pr-4">{r.diaBP}</td>
+                          <td className="py-2 pr-4">{r.totChol}</td>
+                          <td className="py-2 pr-4">{r.glucose}</td>
+                          <td className="py-2">{r.bmi}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="text-muted-foreground">
-                    Página {Math.min(historyPage, Math.max(historyTotalPages, 1))} de {Math.max(historyTotalPages, 1)}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
-                      disabled={historyPage <= 1}
-                      className="px-2.5 py-1 rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+
+                {/* U5.2 — pagination controls */}
+                <div className="flex items-center justify-between flex-wrap gap-3 mt-4 pt-3 border-t border-border">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>Mostrar</span>
+                    <select
+                      value={historyLimit}
+                      onChange={e => handleLimitChange(Number(e.target.value))}
+                      className="border border-border rounded-md px-2 py-1 bg-card cursor-pointer"
                     >
-                      Anterior
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setHistoryPage(p => Math.min(historyTotalPages, p + 1))}
-                      disabled={historyPage >= historyTotalPages}
-                      className="px-2.5 py-1 rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Siguiente
-                    </button>
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                    </select>
+                    <span>por página</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="text-muted-foreground">
+                      Página {Math.min(historyPage, Math.max(historyTotalPages, 1))} de {Math.max(historyTotalPages, 1)}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                        disabled={historyPage <= 1}
+                        className="px-2.5 py-1 rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Anterior
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHistoryPage(p => Math.min(historyTotalPages, p + 1))}
+                        disabled={historyPage >= historyTotalPages}
+                        className="px-2.5 py-1 rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Siguiente
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
+              </>
+            )}
+          </div>
 
           {/* Feature importance — real data only; the backend does not
               persist featureImportance on historical predictions (only the

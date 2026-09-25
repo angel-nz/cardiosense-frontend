@@ -1,13 +1,41 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { Activity, Calendar, Cpu, Loader2, History } from 'lucide-react'
+import { Activity, Calendar, ChevronLeft, ChevronRight, Cpu, History, Loader2 } from 'lucide-react'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import { RiskGauge } from '@/components/charts/RiskGauge'
 import { ClinicalSourceDisclosure } from '@/components/predictions/ClinicalSourceDisclosure'
-import { cn, formatRelativeBusinessDateTime, formatScore } from '@/lib/utils'
+import { cn, formatRelativeBusinessDate, formatRelativeBusinessDateTime, formatScore } from '@/lib/utils'
+import { getBusinessDateKey, BUSINESS_TIMEZONE } from '@/lib/businessDate'
 import { predictionService } from '@/services/predictionService'
 import { useSocket } from '@/context/SocketContext'
-import type { Prediction } from '@/types'
+import type { Prediction, PredictionRiskFilter } from '@/types'
+
+// W5.2 — fixed page size for this patient-scoped view (binding product
+// requirement: exactly 10/page). No page-size selector exists or is added;
+// the shared PatientPredictionQueryDto default (20, used elsewhere) is left
+// untouched — this page simply requests limit=10 explicitly on every call
+// (§8/§9 of the W5.2 block; per the accepted W5.1 diagnosis §3/§36, changing
+// the shared endpoint default was explicitly NOT preferred).
+const PAGE_LIMIT = 10
+
+// W5.2 §13/§21 — duplicated verbatim from PredictionsPage.tsx's
+// GlobalPredictionHistory (not imported — that component and its helpers
+// are not exported, and Global Prediction History is explicitly left
+// untouched per the accepted W5.1 diagnosis: a small, intentional
+// duplication rather than a shared-utility refactor). Same noon-UTC anchor
+// trick to avoid a calendar-day rollover when reformatted in
+// BUSINESS_TIMEZONE.
+const MONTH_FORMATTER = new Intl.DateTimeFormat('es-MX', { timeZone: BUSINESS_TIMEZONE, month: 'long', year: 'numeric' })
+const DAY_FORMATTER   = new Intl.DateTimeFormat('es-MX', { timeZone: BUSINESS_TIMEZONE, weekday: 'long', day: 'numeric' })
+
+function monthLabel(dateKey: string): string {
+  const label = MONTH_FORMATTER.format(new Date(`${dateKey}T12:00:00Z`))
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+function dayLabel(dateKey: string): string {
+  const label = DAY_FORMATTER.format(new Date(`${dateKey}T12:00:00Z`))
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
 
 // Rendered inside PredictionsPage's "Historial" tab, so it reads :patientId
 // from the same matched route (/predictions/:patientId) — no separate route
@@ -17,18 +45,57 @@ export default function PredictionHistoryPage() {
   const { lastPrediction, clearLastPrediction } = useSocket()
 
   const [predictions, setPredictions] = useState<Prediction[]>([])
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // W5.2 §2/§4/§10/§20 — from/to/riskLevel filters, component-local state
+  // per the accepted W5.1 §20 decision (no URL search params — matches this
+  // page's existing convention; page/targetId are not URL-backed either).
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [riskLevel, setRiskLevel] = useState<PredictionRiskFilter | ''>('')
+
+  const hasActiveFilters = !!(from || to || riskLevel)
+  // §11 — frontend-only guard: an invalid range is never sent to the
+  // server. Plain string comparison is safe here because both values are
+  // literal "YYYY-MM-DD" — that sorts lexicographically identically to
+  // chronologically. Backend `PatientPredictionQueryDto`'s own refine is
+  // kept as an independent, authoritative defense (§2).
+  const invalidRange = !!from && !!to && from > to
+
+  const requestIdRef = useRef(0)
   const load = useCallback(async (silent = false) => {
     if (!patientId) return
+    if (invalidRange) return // §11 — no request while the range is invalid
+    const requestId = ++requestIdRef.current
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const result = await predictionService.getHistory(patientId)
-      // Backend already orders by predictedAt desc; no re-sort needed.
+      const result = await predictionService.getHistory(patientId, {
+        page, limit: PAGE_LIMIT,
+        from: from || undefined,
+        to: to || undefined,
+        riskLevel: riskLevel || undefined,
+      })
+      // §12 — stale-response guard: a newer load() may have started (a
+      // filter/page change, or a realtime refetch) since this one did.
+      if (requestId !== requestIdRef.current) return
       setPredictions(result.data)
+      setTotal(result.total)
+      setTotalPages(result.totalPages)
+      // §8 — out-of-range correction after a filter/refetch narrows the
+      // result set — the exact pattern already used by
+      // GlobalPredictionHistory's own load().
+      if (result.total > 0 && page > result.totalPages) {
+        setPage(result.totalPages)
+      } else if (result.total === 0 && page !== 1) {
+        setPage(1)
+      }
     } catch {
+      if (requestId !== requestIdRef.current) return
       if (!silent) setError('No se pudo cargar el historial de predicciones')
       // A silent background refresh failing quietly is acceptable here —
       // the list just stays as-is; the user can still navigate away/back
@@ -36,115 +103,242 @@ export default function PredictionHistoryPage() {
       // background refresh they didn't ask for would be more disruptive
       // than helpful.
     } finally {
-      if (!silent) setLoading(false)
+      if (requestId === requestIdRef.current && !silent) setLoading(false)
     }
-  }, [patientId])
+  }, [patientId, page, from, to, riskLevel, invalidRange])
 
   useEffect(() => { load() }, [load])
 
-  // INT-19 — prediction_completed: refresh the history list in place
-  // (silent — no loading spinner) rather than fabricate a Prediction from
-  // the event's partial payload. Scoped to the currently open patient only.
+  // §10 — any filter change resets to page 1; every OTHER active filter is
+  // kept (each is independent state — nothing here touches the others).
+  useEffect(() => { setPage(1) }, [from, to, riskLevel])
+
+  // INT-19/§18 — prediction_completed: refresh the history list in place
+  // (silent — no loading spinner), using the CURRENT page/limit/filters
+  // (captured by `load`'s own dependency array), rather than fabricate a
+  // Prediction from the event's partial payload. Scoped to the currently
+  // open patient only. The server — never this handler — decides whether
+  // the new prediction belongs in the active filtered page; nothing is
+  // inserted client-side. §19 — W4 auto-generated predictions reach the
+  // exact same persisted Prediction table/endpoint, so they appear here
+  // through this same canonical refetch with no special branch.
   useEffect(() => {
     if (!patientId || !lastPrediction || lastPrediction.patientId !== patientId) return
     load(true)
     clearLastPrediction()
   }, [patientId, lastPrediction, load, clearLastPrediction])
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <Loader2 className="w-7 h-7 text-primary animate-spin mb-3" />
-        <p className="text-sm text-muted-foreground">Cargando historial...</p>
-      </div>
-    )
-  }
+  const clearFilters = () => { setFrom(''); setTo(''); setRiskLevel('') }
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <p className="font-medium text-red-600">{error}</p>
-        <button
-          onClick={() => load()}
-          className="mt-3 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
-        >
-          Reintentar
-        </button>
-      </div>
-    )
-  }
-
-  if (predictions.length === 0) {
-    return (
-      <div className="bg-card rounded-xl border border-border p-8 text-center">
-        <History className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-        <p className="font-medium text-foreground">Sin predicciones aún</p>
-        <p className="text-sm text-muted-foreground mt-1">
-          Este paciente no tiene predicciones registradas todavía
-        </p>
-      </div>
-    )
+  // §13 — presentation-only grouping of the CURRENT page's already
+  // chronologically-ordered predictions, by business month/day. Pagination
+  // is never altered here and rows are never re-sorted — a contiguous-run
+  // merge only, duplicated verbatim from GlobalPredictionHistory's own
+  // algorithm (see module-level comment above).
+  const groups: { monthKey: string; dayKey: string; items: Prediction[] }[] = []
+  for (const pred of predictions) {
+    const dayKey = getBusinessDateKey(pred.predictedAt)
+    const monthKey = dayKey.slice(0, 7)
+    const last = groups[groups.length - 1]
+    if (last && last.dayKey === dayKey) {
+      last.items.push(pred)
+    } else {
+      groups.push({ monthKey, dayKey, items: [pred] })
+    }
   }
 
   return (
-    <div className="space-y-3">
-      {/* Stats row — computed over the loaded history (capped at `limit`) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: 'Total',       value: predictions.length,                                       color: 'text-foreground' },
-          { label: 'Alto riesgo', value: predictions.filter(p => p.riskLevel === 'high').length,    color: 'text-red-600' },
-          { label: 'Moderado',    value: predictions.filter(p => p.riskLevel === 'moderate').length, color: 'text-amber-600' },
-          { label: 'Anomalías',   value: predictions.filter(p => p.isAnomaly).length,                color: 'text-purple-600' },
-        ].map(s => (
-          <div key={s.label} className="bg-card rounded-xl border border-border px-4 py-3 text-center">
-            <p className={cn('text-2xl font-bold', s.color)}>{s.value}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
-          </div>
-        ))}
+    <div className="space-y-4">
+      {/* §10 — filter controls, ported from GlobalPredictionHistory's proven
+          pattern: date/select changes apply immediately, no debounce, no
+          free-text search (the patient is already scoped by the route). */}
+      <div className="bg-card rounded-xl border border-border p-4 space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <label htmlFor="history-from" className="text-xs text-muted-foreground">Desde</label>
+          <input
+            id="history-from"
+            type="date"
+            value={from}
+            max={to || undefined}
+            onChange={e => setFrom(e.target.value)}
+            className="px-2.5 py-1.5 text-xs rounded-lg border border-border bg-card"
+          />
+          <label htmlFor="history-to" className="text-xs text-muted-foreground">Hasta</label>
+          <input
+            id="history-to"
+            type="date"
+            value={to}
+            min={from || undefined}
+            onChange={e => setTo(e.target.value)}
+            className="px-2.5 py-1.5 text-xs rounded-lg border border-border bg-card"
+          />
+          <label htmlFor="history-risk" className="sr-only">Nivel de riesgo</label>
+          <select
+            id="history-risk"
+            value={riskLevel}
+            onChange={e => setRiskLevel(e.target.value as PredictionRiskFilter | '')}
+            className="px-2.5 py-1.5 text-xs rounded-lg border border-border bg-card cursor-pointer"
+          >
+            <option value="">Todos los niveles</option>
+            <option value="LOW">Bajo</option>
+            <option value="MODERATE">Moderado</option>
+            <option value="HIGH">Alto</option>
+          </select>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="text-xs text-primary hover:underline ml-auto"
+            >
+              Limpiar filtros
+            </button>
+          )}
+        </div>
+        {/* §11 — inline validation only; the request is simply never sent
+            (see `invalidRange` guard in load() above) and current filters/
+            results stay exactly as they were — no silent date swapping. */}
+        {invalidRange && (
+          <p className="text-[11px] text-red-600">
+            La fecha "Desde" no puede ser posterior a "Hasta".
+          </p>
+        )}
       </div>
 
-      {predictions.map(pred => (
-        <div key={pred.id} className="bg-card rounded-xl border border-border p-5">
-          <div className="flex items-start gap-4">
-            <div className="flex-shrink-0 hidden sm:block">
-              <RiskGauge score={pred.riskScore} level={pred.riskLevel} size={80} showLabel={false} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <RiskBadge level={pred.riskLevel} showScore />
-                {pred.isAnomaly && (
-                  <span className="text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full">
-                    ⚠ Anomalía
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground flex-wrap">
-                {pred.modelVersion && (
-                  <span className="flex items-center gap-1">
-                    <Cpu className="w-3.5 h-3.5" />
-                    Modelo {pred.modelVersion}
-                  </span>
-                )}
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5" />
-                  {formatRelativeBusinessDateTime(pred.predictedAt)}
-                </span>
-              </div>
-              {/* featureImportance isn't persisted on the Prediction row, so
-                  it's never present on historical entries — no fallback data
-                  is fabricated here (see report, INT-12 divergence). */}
-
-              {/* V7 — additive clinical-source context, visually
-                  subordinate to the result above (collapsed by default,
-                  smaller type, muted border-top separator). */}
-              <ClinicalSourceDisclosure
-                healthRecord={pred.healthRecord}
-                className="mt-3 pt-3 border-t border-border"
-              />
-            </div>
-          </div>
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <Loader2 className="w-7 h-7 text-primary animate-spin mb-3" />
+          <p className="text-sm text-muted-foreground">Cargando historial...</p>
         </div>
-      ))}
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <p className="font-medium text-red-600">{error}</p>
+          <button
+            onClick={() => load()}
+            className="mt-3 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+          >
+            Reintentar
+          </button>
+        </div>
+      ) : predictions.length === 0 ? (
+        <div className="bg-card rounded-xl border border-border p-8 text-center">
+          <History className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+          {/* §15 — two distinct empty states: no predictions at all for
+              this patient (copy unchanged from before W5.2) vs. active
+              filters producing zero matches. Never a fake row either way. */}
+          {hasActiveFilters ? (
+            <>
+              <p className="font-medium text-foreground">Sin resultados</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                No hay predicciones que coincidan con los filtros seleccionados.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="font-medium text-foreground">Sin predicciones aún</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Este paciente no tiene predicciones registradas todavía
+              </p>
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* W5.2-FIX1 — restored stats row, explicitly rescoped to the
+              CURRENT VISIBLE PAGE (max 10 rows) rather than the patient's
+              full/filtered history — computing these from `predictions`
+              (never from the server's `total`) is what keeps them honest
+              after W5.2 introduced real server-side pagination. The label
+              below makes that scope impossible to misread as an
+              all-history/all-filter aggregate; the canonical filtered
+              total/page count is shown separately in the pagination
+              footer further down. Only rendered when the current page has
+              at least one row — never for either empty state. */}
+
+          {groups.map(group => (
+            <div key={group.dayKey} className="space-y-3">
+              {(groups.indexOf(group) === 0 || groups[groups.indexOf(group) - 1].monthKey !== group.monthKey) && (
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  {monthLabel(group.monthKey + '-01')}
+                </div>
+              )}
+              <div className="text-[11px] font-medium text-muted-foreground">
+                {/* §14 — day heading: Hoy/Ayer for the current/previous
+                    business day, otherwise the absolute weekday+day style
+                    (dayLabel) — never "Hoy 25". Month heading above always
+                    stays absolute. */}
+                {formatRelativeBusinessDate(group.dayKey, d => dayLabel(String(d))).label}
+              </div>
+              <div className="space-y-3">
+                {group.items.map(pred => (
+                  <div key={pred.id} className="bg-card rounded-xl border border-border p-5">
+                    <div className="flex items-start gap-4">
+                      <div className="flex-shrink-0 hidden sm:block">
+                        <RiskGauge score={pred.riskScore} level={pred.riskLevel} size={80} showLabel={false} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <RiskBadge level={pred.riskLevel} showScore />
+                          {pred.isAnomaly && (
+                            <span className="text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full">
+                              ⚠ Anomalía
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground flex-wrap">
+                          {pred.modelVersion && (
+                            <span className="flex items-center gap-1">
+                              <Cpu className="w-3.5 h-3.5" />
+                              Modelo {pred.modelVersion}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5" />
+                            {formatRelativeBusinessDateTime(pred.predictedAt)}
+                          </span>
+                        </div>
+                        {/* featureImportance isn't persisted on the Prediction row, so
+                            it's never present on historical entries — no fallback data
+                            is fabricated here (see report, INT-12 divergence). */}
+
+                        {/* V7 — additive clinical-source context, visually
+                            subordinate to the result above (collapsed by default,
+                            smaller type, muted border-top separator). */}
+                        <ClinicalSourceDisclosure
+                          healthRecord={pred.healthRecord}
+                          className="mt-3 pt-3 border-t border-border"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {/* §8 — server-authoritative pagination; no client-side slicing. */}
+          {totalPages > 1 && (
+            <div className="px-4 py-3 bg-card border border-border rounded-xl flex items-center justify-between text-xs text-muted-foreground">
+              <span>Página {page} de {totalPages} · {total} {total === 1 ? 'predicción' : 'predicciones'}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                  className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

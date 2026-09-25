@@ -1,7 +1,7 @@
 import { api } from './api'
 import { normalizeHealthRecord } from './recordService'
 import type { BackendHealthRecord } from './recordService'
-import type { Prediction, RiskLevel, CreatePredictionRequest, PaginatedResponse, GlobalPredictionQueryParams } from '@/types'
+import type { Prediction, RiskLevel, CreatePredictionRequest, PaginatedResponse, GlobalPredictionQueryParams, PredictionRiskFilter } from '@/types'
 
 // ─── Backend wire shape ───────────────────────────────────────────────────
 // Real routes (see prediction.routes.ts / app.ts):
@@ -84,11 +84,31 @@ export const predictionService = {
   // instead returns the canonical page that actually contains the target
   // Prediction, with `targetResolved` indicating whether it was found —
   // never a merged/fabricated dataset, always a genuine contiguous page.
-  async getHistory(patientId: string, opts: { limit?: number; targetId?: string } = {}): Promise<PaginatedResponse<Prediction>> {
-    const { limit = 20, targetId } = opts
+  //
+  // W5.2 — page/from/to/riskLevel added (additive; every existing caller —
+  // PredictionsPage's reconnect-recovery call with only `{ limit: 5 }` —
+  // keeps working unchanged, since every new field is optional and simply
+  // omitted from `params` when not supplied). `from`/`to` are sent as plain
+  // human "YYYY-MM-DD" strings, same convention already used by
+  // GlobalPredictionQueryParams/listAll — the backend (boundaryField)
+  // performs the actual business-timezone half-open [from, to) conversion;
+  // no date math happens here. `riskLevel` is the canonical uppercase
+  // value, never derived from riskScore.
+  async getHistory(patientId: string, opts: {
+    page?: number; limit?: number; targetId?: string
+    from?: string; to?: string; riskLevel?: PredictionRiskFilter
+  } = {}): Promise<PaginatedResponse<Prediction>> {
+    const { page, limit = 20, targetId, from, to, riskLevel } = opts
     const { data } = await api.get<BackendPaginated<BackendPrediction> & { targetResolved?: boolean }>(
       `/predictions/patient/${patientId}`,
-      { params: { limit, ...(targetId ? { targetId } : {}) } },
+      { params: {
+          limit,
+          ...(page ? { page } : {}),
+          ...(targetId ? { targetId } : {}),
+          ...(from ? { from } : {}),
+          ...(to ? { to } : {}),
+          ...(riskLevel ? { riskLevel } : {}),
+        } },
     )
     return {
       data: data.data.map(normalizePrediction),

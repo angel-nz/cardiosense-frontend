@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 import { io, type Socket } from 'socket.io-client'
-import type { SocketAlert, SocketPrediction, SocketHealthRecord, SocketPatientUpdate, SocketDashboardActivity, SocketPatientCreated, SocketPredictionUnavailable } from '@/types'
+import type { SocketAlert, SocketPrediction, SocketHealthRecord, SocketPatientUpdate, SocketDashboardActivity, SocketPatientCreated, SocketPredictionUnavailable, SocketPredictionFailed } from '@/types'
 import { useAuth } from './AuthContext'
 
 // Same host as the backend, without the /api prefix (Socket.IO attaches to
@@ -34,6 +34,10 @@ interface SocketContextValue {
   // U8.6C — prediction_unavailable, same user:{userId} room. Ephemeral
   // informational signal (no Prediction exists for this outcome).
   lastPredictionUnavailable: SocketPredictionUnavailable | null
+  // W4.2 — prediction_failed, same user:{userId} room and same "last event"
+  // scalar pattern. Ephemeral, technical-failure-only signal, distinct from
+  // prediction_unavailable (see SocketPredictionFailed in types/index.ts).
+  lastPredictionFailed: SocketPredictionFailed | null
   subscribeToPatient: (patientId: string) => void
   unsubscribeFromPatient: (patientId: string) => void
   clearLastAlert: () => void
@@ -43,6 +47,7 @@ interface SocketContextValue {
   clearLastDashboardActivity: () => void
   clearLastPatientCreated: () => void
   clearLastPredictionUnavailable: () => void
+  clearLastPredictionFailed: () => void
 }
 
 const SocketContext = createContext<SocketContextValue | null>(null)
@@ -63,6 +68,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [lastDashboardActivity, setLastDashboardActivity] = useState<SocketDashboardActivity | null>(null)
   const [lastPatientCreated, setLastPatientCreated] = useState<SocketPatientCreated | null>(null)
   const [lastPredictionUnavailable, setLastPredictionUnavailable] = useState<SocketPredictionUnavailable | null>(null)
+  const [lastPredictionFailed, setLastPredictionFailed] = useState<SocketPredictionFailed | null>(null)
   const socketRef = useRef<Socket | null>(null)
 
   // ─── INT-16/17 subscription reconciliation ──────────────────────────────
@@ -175,6 +181,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socket.on('patient_created', (data: SocketPatientCreated) => setLastPatientCreated(data))
     // U8.6C — same user:{userId} room, same "last event" scalar pattern.
     socket.on('prediction_unavailable', (data: SocketPredictionUnavailable) => setLastPredictionUnavailable(data))
+    // W4.2 — same user:{userId} room, same "last event" scalar pattern.
+    socket.on('prediction_failed', (data: SocketPredictionFailed) => setLastPredictionFailed(data))
 
     // INT-19/20/21 — all three are emitted to patient:{patientId} (see
     // socketServer.ts room joins via subscribe_patient/INT-16), so this
@@ -254,6 +262,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const clearLastDashboardActivity = useCallback(() => setLastDashboardActivity(null), [])
   const clearLastPatientCreated = useCallback(() => setLastPatientCreated(null), [])
   const clearLastPredictionUnavailable = useCallback(() => setLastPredictionUnavailable(null), [])
+  const clearLastPredictionFailed = useCallback(() => setLastPredictionFailed(null), [])
 
   return (
     <SocketContext.Provider value={{
@@ -265,6 +274,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       lastDashboardActivity,
       lastPatientCreated,
       lastPredictionUnavailable,
+      lastPredictionFailed,
       subscribeToPatient,
       unsubscribeFromPatient,
       clearLastAlert,
@@ -274,6 +284,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       clearLastDashboardActivity,
       clearLastPatientCreated,
       clearLastPredictionUnavailable,
+      clearLastPredictionFailed,
     }}>
       {children}
     </SocketContext.Provider>

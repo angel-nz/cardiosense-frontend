@@ -63,9 +63,19 @@ interface NewRecordModalProps {
   // PatientDetailPage — this modal never owns/refetches the history array
   // itself, it only hands the persisted record back to its owner.
   onCreated: (record: HealthRecord) => void
+  // W4.2 — additive, optional. When the caller passes this prop AT ALL
+  // (`!== undefined`, including an explicit `null` meaning "no prior record
+  // to prefill from"), it wins over this modal's own internal
+  // recordService.getLatest(patientId) auto-fetch below — no network
+  // request is made, no race is possible. When the prop is omitted
+  // entirely (PatientDetailPage's existing usage), behavior is byte-for-
+  // byte unchanged from before W4.2: the internal fetch runs exactly as it
+  // always has. Precedence: explicit prefillRecord > internal auto-fetch >
+  // empty defaults, per the accepted W4.1 diagnosis.
+  prefillRecord?: HealthRecord | null
 }
 
-export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCreated }: NewRecordModalProps) {
+export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCreated, prefillRecord }: NewRecordModalProps) {
   const [loadingLatest, setLoadingLatest] = useState(false)
   const [hadPreviousRecord, setHadPreviousRecord] = useState(false)
   const [form, setForm] = useState<RecordFormState>(BLANK_FORM)
@@ -75,18 +85,55 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
   const savingRef = useRef(false)
   const prefillRequestIdRef = useRef(0)
 
+  // W4.2 — mirrors `prefillRecord` into a ref on every render (no effect of
+  // its own, so this never triggers a re-run of the prefill effect below).
+  // The prefill effect deliberately keeps its dependency array as
+  // `[open, patientId]` — unchanged from before W4.2 — and reads this ref
+  // only at the moment `open` flips true. This is what the W4.1 diagnosis
+  // meant by "do not add prefillRecord to an effect dependency in a way
+  // that can overwrite doctor edits while the modal is already open": if
+  // `prefillRecord` were a dependency, a parent re-render with a new object
+  // reference (or a changed value) while the modal is already open and the
+  // doctor is mid-edit would re-fire this effect and silently clobber their
+  // in-progress edits. Reading it only through this ref, only once per
+  // open-transition, makes that impossible by construction.
+  const prefillRecordRef = useRef(prefillRecord)
+  prefillRecordRef.current = prefillRecord
+
   // U3.2 — canonical prefill, every time the modal transitions closed→open.
   // Never reuses an abandoned draft from a previous opening, never depends
   // on PatientDetailPage's own (possibly stale, post-U5 possibly paginated)
   // `records` array. Race-protected: a slow response from a closed/reopened
   // modal, or a patient switch mid-request, can never overwrite a newer
   // state (requestId guard, same pattern already validated in P5/O4).
+  //
+  // W4.2 — an explicit `prefillRecord` prop (present at all, `!== undefined`)
+  // short-circuits this entirely: no recordService.getLatest call, no
+  // loading state, no fetch race — the caller's already-loaded record (or
+  // explicit `null`) is applied synchronously. `prefillRequestIdRef` is
+  // still bumped in this branch so any in-flight internal fetch from a
+  // previous open (with no explicit prop) can never land after it.
   useEffect(() => {
     if (!open) return
-    const requestId = ++prefillRequestIdRef.current
-    setLoadingLatest(true)
     setFormError(null)
     setFieldErrors({})
+
+    const explicitPrefill = prefillRecordRef.current
+    if (explicitPrefill !== undefined) {
+      ++prefillRequestIdRef.current
+      setLoadingLatest(false)
+      if (explicitPrefill) {
+        setForm(prefillFromLatest(explicitPrefill))
+        setHadPreviousRecord(true)
+      } else {
+        setForm(BLANK_FORM)
+        setHadPreviousRecord(false)
+      }
+      return
+    }
+
+    const requestId = ++prefillRequestIdRef.current
+    setLoadingLatest(true)
     recordService.getLatest(patientId)
       .then(latest => {
         if (requestId !== prefillRequestIdRef.current) return
@@ -166,11 +213,23 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
       ? ''
       : 'Primer registro clínico.'
 
+  // W4.2 — title stays exactly "Nuevo registro clínico" (unchanged) in every
+  // case: this action never mutates history, so the dialog never implies an
+  // in-place edit. The one additive UX difference for the "Editar y crear
+  // nuevo registro" entry point is this subtitle, shown only when the modal
+  // was opened via an explicit `prefillRecord` prop — normal "Nuevo
+  // registro" usage (prop omitted, e.g. PatientDetailPage today) never
+  // passes this string to Dialog, so its rendered output is unchanged.
+  const prefillSubtitle = prefillRecord !== undefined
+    ? ''
+    : undefined
+
   return (
     <Dialog
       open={open}
       onOpenChange={next => { if (!next) handleClose() }}
       title="Nuevo registro clínico"
+      description={prefillSubtitle}
       preventClose={saving}
     >
       <form onSubmit={submit} className="space-y-4">

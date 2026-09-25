@@ -422,9 +422,16 @@ export interface SocketAlert {
   createdAt: string
 }
 
+// W4.2 — healthRecordId added (additive; every other field unchanged). Always
+// a real, non-null id in the current backend contract — the emitting
+// predict() call always has a concrete, already-resolved HealthRecord by the
+// time it emits (see prediction.service.ts) — so this is typed as a required
+// `string`, matching how SocketPredictionUnavailable below already types its
+// own healthRecordId, not `string | null`/optional.
 export interface SocketPrediction {
   predictionId: string
   patientId: string
+  healthRecordId: string
   riskScore: number
   riskLevel: RiskLevel
   isAnomaly: boolean
@@ -472,6 +479,22 @@ export interface SocketPredictionUnavailable {
   reason: 'MODEL_INELIGIBLE'
   modelVersion: string
   eligibleAgeRange: { min: number; max: number }
+}
+
+// W4.2 — prediction_failed, same user:{userId} room as prediction_unavailable
+// and emitted from the exact same place (record.service.ts's automatic-path
+// catch) — but a DISTINCT, technical-failure-only outcome: the model WOULD
+// have supported this record, but the AI call itself could not complete.
+// MODEL_INELIGIBLE is deliberately excluded from `reason` — that domain
+// outcome stays on SocketPredictionUnavailable above, never folded in here.
+// Like SocketPredictionUnavailable, this is ephemeral/socket-only — nothing
+// is persisted for a failed prediction attempt, so a missed event while
+// offline is not later recoverable from history (see PredictionsPage's
+// reconnect-recovery comment, which covers success only).
+export interface SocketPredictionFailed {
+  patientId: string
+  healthRecordId: string
+  reason: 'AI_UNAVAILABLE' | 'AI_INPUT_REJECTED' | 'AI_FAILURE'
 }
 
 // U2.2 — patient_created. Invalidation-only, user:{userId} room — signals
