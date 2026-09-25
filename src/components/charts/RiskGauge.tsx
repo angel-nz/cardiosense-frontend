@@ -1,14 +1,26 @@
-import { cn, RISK_CONFIG, getRiskLevel, formatScore } from '@/lib/utils'
+import { cn, RISK_CONFIG, formatScore } from '@/lib/utils'
+import type { RiskLevel } from '@/types'
 
 interface RiskGaugeProps {
   score: number
+  // V4A — canonical semantic classification, exactly as persisted on
+  // Prediction.riskLevel (backend-authoritative, itself sourced from the
+  // AI's own risk_thresholds.json — see prediction.service.ts). RiskGauge
+  // never derives this from `score` itself: `score` only positions the
+  // needle/arc and renders the numeric readout — it is NOT reclassified
+  // into LOW/MODERATE/HIGH here. This keeps RiskGauge in agreement with
+  // RiskBadge (which already only ever used the persisted `level`) for the
+  // same Prediction, including historical Predictions whose riskLevel may
+  // have been classified under a different threshold configuration than
+  // whatever Skorp-Beta-0.1 uses today — that provenance is preserved
+  // exactly as persisted, never silently reinterpreted here.
+  level: RiskLevel
   size?: number
   showLabel?: boolean
   className?: string
 }
 
-export function RiskGauge({ score, size = 160, showLabel = true, className }: RiskGaugeProps) {
-  const level = getRiskLevel(score)
+export function RiskGauge({ score, level, size = 160, showLabel = true, className }: RiskGaugeProps) {
   const cfg = RISK_CONFIG[level]
 
   // SVG arc math

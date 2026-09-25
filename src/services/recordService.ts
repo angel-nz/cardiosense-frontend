@@ -7,7 +7,10 @@ import type { HealthRecord, CreateHealthRecordRequest } from '@/types'
 // Prisma Decimal fields (totChol/sysBP/diaBP/bmi/glucose) serialize to JSON
 // as strings, so they're normalized to number here. There is no `sex` field
 // on the backend HealthRecord model (see types/index.ts note).
-interface BackendHealthRecord {
+// V7 — exported so predictionService.ts can type the nested `healthRecord`
+// field on the backend wire shape of Prediction and reuse normalizeHealthRecord
+// below, instead of a second duplicate Decimal-normalization implementation.
+export interface BackendHealthRecord {
   id: string
   patientId: string
   recordedAt: string

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   User, Bell, Shield, Palette, Save, Eye, EyeOff,
   CheckCircle, Camera, Mail, Phone, Building2, Loader2, AlertTriangle,
@@ -66,6 +67,30 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('profile')
   const [saved, setSaved] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+
+  // V9.2R — the Sidebar's doctor-profile block (Sidebar.tsx) sends a
+  // one-shot navigation intent (`state: { tab: 'profile' }`) so this page
+  // reliably opens on Profile even when it was already mounted on a
+  // different tab (a same-location `navigate`/`<NavLink>` alone doesn't
+  // remount this component or reset `activeTab`). Topbar's own "Mi perfil"
+  // item sends no state (V9.1R — out of scope, unchanged), so this only
+  // ever fires from the Sidebar entry point. Only the exact recognized
+  // shape is honored — any other/absent state is a no-op, never touching
+  // activeTab. Once consumed, the state is cleared via a `replace`
+  // navigation (no new history entry, no URL change) so it can never
+  // re-apply on a later Back/Forward or re-render, and manually selecting
+  // another tab afterward is never fought.
+  const location = useLocation()
+  const navigate = useNavigate()
+  useEffect(() => {
+    const intent = location.state as { tab?: Tab } | null | undefined
+    if (intent?.tab !== 'profile') return // not our recognized shape — no-op, never touches activeTab
+    setActiveTab('profile')
+    // Clearing to `state: null` makes this effect's own next run see
+    // `intent?.tab !== 'profile'` and do nothing — the natural terminating
+    // condition, no extra ref/flag needed.
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location, navigate])
 
   // Profile form — only firstName/lastName/especialidad/hospital are real
   // (PATCH /api/users/:id). email/phone/cedula have no editable backend

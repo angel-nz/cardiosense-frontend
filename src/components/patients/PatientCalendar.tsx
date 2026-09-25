@@ -4,7 +4,7 @@ import {
   Activity, ChevronLeft, ChevronRight, FileText, Bell,
   ArrowRight, AlertTriangle, Loader2,
 } from 'lucide-react'
-import { cn, formatScore, RISK_CONFIG, SEVERITY_CONFIG } from '@/lib/utils'
+import { cn, formatScore, formatLongDate, formatTime, RISK_CONFIG, SEVERITY_CONFIG } from '@/lib/utils'
 import { BUSINESS_TIMEZONE, getBusinessDateKey, getMonthRange, buildCalendarDays, groupEventsByBusinessDay } from '@/lib/businessDate'
 import { timelineService } from '@/services/timelineService'
 import { RiskBadge } from '@/components/ui/RiskBadge'
@@ -447,7 +447,7 @@ export function PatientCalendar({
           {selectedDateKey && (
             <div className="mt-4 pt-4 border-t border-border">
               <h4 className="text-sm font-medium text-foreground mb-2">
-                Eventos del {selectedDateKey}
+                Eventos del {formatLongDate(selectedDateKey)}
               </h4>
               {feedback && (
                 <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
@@ -512,9 +512,11 @@ function EventRowShell({
 }
 
 function TimelineEventRow({ event, isSelected, onSelectHealthRecord, onSelectPrediction, onRowClick }: TimelineEventRowProps) {
-  const time = new Intl.DateTimeFormat('es-MX', {
-    hour: '2-digit', minute: '2-digit', timeZone: BUSINESS_TIMEZONE,
-  }).format(new Date(event.eventDate))
+  // V3 §8 — replaces the previously duplicated Intl.DateTimeFormat call
+  // (which produced 24-hour output for the es-MX locale) with the shared,
+  // canonical 12-hour formatter, pinned to the business timezone exactly as
+  // this call already was.
+  const time = formatTime(event.eventDate, { timeZone: 'business' })
 
   if (event.eventType === 'CLINICAL_RECORD') {
     const { healthRecordId } = event.metadata

@@ -4,7 +4,7 @@ import {
   Activity, ChevronLeft, ChevronRight, FileText, Bell,
   ArrowRight, AlertTriangle, Loader2, CalendarDays,
 } from 'lucide-react'
-import { cn, formatScore, RISK_CONFIG, SEVERITY_CONFIG } from '@/lib/utils'
+import { cn, formatScore, formatLongDate, formatTime, RISK_CONFIG, SEVERITY_CONFIG } from '@/lib/utils'
 import {
   BUSINESS_TIMEZONE, getBusinessDateKey, getMonthRange,
   buildCalendarDays, groupEventsByBusinessDay,
@@ -302,7 +302,7 @@ export function DashboardCalendar() {
       <div className="bg-card rounded-xl border border-border p-5">
         <div className="mb-4">
           <h3 className="font-semibold text-foreground">
-            {selectedDateKey ? `Eventos del ${selectedDateKey}` : 'Eventos del día'}
+            {selectedDateKey ? `Eventos del ${formatLongDate(selectedDateKey)}` : 'Eventos del día'}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             {selectedDateKey
@@ -334,9 +334,11 @@ export function DashboardCalendar() {
 function DashboardEventRow({
   event, onNavigateToPatient,
 }: { event: DashboardCalendarEvent; onNavigateToPatient: (path: string, nav?: DashboardEventNavigationState) => void }) {
-  const time = new Intl.DateTimeFormat('es-MX', {
-    hour: '2-digit', minute: '2-digit', timeZone: BUSINESS_TIMEZONE,
-  }).format(new Date(event.eventDate))
+  // V3 §8 — replaces the previously duplicated Intl.DateTimeFormat call
+  // (which produced 24-hour output for the es-MX locale) with the shared,
+  // canonical 12-hour formatter, pinned to the business timezone exactly as
+  // this call already was.
+  const time = formatTime(event.eventDate, { timeZone: 'business' })
 
   // Navigation classification (O1/O1-FIX, unchanged): CLINICAL_RECORD/
   // PREDICTION/RISK_CHANGE → B (exact patient reachable via /patients/:id,

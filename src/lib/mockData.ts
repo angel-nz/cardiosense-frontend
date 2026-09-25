@@ -133,6 +133,7 @@ export const MOCK_PREDICTIONS: Prediction[] = [
     id: 'pred_01',
     patientId: 'pat_01',
     healthRecordId: 'rec_01',
+    healthRecord: null, // V7 — no mock HealthRecord wired here; this file is unused by the live app.
     riskScore: 0.7234,
     riskLevel: 'high',
     anomalyScore: -0.0812,
@@ -154,6 +155,7 @@ export const MOCK_PREDICTIONS: Prediction[] = [
     id: 'pred_02',
     patientId: 'pat_02',
     healthRecordId: 'rec_02',
+    healthRecord: null, // V7 — no mock HealthRecord wired here; this file is unused by the live app.
     riskScore: 0.4512,
     riskLevel: 'moderate',
     anomalyScore: -0.0321,

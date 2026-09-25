@@ -142,44 +142,80 @@ export function Sidebar({ collapsed, onToggle, alertCount = 0 }: SidebarProps) {
           </NavLink>
         ))}
 
-        {/* Connection status */}
+        {/* V8.2 — realtime Socket.IO channel status only (V8.1 §4/§14: this
+            never implies PostgreSQL/REST/AI-service health). `connected`
+            comes straight from useSocket() (SocketContext.tsx, unchanged —
+            V8.1 already established its semantics exactly match
+            Conectado/Desconectado). role="status" + aria-label carries the
+            full accessible meaning on the container itself, in both
+            collapsed and expanded modes; `title` gives the same text as a
+            mouse-hover tooltip. The icon and the visible text span are
+            aria-hidden so a screen reader announces the container's
+            aria-label exactly once, never a duplicated/confusing readout of
+            "Wifi icon, Conectado" on top of it. */}
         <div
+          role="status"
+          aria-label={connected ? 'Canal de tiempo real conectado' : 'Canal de tiempo real desconectado'}
+          title={connected ? 'Canal de tiempo real conectado' : 'Canal de tiempo real desconectado'}
           className={cn(
             'flex items-center gap-2 px-3 py-2 rounded-lg mt-1',
             collapsed && 'justify-center px-0',
           )}
         >
           {connected ? (
-            <Wifi className="w-3.5 h-3.5 text-teal-400 flex-shrink-0" />
+            <Wifi aria-hidden="true" className="w-3.5 h-3.5 text-teal-400 flex-shrink-0" />
           ) : (
-            <WifiOff className="w-3.5 h-3.5 text-white/30 flex-shrink-0" />
+            <WifiOff aria-hidden="true" className="w-3.5 h-3.5 text-white/30 flex-shrink-0" />
           )}
           {!collapsed && (
-            <span className={cn('text-xs', connected ? 'text-teal-400' : 'text-white/30')}>
-              {connected ? 'Tiempo real activo' : 'Sin conexión'}
+            <span aria-hidden="true" className={cn('text-xs', connected ? 'text-teal-400' : 'text-white/30')}>
+              {connected ? 'Conectado' : 'Desconectado'}
             </span>
           )}
         </div>
 
-        {/* User profile */}
-        <div
-          className={cn(
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg mt-1 cursor-pointer hover:bg-white/5 transition-colors',
-            collapsed && 'justify-center px-0',
-          )}
-        >
-          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-            {user ? initials(user.firstName, user.lastName) : 'DR'}
-          </div>
-          {!collapsed && user && (
-            <div className="overflow-hidden">
-              <p className="text-white text-xs font-medium truncate leading-none">
-                Dr. {user.firstName}
-              </p>
-              <p className="text-white/40 text-[10px] truncate mt-0.5">{user.email}</p>
+        {/* V9.2R — the doctor profile block below the V8 connection status
+            is now the sole navigation target for "go to my Profile" (the
+            Topbar's separate "Mi perfil" dropdown item is untouched and out
+            of this block's scope — V9.1R). The entire existing block
+            (avatar + name + email, content unchanged) is wrapped in one
+            NavLink, reusing this file's own NAV_ITEMS/BOTTOM_ITEMS pattern
+            rather than inventing a new interactive-element shape — a real
+            <a>, natively focusable/keyboard-activatable, so no
+            role="button"/tabIndex/manual key handler is needed. `state`
+            carries a one-shot "open Profile" intent that SettingsPage
+            consumes and clears (see SettingsPage.tsx) — necessary because a
+            same-location `navigate('/settings')` alone does not remount the
+            page or reset its locally-held active tab when Settings is
+            already mounted on Notifications/Security/Appearance. */}
+        <NavLink to="/settings" state={{ tab: 'profile' }} aria-label="Ir a mi perfil">
+          <div
+            className={cn(
+              'flex items-center gap-3 px-3 py-2.5 rounded-lg mt-1 cursor-pointer hover:bg-white/5 transition-colors group relative',
+              collapsed && 'justify-center px-0',
+            )}
+          >
+            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+              {user ? initials(user.firstName, user.lastName) : 'DR'}
             </div>
-          )}
-        </div>
+            {!collapsed && user && (
+              <div className="overflow-hidden">
+                <p className="text-white text-xs font-medium truncate leading-none">
+                  Dr. {user.firstName}
+                </p>
+                <p className="text-white/40 text-[10px] truncate mt-0.5">{user.email}</p>
+              </div>
+            )}
+            {/* Tooltip on collapsed — same pattern already used by NAV_ITEMS
+                above (lines ~108-116), only shown/needed when collapsed, so
+                it never affects expanded layout or the V8 status block. */}
+            {collapsed && (
+              <div className="absolute left-full ml-3 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 shadow-lg">
+                Mi perfil
+              </div>
+            )}
+          </div>
+        </NavLink>
       </div>
 
       {/* ─── Collapse Toggle ───────────────────────────────────────────── */}

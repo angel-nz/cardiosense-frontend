@@ -42,6 +42,23 @@ export function getMonthRange(year: number, month: number): { from: string; to: 
   return { from, to }
 }
 
+// V3 — safely parses a "YYYY-MM-DD" business-date key for DISPLAY
+// formatting. Anchored at UTC noon so that formatting the result with an
+// explicit IANA `timeZone` (which every caller of this must do) can never
+// roll the displayed calendar day backward or forward, regardless of the
+// viewer's own browser/system timezone or the target zone's offset —
+// midnight UTC would risk exactly that shift for a negative-offset zone
+// like America/Mexico_City. This is the same noon-anchor pattern already
+// used ad hoc elsewhere in the frontend (DashboardPage.tsx's
+// shortWeekday(), PredictionsPage.tsx's monthLabel()/dayLabel()) —
+// centralized here so V3's new formatLongDate() reuses one safe parsing
+// rule instead of a fourth independent copy. This performs NO timezone
+// conversion of the date-only value itself (§12) — it only chooses an
+// instant that is unambiguous once formatted in an explicit zone.
+export function parseBusinessDateKeyForDisplay(dateKey: string): Date {
+  return new Date(`${dateKey}T12:00:00Z`)
+}
+
 export interface CalendarDay {
   dateKey: string        // "YYYY-MM-DD" in the business timezone
   dayOfMonth: number

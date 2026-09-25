@@ -1,4 +1,6 @@
 import { api } from './api'
+import { normalizeHealthRecord } from './recordService'
+import type { BackendHealthRecord } from './recordService'
 import type { Prediction, RiskLevel, CreatePredictionRequest, PaginatedResponse, GlobalPredictionQueryParams } from '@/types'
 
 // ─── Backend wire shape ───────────────────────────────────────────────────
@@ -26,6 +28,13 @@ interface BackendPrediction {
   // Only present on GET /api/predictions (see prediction.repository.ts
   // listAll — include: { patient: { select: { firstName, lastName } } }).
   patient?: { firstName: string; lastName: string }
+  // V7 — Prisma `include: { healthRecord: true }` on BOTH findByPatient and
+  // listAll (prediction.repository.ts), so this is present on every
+  // Prediction History response, not just one surface. `null` for a
+  // legacy/unlinked Prediction (healthRecordId was null) — never omitted
+  // from the wire shape, so normalizePrediction below can distinguish "no
+  // linked record" from "field not sent".
+  healthRecord?: BackendHealthRecord | null
 }
 
 interface BackendPaginated<T> {
@@ -49,6 +58,12 @@ function normalizePrediction(p: BackendPrediction): Prediction {
     predictedAt: p.predictedAt,
     featureImportance: p.featureImportance,
     patientName: p.patient ? `${p.patient.firstName} ${p.patient.lastName}` : undefined,
+    // V7 — reuses recordService's own normalizeHealthRecord (same
+    // Decimal-string→number handling already established there) rather
+    // than a second implementation. `p.healthRecord` is `undefined` only if
+    // a future caller of normalizePrediction omits it entirely; both real
+    // cases (linked record object, or explicit `null`) are preserved as-is.
+    healthRecord: p.healthRecord ? normalizeHealthRecord(p.healthRecord) : null,
   }
 }
 

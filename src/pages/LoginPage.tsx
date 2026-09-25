@@ -10,6 +10,10 @@ const FEATURES = [
   { icon: Zap,      text: 'Alertas preventivas automáticas' },
 ]
 
+// V2 — same convention as RegisterPage's RequiredMark: visual-only,
+// aria-hidden (the real required semantics live on the inputs below).
+const RequiredMark = () => <span className="text-red-500" aria-hidden="true"> *</span>
+
 export default function LoginPage() {
   const navigate = useNavigate()
   const { login } = useAuth()
@@ -114,7 +118,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="text-sm font-medium text-foreground block mb-1.5">
-                Correo electrónico
+                Correo electrónico<RequiredMark />
               </label>
               <input
                 type="email"
@@ -122,6 +126,8 @@ export default function LoginPage() {
                 onChange={e => setEmail(e.target.value)}
                 placeholder="dr.medico@hospital.mx"
                 autoComplete="email"
+                required
+                aria-required="true"
                 className={cn(
                   'w-full px-3 py-2.5 text-sm rounded-lg border bg-card',
                   'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
@@ -133,7 +139,7 @@ export default function LoginPage() {
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-sm font-medium text-foreground">Contraseña</label>
+                <label className="text-sm font-medium text-foreground">Contraseña<RequiredMark /></label>
                 <button
                   type="button"
                   className="text-xs text-primary hover:underline"
@@ -148,6 +154,8 @@ export default function LoginPage() {
                   onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••"
                   autoComplete="current-password"
+                  required
+                  aria-required="true"
                   className={cn(
                     'w-full px-3 py-2.5 pr-10 text-sm rounded-lg border bg-card',
                     'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',

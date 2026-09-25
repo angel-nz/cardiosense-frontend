@@ -313,6 +313,17 @@ export interface Prediction {
   // patient-scoped responses (predict()/getHistory()), which don't need it
   // since the patient is already known from the route.
   patientName?: string
+  // V7 — the EXACT HealthRecord this Prediction actually used (Prediction ↔
+  // HealthRecord, loaded via Prisma `include`, not a latest-record lookup).
+  // `null` for a legacy/unlinked Prediction (healthRecordId was null at
+  // creation, or the linked record no longer resolves) — the UI must show
+  // an honest "no linked data" state for that case, never substitute the
+  // patient's current/latest record. Sex is deliberately NOT part of this
+  // object: HealthRecord has no persisted `sex` column (sex comes from
+  // Patient at prediction time — see aiClient.ts), so the exact historical
+  // sex used for an old Prediction is not recoverable from persisted data
+  // and must not be presented here (see V7 report, provenance limitation).
+  healthRecord: HealthRecord | null
 }
 
 // U6.2 — GET /api/predictions (global history) query contract. riskLevel is

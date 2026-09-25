@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { Activity, Calendar, Cpu, Loader2, History } from 'lucide-react'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import { RiskGauge } from '@/components/charts/RiskGauge'
+import { ClinicalSourceDisclosure } from '@/components/predictions/ClinicalSourceDisclosure'
 import { cn, formatDateTime, formatScore } from '@/lib/utils'
 import { predictionService } from '@/services/predictionService'
 import { useSocket } from '@/context/SocketContext'
@@ -106,7 +107,7 @@ export default function PredictionHistoryPage() {
         <div key={pred.id} className="bg-card rounded-xl border border-border p-5">
           <div className="flex items-start gap-4">
             <div className="flex-shrink-0 hidden sm:block">
-              <RiskGauge score={pred.riskScore} size={80} showLabel={false} />
+              <RiskGauge score={pred.riskScore} level={pred.riskLevel} size={80} showLabel={false} />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -132,6 +133,14 @@ export default function PredictionHistoryPage() {
               {/* featureImportance isn't persisted on the Prediction row, so
                   it's never present on historical entries — no fallback data
                   is fabricated here (see report, INT-12 divergence). */}
+
+              {/* V7 — additive clinical-source context, visually
+                  subordinate to the result above (collapsed by default,
+                  smaller type, muted border-top separator). */}
+              <ClinicalSourceDisclosure
+                healthRecord={pred.healthRecord}
+                className="mt-3 pt-3 border-t border-border"
+              />
             </div>
           </div>
         </div>

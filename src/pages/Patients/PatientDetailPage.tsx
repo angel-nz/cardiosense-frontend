@@ -16,6 +16,7 @@ import { PatientCalendar } from '@/components/patients/PatientCalendar'
 import { NewRecordModal } from '@/components/patients/NewRecordModal'
 import { EditPatientModal } from '@/components/patients/EditPatientModal'
 import { cn, formatDate, formatDateTime, calcAge, sexLabel, timeAgo } from '@/lib/utils'
+import { getPhoneDisplay } from '@/lib/phone'
 import { patientService } from '@/services/patientService'
 import { predictionService } from '@/services/predictionService'
 import { useSocket } from '@/context/SocketContext'
@@ -235,12 +236,14 @@ export default function PatientDetailPage() {
   // currentPredictionId here — same target, same mechanism). If already in
   // the currently loaded window, select/scroll immediately. Otherwise,
   // resolve the canonical patient-prediction page that actually contains
-  // it (GET /predictions/patient/:id?targetId=..., same limit=20) and
-  // REPLACE the entire chart dataset with that genuine, contiguous page —
-  // never merged with the previous latest-20 view, never a fabricated
-  // point. A later realtime Prediction event may legitimately revert this
-  // to the normal latest-20 window once the target has already been
-  // applied (see loadPredictions's own realtime effect, unchanged).
+  // it (GET /predictions/patient/:id?targetId=..., same limit — V5.1: 24,
+  // matching loadPredictions above, kept coordinated so a resolved page is
+  // the same size as the normal view) and REPLACE the entire chart
+  // dataset with that genuine, contiguous page — never merged with the
+  // previous latest-24 view, never a fabricated point. A later realtime
+  // Prediction event may legitimately revert this to the normal latest-24
+  // window once the target has already been applied (see loadPredictions's
+  // own realtime effect, unchanged).
   const handleSelectPrediction = useCallback(async (predictionId: string) => {
     if (predictions.some(p => p.id === predictionId)) {
       setTimelineFeedback(null)
@@ -251,7 +254,7 @@ export default function PatientDetailPage() {
     }
     if (!id) return
     try {
-      const result = await predictionService.getHistory(id, { limit: 20, targetId: predictionId })
+      const result = await predictionService.getHistory(id, { limit: 24, targetId: predictionId })
       if (!result.targetResolved) {
         setTimelineFeedback('Esta predicción no está disponible en el historial de este paciente.')
         return
@@ -421,12 +424,23 @@ export default function PatientDetailPage() {
   // GET /api/predictions/patient/:id — same service already used by
   // PredictionHistoryPage (Bloque C/F); backend orders most-recent-first,
   // so predictions[0] is the latest, no re-sort needed.
+  //
+  // V5.1 — explicit `{ limit: 24 }` (was: no options, i.e. the service's
+  // own default of 20). This is the Risk Evolution display cap; changed
+  // HERE, at this call site only, rather than in predictionService's
+  // shared default — PredictionHistoryPage.tsx calls the exact same
+  // getHistory(patientId) with no options and must keep seeing 20
+  // (V5.1 §6: do not change Prediction History merely because it shares
+  // the number 20). No backend change needed: 24 is well under the
+  // existing PatientPredictionQueryDto max(100), and is sent explicitly,
+  // so the backend's own default(20) (only used when no limit is sent)
+  // never comes into play here.
   const loadPredictions = useCallback(async (silent = false) => {
     if (!id) return
     if (!silent) setPredictionsLoading(true)
     setPredictionsError(null)
     try {
-      const result = await predictionService.getHistory(id)
+      const result = await predictionService.getHistory(id, { limit: 24 })
       setPredictions(result.data)
     } catch {
       if (!silent) setPredictionsError('No se pudo cargar el historial de predicciones')
@@ -686,6 +700,7 @@ export default function PatientDetailPage() {
                 <div className="flex justify-center">
                   <RiskGauge
                     score={latestPrediction.riskScore}
+                    level={latestPrediction.riskLevel}
                     size={180}
                     showLabel
                   />
@@ -733,15 +748,33 @@ export default function PatientDetailPage() {
               <InfoRow label="Fecha de nacimiento" value={formatDate(patient.birthDate)} />
               <InfoRow label="Edad" value={age} unit="años" />
               <InfoRow label="Sexo" value={sexLabel(patient.sex)} />
-              {patient.phone && (
-                <div className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
-                  <span className="text-sm text-muted-foreground">Teléfono</span>
-                  <a href={`tel:${patient.phone}`} className="text-sm font-semibold text-primary flex items-center gap-1">
-                    <Phone className="w-3.5 h-3.5" />
-                    {patient.phone}
-                  </a>
-                </div>
-              )}
+              {patient.phone && (() => {
+                // V6.5 — display is intentionally more permissive than the
+                // write contract (§5): a parseable value (canonical OR
+                // legacy-but-safely-parseable) gets human-readable
+                // formatting AND a real tel: link; an ambiguous/unparseable
+                // legacy value is shown verbatim as plain, non-actionable
+                // text — never given a fabricated tel: target (§3/§8). No
+                // parsing logic here — getPhoneDisplay (lib/phone.ts,
+                // reused from V6.2) is the single source of that decision.
+                const { text, telHref } = getPhoneDisplay(patient.phone)
+                return (
+                  <div className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
+                    <span className="text-sm text-muted-foreground">Teléfono</span>
+                    {telHref ? (
+                      <a href={telHref} className="text-sm font-semibold text-primary flex items-center gap-1">
+                        <Phone className="w-3.5 h-3.5" />
+                        {text}
+                      </a>
+                    ) : (
+                      <span className="text-sm font-semibold text-foreground flex items-center gap-1">
+                        <Phone className="w-3.5 h-3.5 text-muted-foreground" />
+                        {text}
+                      </span>
+                    )}
+                  </div>
+                )
+              })()}
               <InfoRow label="Registrado" value={formatDate(patient.createdAt)} />
             </div>
           </div>

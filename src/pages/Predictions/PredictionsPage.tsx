@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { RiskGauge } from '@/components/charts/RiskGauge'
 import { RiskBadge } from '@/components/ui/RiskBadge'
+import { ClinicalSourceDisclosure } from '@/components/predictions/ClinicalSourceDisclosure'
 import { FeatureImportanceBar } from '@/components/charts/FeatureImportanceBar'
 import { cn, formatScore, formatDateTime } from '@/lib/utils'
 import { getBusinessDateKey, BUSINESS_TIMEZONE } from '@/lib/businessDate'
@@ -266,26 +267,36 @@ function GlobalPredictionHistory() {
                   {dayLabel(group.dayKey)}
                 </div>
                 <div className="divide-y divide-border">
+                  {/* V7 — was a single <button> wrapping the whole row;
+                      split into an outer <div> (no longer itself
+                      interactive) containing the original clickable
+                      summary area (still the exact same navigation
+                      behavior/styling) plus the new clinical-source
+                      disclosure below it, since a toggle button can't
+                      nest inside another button. */}
                   {group.items.map(pred => (
-                    <button
-                      key={pred.id}
-                      onClick={() => goToPrediction(pred)}
-                      className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-accent/50 transition-colors"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">
-                          {pred.patientName ?? pred.patientId}
-                        </p>
-                        <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
-                          <span className="font-mono">Riesgo: {formatScore(pred.riskScore)}</span>
-                          {pred.isAnomaly && (
-                            <span className="text-purple-600 font-medium">⚠ Anomalía</span>
-                          )}
-                          <span>{formatDateTime(pred.predictedAt)}</span>
+                    <div key={pred.id} className="px-4 py-3.5 hover:bg-accent/50 transition-colors">
+                      <button
+                        type="button"
+                        onClick={() => goToPrediction(pred)}
+                        className="w-full flex items-center gap-3 text-left"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {pred.patientName ?? pred.patientId}
+                          </p>
+                          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
+                            <span className="font-mono">Riesgo: {formatScore(pred.riskScore)}</span>
+                            {pred.isAnomaly && (
+                              <span className="text-purple-600 font-medium">⚠ Anomalía</span>
+                            )}
+                            <span>{formatDateTime(pred.predictedAt)}</span>
+                          </div>
                         </div>
-                      </div>
-                      <RiskBadge level={pred.riskLevel} size="sm" />
-                    </button>
+                        <RiskBadge level={pred.riskLevel} size="sm" />
+                      </button>
+                      <ClinicalSourceDisclosure healthRecord={pred.healthRecord} className="mt-2" />
+                    </div>
                   ))}
                 </div>
               </div>
@@ -352,7 +363,7 @@ export default function PredictionsPage() {
   const [result, setResult] = useState<Prediction | null>(null)
   const [activeTab, setActiveTab] = useState<'form' | 'history'>('form')
 
-  const { predicting, error, predict, clearError } = usePredictions()
+  const { predicting, error, errorCode, predict, clearError } = usePredictions()
 
   const loadPatient = useCallback(async () => {
     if (!patientId) return
@@ -536,7 +547,22 @@ export default function PredictionsPage() {
               {error && (
                 <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
                   <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-red-700">{error}</p>
+                  <div className="flex-1">
+                    <p className="text-xs text-red-700">{error}</p>
+                    {/* V-AGE-FIX-2 §7 — CTA reuses the same navigation this
+                        page already uses for the "no records" empty state
+                        (below); it does not duplicate NewRecordModal's form,
+                        it just takes the doctor to where that modal lives. */}
+                    {errorCode === 'MODEL_INELIGIBLE' && (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/patients/${patient.id}`)}
+                        className="mt-2 text-xs font-medium text-red-700 underline hover:no-underline"
+                      >
+                        Ir a la ficha del paciente para crear un nuevo registro clínico
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -572,7 +598,7 @@ export default function PredictionsPage() {
                     <RiskBadge level={result.riskLevel} size="md" />
                   </div>
                   <div className="flex justify-center">
-                    <RiskGauge score={result.riskScore} size={180} showLabel />
+                    <RiskGauge score={result.riskScore} level={result.riskLevel} size={180} showLabel />
                   </div>
                   <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-border">
                     <div className="text-center">

@@ -46,6 +46,12 @@ const inputClass = (hasError?: boolean) => cn(
   hasError ? 'border-red-400' : 'border-border',
 )
 
+// V2 — visual-only required marker. `aria-hidden` because the actual
+// required semantics live on the <input> itself (required/aria-required
+// below) — without this, a screen reader would announce "star" or
+// "required" twice per field (once for the glyph, once for the input).
+const RequiredMark = () => <span className="text-red-500" aria-hidden="true"> *</span>
+
 export default function RegisterPage() {
   const navigate = useNavigate()
   const [form, setForm] = useState<FormData>(INITIAL)
@@ -201,21 +207,25 @@ export default function RegisterPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-sm font-medium text-foreground block mb-1.5">Nombre(s)</label>
+                    <label className="text-sm font-medium text-foreground block mb-1.5">Nombre(s)<RequiredMark /></label>
                     <input
                       value={form.firstName}
                       onChange={set('firstName')}
                       autoComplete="given-name"
+                      required
+                      aria-required="true"
                       className={inputClass(!!errors.firstName)}
                     />
                     {errors.firstName && <p className="text-xs text-red-600 mt-1">{errors.firstName}</p>}
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-foreground block mb-1.5">Apellidos</label>
+                    <label className="text-sm font-medium text-foreground block mb-1.5">Apellidos<RequiredMark /></label>
                     <input
                       value={form.lastName}
                       onChange={set('lastName')}
                       autoComplete="family-name"
+                      required
+                      aria-required="true"
                       className={inputClass(!!errors.lastName)}
                     />
                     {errors.lastName && <p className="text-xs text-red-600 mt-1">{errors.lastName}</p>}
@@ -223,20 +233,22 @@ export default function RegisterPage() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium text-foreground block mb-1.5">Correo electrónico</label>
+                  <label className="text-sm font-medium text-foreground block mb-1.5">Correo electrónico<RequiredMark /></label>
                   <input
                     type="email"
                     value={form.email}
                     onChange={set('email')}
                     placeholder="dr.medico@hospital.mx"
                     autoComplete="email"
+                    required
+                    aria-required="true"
                     className={inputClass(!!errors.email)}
                   />
                   {errors.email && <p className="text-xs text-red-600 mt-1">{errors.email}</p>}
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium text-foreground block mb-1.5">Contraseña</label>
+                  <label className="text-sm font-medium text-foreground block mb-1.5">Contraseña<RequiredMark /></label>
                   <div className="relative">
                     <input
                       type={showPwd ? 'text' : 'password'}
@@ -244,6 +256,8 @@ export default function RegisterPage() {
                       onChange={set('password')}
                       placeholder="••••••••"
                       autoComplete="new-password"
+                      required
+                      aria-required="true"
                       className={cn(inputClass(!!errors.password), 'pr-10')}
                     />
                     <button
@@ -260,40 +274,42 @@ export default function RegisterPage() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium text-foreground block mb-1.5">Confirmar contraseña</label>
+                  <label className="text-sm font-medium text-foreground block mb-1.5">Confirmar contraseña<RequiredMark /></label>
                   <input
                     type={showPwd ? 'text' : 'password'}
                     value={form.confirmPassword}
                     onChange={set('confirmPassword')}
                     placeholder="••••••••"
                     autoComplete="new-password"
+                    required
+                    aria-required="true"
                     className={inputClass(!!errors.confirmPassword)}
                   />
                   {errors.confirmPassword && <p className="text-xs text-red-600 mt-1">{errors.confirmPassword}</p>}
                 </div>
 
-                {/* Optional doctor profile fields — backend Medico model
-                    allows all three as optional (schema.prisma), never
-                    required here. */}
-                <details className="group">
-                  <summary className="text-xs font-medium text-primary cursor-pointer select-none">
-                    Datos profesionales (opcional)
-                  </summary>
-                  <div className="mt-3 space-y-3">
-                    <div>
-                      <label className="text-xs font-medium text-muted-foreground block mb-1">Cédula profesional</label>
-                      <input value={form.cedulaProfesional} onChange={set('cedulaProfesional')} className={inputClass()} />
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-muted-foreground block mb-1">Especialidad</label>
-                      <input value={form.especialidad} onChange={set('especialidad')} className={inputClass()} />
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-muted-foreground block mb-1">Hospital</label>
-                      <input value={form.hospital} onChange={set('hospital')} className={inputClass()} />
-                    </div>
-                  </div>
-                </details>
+                {/* V2 — professional fields moved into the same main form
+                    hierarchy as the required fields above (no more
+                    <details>/collapsed section): same label typography,
+                    input height, border/focus/error treatment via the
+                    shared `inputClass`. Still optional — backend Medico
+                    model allows all three as optional (schema.prisma) —
+                    communicated ONLY by the absence of the red asterisk,
+                    with no `required`/`aria-required` and no "(opcional)"
+                    suffix (no existing convention in this codebase uses
+                    that suffix elsewhere). */}
+                <div>
+                  <label className="text-sm font-medium text-foreground block mb-1.5">Cédula profesional</label>
+                  <input value={form.cedulaProfesional} onChange={set('cedulaProfesional')} className={inputClass()} />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground block mb-1.5">Especialidad</label>
+                  <input value={form.especialidad} onChange={set('especialidad')} className={inputClass()} />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground block mb-1.5">Hospital</label>
+                  <input value={form.hospital} onChange={set('hospital')} className={inputClass()} />
+                </div>
 
                 <button
                   type="submit"
