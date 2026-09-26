@@ -1,10 +1,31 @@
-import { useState, useMemo, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { Search, Plus, Filter, Users, Download, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PatientRow } from '@/components/patients/PatientRow'
 import { usePatients } from '@/hooks/usePatients'
 import type { RiskLevel } from '@/types'
+
+// X2 — defensive one-shot reader for the Dashboard "Riesgo alto" stat
+// card's navigation intent (location.state), mirroring the established
+// readDashboardEventNav precedent (PatientDetailPage.tsx, O3-FIX-4). Never
+// blindly casts location.state — only ever recognizes its OWN relevant
+// `kind`; any other/malformed payload is treated as absent. The intent
+// carries no destination-internal filter representation itself (X1 §10) —
+// this page maps it onto its own existing `riskFilter` state below.
+function readPatientsStatNav(state: unknown): boolean {
+  if (!state || typeof state !== 'object') return false
+  const nav = (state as Record<string, unknown>).dashboardStatNav
+  if (!nav || typeof nav !== 'object') return false
+  return (nav as Record<string, unknown>).kind === 'PATIENTS_HIGH'
+}
+
+// X2 — maps the existing lowercase UI representation (RISK_FILTER_OPTIONS)
+// to the backend's canonical uppercase Prisma RiskLevel enum
+// (PatientQueryDto.risk) — never a second, independently-invented casing.
+const CANONICAL_RISK: Record<RiskLevel, 'LOW' | 'MODERATE' | 'HIGH'> = {
+  low: 'LOW', moderate: 'MODERATE', high: 'HIGH',
+}
 
 type SortKey = 'name' | 'age' | 'risk' | 'date'
 type SortDir = 'asc' | 'desc'
@@ -20,6 +41,7 @@ const PAGE_LIMIT = 20
 
 export default function PatientsPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [riskFilter, setRiskFilter] = useState<RiskLevel | 'all'>('all')
@@ -36,19 +58,40 @@ export default function PatientsPage() {
     return () => clearTimeout(t)
   }, [searchInput])
 
+  // X2 — risk filter is now genuinely applied server-side (dataset-wide,
+  // before pagination — see patient.repository.ts), so a change must reset
+  // pagination exactly like search already does above (X2-F28); previously
+  // there was no such effect since the old client-side-only filter never
+  // affected the backend's total/totalPages at all.
+  useEffect(() => { setPage(1) }, [riskFilter])
+
+  // X2 — consume the Dashboard "Riesgo alto" navigation intent exactly
+  // once: applies to the SAME existing `riskFilter` state a doctor could
+  // set manually, then immediately clears the history entry's state (same
+  // one-shot precedent as PatientDetailPage's dashboardNav effect) so a
+  // later refresh/back/normal re-visit never reapplies it.
+  // statNavConsumedRef guards against reapplying on a later render even
+  // before location.state finishes clearing.
+  const statNavConsumedRef = useRef(false)
+  useEffect(() => {
+    if (statNavConsumedRef.current) return
+    if (!readPatientsStatNav(location.state)) return
+    statNavConsumedRef.current = true
+    setRiskFilter('high')
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, location.pathname, navigate])
+
   const { patients, total, totalPages, loading, error, refetch } = usePatients({
     page, limit: PAGE_LIMIT, search: search || undefined,
+    risk: riskFilter === 'all' ? undefined : CANONICAL_RISK[riskFilter],
   })
 
-  // Backend accepts a `risk` query param but does not actually filter by it
-  // (PatientService.list ignores query.risk) — filtering stays client-side,
-  // scoped to the currently loaded page only.
+  // X2 — risk filtering is now genuinely applied server-side (dataset-wide,
+  // before pagination, via usePatients({ risk }) above) — this no longer
+  // re-applies a redundant client-side risk filter on top of an already
+  // risk-filtered page. Sorting remains client-side/page-local, unchanged.
   const filtered = useMemo(() => {
-    let list = [...patients]
-
-    if (riskFilter !== 'all') {
-      list = list.filter(p => p.latestRisk === riskFilter)
-    }
+    const list = [...patients]
 
     list.sort((a, b) => {
       let cmp = 0
@@ -72,7 +115,7 @@ export default function PatientsPage() {
     })
 
     return list
-  }, [patients, riskFilter, sortKey, sortDir])
+  }, [patients, sortKey, sortDir])
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -95,8 +138,8 @@ export default function PatientsPage() {
       <div className="grid grid-cols-3 sm:grid-cols-3 gap-3">
         {[
           { label: 'Total', value: total, color: 'text-foreground' },
-          { label: 'Riesgo alto (página)', value: highRiskCount, color: 'text-red-600' },
-          { label: 'Sin predicción (página)', value: noPredictionCount, color: 'text-muted-foreground' },
+          { label: 'Riesgo alto', value: highRiskCount, color: 'text-red-600' },
+          { label: 'Sin predicción', value: noPredictionCount, color: 'text-muted-foreground' },
         ].map(item => (
           <div key={item.label} className="bg-card rounded-xl border border-border px-4 py-3 text-center">
             <p className={cn('text-2xl font-bold', item.color)}>{item.value}</p>

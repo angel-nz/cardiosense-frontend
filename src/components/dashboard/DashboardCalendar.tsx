@@ -436,7 +436,15 @@ function DashboardEventRow({
   if (event.eventType === 'RISK_CHANGE') {
     const fromCfg = RISK_CONFIG[event.metadata.fromLevel]
     const toCfg = RISK_CONFIG[event.metadata.toLevel]
-    return shell(true, (
+    // X3 — RISK_CHANGE is deliberately noninteractive (product requirement):
+    // no navigation, no goToPatient invocation. shell(false, ...) renders a
+    // plain <div> with no onClick wired at all, mirroring the existing ALERT
+    // noninteractive precedent below. goToPatient's own RISK_CHANGE branch
+    // (still present, unchanged) is therefore never reached for this event —
+    // left in place rather than removed, since it's shared by the same
+    // function used by CLINICAL_RECORD/PREDICTION and touching it isn't
+    // required to satisfy this requirement.
+    return shell(false, (
       <>
         <ArrowRight className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
         <div className="flex-1 min-w-0">

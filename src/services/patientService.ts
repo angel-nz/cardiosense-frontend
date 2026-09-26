@@ -78,12 +78,19 @@ export interface PatientListParams {
   page?: number
   limit?: number
   search?: string
+  // X2 — canonical uppercase risk-level filter (matches backend
+  // PatientQueryDto.risk / Prisma RiskLevel), now genuinely applied
+  // server-side (patient.service.ts → patient.repository.ts): the
+  // patient's single MOST RECENT Prediction has this riskLevel — never
+  // "ever had this riskLevel" — dataset-wide, before pagination. No longer
+  // a validated-but-ignored no-op.
+  risk?: 'LOW' | 'MODERATE' | 'HIGH'
 }
 
 export const patientService = {
-  // GET /api/patients — backend also accepts a `risk` query param (schema
-  // exists) but the service ignores it (see PatientService.list) — not sent
-  // here, filtering by risk stays client-side on the loaded page. See report.
+  // GET /api/patients — `risk` (X2) is genuinely applied server-side now;
+  // see PatientListParams above and patient.repository.ts for the exact
+  // latest-Prediction-per-patient semantics.
   async list(params: PatientListParams = {}): Promise<PaginatedResponse<Patient>> {
     const { data } = await api.get<BackendPaginated<BackendPatient>>('/patients', { params })
     return {

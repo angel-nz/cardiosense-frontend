@@ -166,7 +166,6 @@ export default function PatientCreatePage() {
         </button>
         <div>
           <h1 className="text-2xl font-bold text-foreground">Nuevo paciente</h1>
-          <p className="text-sm text-muted-foreground mt-1">Registra los datos personales del paciente</p>
         </div>
       </div>
 
@@ -178,7 +177,6 @@ export default function PatientCreatePage() {
           </div>
           <div>
             <h2 className="font-semibold text-foreground">Información personal</h2>
-            <p className="text-xs text-muted-foreground">Campos marcados con * son obligatorios</p>
           </div>
         </div>
 

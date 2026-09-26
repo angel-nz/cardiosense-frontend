@@ -243,17 +243,6 @@ export default function PredictionHistoryPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {/* W5.2-FIX1 — restored stats row, explicitly rescoped to the
-              CURRENT VISIBLE PAGE (max 10 rows) rather than the patient's
-              full/filtered history — computing these from `predictions`
-              (never from the server's `total`) is what keeps them honest
-              after W5.2 introduced real server-side pagination. The label
-              below makes that scope impossible to misread as an
-              all-history/all-filter aggregate; the canonical filtered
-              total/page count is shown separately in the pagination
-              footer further down. Only rendered when the current page has
-              at least one row — never for either empty state. */}
-
           {groups.map(group => (
             <div key={group.dayKey} className="space-y-3">
               {(groups.indexOf(group) === 0 || groups[groups.indexOf(group) - 1].monthKey !== group.monthKey) && (

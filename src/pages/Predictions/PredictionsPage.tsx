@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, Activity, AlertTriangle, CheckCircle, Loader2, Info, Edit,
   FileWarning, History, Sparkles, ChevronLeft, ChevronRight, Search,
@@ -75,6 +75,24 @@ function dayLabel(dateKey: string): string {
   return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
+// X2 — defensive one-shot reader for the Dashboard "Predicciones" stat
+// card's navigation intent (location.state), mirroring the established
+// readDashboardEventNav precedent (PatientDetailPage.tsx, O3-FIX-4). Never
+// blindly casts location.state — only ever recognizes its OWN relevant
+// `kind`, and only a `businessDateKey` shaped like a real "YYYY-MM-DD" date
+// string (matching the existing <input type="date"> from/to contract
+// already used by this component's own filter controls below). Any other/
+// malformed payload is treated as absent.
+function readPredictionsStatNav(state: unknown): string | null {
+  if (!state || typeof state !== 'object') return null
+  const nav = (state as Record<string, unknown>).dashboardStatNav
+  if (!nav || typeof nav !== 'object') return null
+  const { kind, businessDateKey } = nav as Record<string, unknown>
+  if (kind !== 'PREDICTIONS_TODAY') return null
+  if (typeof businessDateKey !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(businessDateKey)) return null
+  return businessDateKey
+}
+
 // Reached when the route has no :patientId (e.g. the Sidebar links to the
 // bare /predictions — see router.tsx). Shows the médico's own global
 // prediction history — GET /api/predictions, scoped server-side by
@@ -84,6 +102,7 @@ function dayLabel(dateKey: string): string {
 // client-side".
 function GlobalPredictionHistory() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { connected, lastDashboardActivity, clearLastDashboardActivity } = useSocket()
 
   const [predictions, setPredictions] = useState<Prediction[]>([])
@@ -110,6 +129,29 @@ function GlobalPredictionHistory() {
 
   // Any filter change resets to page 1 — mirrors the U5 principle.
   useEffect(() => { setPage(1) }, [debouncedSearch, from, to, riskLevel])
+
+  // X2 — consume the Dashboard "Predicciones" navigation intent exactly
+  // once: applies to the SAME existing from/to date-input state a doctor
+  // could set manually (never a parallel filter mechanism), then
+  // immediately clears the history entry's state (same one-shot precedent
+  // as PatientDetailPage's dashboardNav effect) so a later refresh/back/
+  // normal re-visit never reapplies it. `from`/`to` both equal to today's
+  // business-date key is exactly "today" under the existing backend
+  // boundaryField [from, to) half-open convention already used by this
+  // component's own filters (X1 §8). Setting from/to here is picked up by
+  // the page-reset effect above — no separate setPage(1) needed.
+  // statNavConsumedRef guards against reapplying on a later render even
+  // before location.state finishes clearing.
+  const statNavConsumedRef = useRef(false)
+  useEffect(() => {
+    if (statNavConsumedRef.current) return
+    const businessDateKey = readPredictionsStatNav(location.state)
+    if (!businessDateKey) return
+    statNavConsumedRef.current = true
+    setFrom(businessDateKey)
+    setTo(businessDateKey)
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, location.pathname, navigate])
 
   const requestIdRef = useRef(0)
   const load = useCallback(async (silent = false) => {
@@ -739,9 +781,6 @@ export default function PredictionsPage() {
               <div className="flex items-center justify-between pb-3 border-b border-border">
                 <div>
                   <h3 className="font-semibold text-foreground">Registro clínico más reciente</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    El modelo utiliza automáticamente el último registro del paciente
-                  </p>
                 </div>
                 <div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200 flex-shrink-0">
                   <Activity className="w-3.5 h-3.5" />

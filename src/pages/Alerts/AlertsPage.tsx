@@ -2,10 +2,24 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Bell, CheckCheck, AlertTriangle, Info, Search, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn, SEVERITY_CONFIG, timeAgo, formatScore } from '@/lib/utils'
 import type { AlertSeverity, Alert } from '@/types'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAlerts } from '@/context/AlertsContext'
 import { useSocket } from '@/context/SocketContext'
 import { alertService } from '@/services/alertService'
+
+// X2 — defensive one-shot reader for the Dashboard "Notificaciones" stat
+// card's navigation intent (location.state), mirroring the established
+// readDashboardEventNav precedent (PatientDetailPage.tsx, O3-FIX-4). Never
+// blindly casts location.state — only ever recognizes its OWN relevant
+// `kind`; any other/malformed payload is treated as absent. The intent
+// carries no destination-internal filter value itself (X1 §10) — this page
+// maps it onto its own existing `readFilter` representation below.
+function readAlertsStatNav(state: unknown): boolean {
+  if (!state || typeof state !== 'object') return false
+  const nav = (state as Record<string, unknown>).dashboardStatNav
+  if (!nav || typeof nav !== 'object') return false
+  return (nav as Record<string, unknown>).kind === 'ALERTS_UNREAD'
+}
 
 const FILTER_OPTIONS: Array<{ value: AlertSeverity | 'all'; label: string; icon: React.ElementType }> = [
   { value: 'all',      label: 'Todas',       icon: Bell },
@@ -19,6 +33,7 @@ const REALTIME_COALESCE_MS = 400
 
 export default function AlertsPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   // U7.2 — global concerns (badge/topbar unreadCount, markAsRead/
   // markAllRead mutations) stay sourced from the shared AlertsContext,
   // untouched. The VISIBLE, paginated list below is now this page's own
@@ -47,6 +62,24 @@ export default function AlertsPage() {
 
   // Any filter/search/limit change resets to page 1 (U5/U6 principle).
   useEffect(() => { setPage(1) }, [debouncedSearch, severityFilter, readFilter, limit])
+
+  // X2 — consume the Dashboard "Notificaciones" navigation intent exactly
+  // once: applies to the SAME existing `readFilter` state a doctor could
+  // set manually (never a second, parallel unread flag), then immediately
+  // clears the history entry's state (same one-shot precedent as
+  // PatientDetailPage's dashboardNav effect) so a later refresh/back/normal
+  // re-visit never reapplies it. statNavConsumedRef guards against
+  // reapplying on a later render even before location.state finishes
+  // clearing. Setting readFilter here is picked up by the existing
+  // page-reset effect above — no separate setPage(1) needed.
+  const statNavConsumedRef = useRef(false)
+  useEffect(() => {
+    if (statNavConsumedRef.current) return
+    if (!readAlertsStatNav(location.state)) return
+    statNavConsumedRef.current = true
+    setReadFilter('unread')
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, location.pathname, navigate])
 
   const requestIdRef = useRef(0)
   // U7.2-FIX-2 — pure lifecycle bookkeeping (never read directly by JSX —

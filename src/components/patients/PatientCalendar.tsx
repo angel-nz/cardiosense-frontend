@@ -589,15 +589,18 @@ function TimelineEventRow({ event, isSelected, onSelectHealthRecord, onSelectPre
   if (event.eventType === 'RISK_CHANGE') {
     const fromCfg = RISK_CONFIG[event.metadata.fromLevel]
     const toCfg = RISK_CONFIG[event.metadata.toLevel]
-    // Belongs to its currentPrediction (section 14) — never
-    // previousPredictionId, which may not even be in the requested range
-    // (it can be the pre-range predecessor used only for derivation, per P2).
-    const { currentPredictionId } = event.metadata
+    // X3 — RISK_CHANGE is deliberately noninteractive (product requirement):
+    // it must remain visible and keep its W2 causal-group membership, but no
+    // longer selects/scrolls to its associated prediction. currentPredictionId
+    // (event.metadata) is no longer read here — it was only ever used to
+    // drive the onSelectPrediction call this block removes; the timeline
+    // event contract itself is untouched (still present on `event.metadata`
+    // for any other consumer). Mirrors the existing ALERT noninteractive
+    // precedent below (interactive={false}, no onClick).
     return (
       <EventRowShell
-        interactive
-        isSelected={isSelected}
-        onClick={() => { onRowClick(); onSelectPrediction?.(currentPredictionId) }}
+        interactive={false}
+        isSelected={false}
       >
         <ArrowRight className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
         <div className="flex-1 min-w-0">

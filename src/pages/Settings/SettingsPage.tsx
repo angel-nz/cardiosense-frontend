@@ -213,12 +213,6 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-5 max-w-4xl">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Configuración</h1>
-        <p className="text-muted-foreground text-sm mt-1">Administra tu cuenta y preferencias del sistema</p>
-      </div>
-
       <div className="flex flex-col sm:flex-row gap-5">
 
         {/* ── Tab navigation ────────────────────────────────────────── */}
@@ -248,7 +242,7 @@ export default function SettingsPage() {
           {/* ── PROFILE ─────────────────────────────────────────────── */}
           {activeTab === 'profile' && (
             <>
-              <SectionCard title="Foto de perfil" description="Se mostrará en el sidebar y el topbar">
+              <SectionCard title="Foto de perfil">
                 <div className="flex items-center gap-5">
                   <div className="relative">
                     <div className="w-20 h-20 rounded-full bg-blue-600 flex items-center justify-center text-white text-2xl font-bold">
@@ -268,7 +262,7 @@ export default function SettingsPage() {
                 </div>
               </SectionCard>
 
-              <SectionCard title="Información personal" description="Tus datos de identificación profesional">
+              <SectionCard title="Información personal">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Editable — PATCH /api/users/:id */}
                   {[
@@ -307,21 +301,21 @@ export default function SettingsPage() {
                   <div>
                     <label className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
                       <Mail className="w-3.5 h-3.5 text-muted-foreground" />
-                      Correo <span className="text-[10px] font-normal">(no editable)</span>
+                      Correo <span className="text-[10px] font-normal"></span>
                     </label>
                     <input type="email" value={user.email} disabled className={cn(inputClass, 'opacity-60 cursor-not-allowed')} />
                   </div>
                   <div>
                     <label className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
                       <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-                      Teléfono <span className="text-[10px] font-normal">(no disponible)</span>
+                      Teléfono <span className="text-[10px] font-normal"></span>
                     </label>
                     <input type="text" value="No disponible" disabled className={cn(inputClass, 'opacity-60 cursor-not-allowed')} />
                   </div>
                   <div>
                     <label className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
                       <Shield className="w-3.5 h-3.5 text-muted-foreground" />
-                      Cédula profesional <span className="text-[10px] font-normal">(no disponible)</span>
+                      Cédula profesional <span className="text-[10px] font-normal"></span>
                     </label>
                     <input type="text" value="No disponible" disabled className={cn(inputClass, 'opacity-60 cursor-not-allowed')} />
                   </div>

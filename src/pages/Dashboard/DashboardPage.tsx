@@ -10,7 +10,8 @@ import { dashboardService } from '@/services/dashboardService'
 import { patientService } from '@/services/patientService'
 import { DashboardCalendar } from '@/components/dashboard/DashboardCalendar'
 import { useSocket } from '@/context/SocketContext'
-import type { DashboardMetrics } from '@/types'
+import { getTodayBusinessDateKey } from '@/lib/businessDate'
+import type { DashboardMetrics, DashboardStatNavigationIntent } from '@/types'
 
 // U2.2 — same coalescing window already validated for DashboardCalendar
 // (O4.2)/PatientCalendar (P5). Independent timers per U2.1's explicit
@@ -199,6 +200,15 @@ export default function DashboardPage() {
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches'
 
+  // X2 — keeps the `{ state: { dashboardStatNav } }` shape in exactly one
+  // place, mirroring DashboardCalendar's own navigateToPatientTarget
+  // helper (O3-FIX-4) for the analogous DashboardEventNavigationState
+  // convention. Intent is omitted entirely for the plain Patients card
+  // (no filter requested — a bare navigate, never a stale/empty payload).
+  const goToWithStatNav = useCallback((path: string, intent?: DashboardStatNavigationIntent) => {
+    navigate(path, intent ? { state: { dashboardStatNav: intent } } : undefined)
+  }, [navigate])
+
   return (
     <div className="space-y-6">
 
@@ -227,6 +237,7 @@ export default function DashboardPage() {
           icon={Users}
           iconColor="text-blue-600"
           iconBg="bg-blue-50"
+          onClick={() => goToWithStatNav('/patients')}
         />
         <StatCard
           title="Notificaciones"
@@ -235,6 +246,7 @@ export default function DashboardPage() {
           icon={Bell}
           iconColor="text-red-600"
           iconBg="bg-red-50"
+          onClick={() => goToWithStatNav('/alerts', { kind: 'ALERTS_UNREAD' })}
         />
         <StatCard
           title="Predicciones"
@@ -243,6 +255,10 @@ export default function DashboardPage() {
           icon={Activity}
           iconColor="text-teal-600"
           iconBg="bg-teal-50"
+          onClick={() => goToWithStatNav('/predictions', {
+            kind: 'PREDICTIONS_TODAY',
+            businessDateKey: getTodayBusinessDateKey(),
+          })}
         />
         <StatCard
           title="Riesgo alto"
@@ -251,6 +267,7 @@ export default function DashboardPage() {
           icon={AlertTriangle}
           iconColor="text-amber-600"
           iconBg="bg-amber-50"
+          onClick={() => goToWithStatNav('/patients', { kind: 'PATIENTS_HIGH' })}
         />
       </div>
 

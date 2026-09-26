@@ -298,6 +298,25 @@ export interface DashboardEventNavigationState {
   eventDate: string
 }
 
+// X2 — Dashboard stat-card navigation intent, carried via React Router
+// `location.state` under the `dashboardStatNav` key, following the exact
+// one-shot precedent established by DashboardEventNavigationState above
+// (produced once by DashboardPage's stat cards, defensively validated and
+// consumed exactly once by the destination page, then cleared from the
+// history entry via `navigate(location.pathname, { replace: true, state:
+// null })`). This type intentionally carries only WHAT Dashboard
+// requested — never a destination-internal filter representation (no
+// 'high'/'HIGH' casing choice, no unread boolean, no from/to instant) —
+// each destination maps the intent onto its own existing filter state.
+export type DashboardStatNavigationIntent =
+  | { kind: 'PATIENTS_HIGH' }
+  | { kind: 'ALERTS_UNREAD' }
+  | { kind: 'PREDICTIONS_TODAY'; businessDateKey: string }
+
+export interface DashboardStatNavigationState {
+  dashboardStatNav: DashboardStatNavigationIntent
+}
+
 export interface CreatePredictionRequest {
   patientId: string
   healthRecordId?: string
