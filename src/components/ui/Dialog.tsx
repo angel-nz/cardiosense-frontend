@@ -25,14 +25,44 @@ export function Dialog({ open, onOpenChange, title, description, children, preve
     <RadixDialog.Root open={open} onOpenChange={next => { if (!preventClose) onOpenChange(next) }}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/50 animate-fade-in" />
+        {/* Y6.3B §35 — outer shape (`max-w-lg`, max-height 90% of viewport,
+            `overflow-y-auto`) is an explicit invariant across all presets.
+            Only padding responds to --ui-modal-padding (Classic 1.5rem/24px,
+            exact match to the original `p-6` — spot-check "Dialog padding",
+            §45).
+
+            PRE-Y8 (Interface Size Preference) — the height cap moved from
+            the Tailwind class `max-h-[90vh]` to this inline
+            `calc(90vh / var(--ui-zoom, 1))`. Centering itself
+            (left-1/2/top-1/2 + -translate-x/y-1/2, both percentage/
+            transform-based) needs NO change — verified against a real
+            Chromium instance to stay perfectly centered at every tested
+            zoom factor (1 / 1.10 / 1.25), since percentage-of-containing-
+            block and transform are not subject to the bug below.
+            `vh`/`vw` units ARE subject to it, though: this Content element
+            is a descendant of the zoomed `html` root (Radix portals to
+            document.body, itself a child of html), so a plain `90vh` here
+            is re-scaled by the ambient zoom on top of already being 90% of
+            an already-zoom-inflated viewport-height reading — verified
+            empirically (a 50vh probe element measured 350px/385px/437.5px
+            at zoom 1/1.10/1.25 instead of a constant 350px) — meaning an
+            uncompensated `max-h-[90vh]` would let a tall dialog's box grow
+            taller than the true physical viewport at Medium/Large, with no
+            way to scroll to its cut-off top/bottom edge (`overflow-y-auto`
+            only scrolls the dialog's own inner content, not the fixed-
+            positioned box itself). Dividing by the same `--ui-zoom` custom
+            property the root's own zoom reads from cancels that
+            re-scaling — confirmed empirically to render a constant,
+            correct height regardless of zoom (see final report). */}
         <RadixDialog.Content
           onEscapeKeyDown={e => { if (preventClose) e.preventDefault() }}
           onPointerDownOutside={e => { if (preventClose) e.preventDefault() }}
           className={cn(
             'fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2',
-            'bg-card rounded-xl border border-border shadow-lg p-6',
-            'max-h-[90vh] overflow-y-auto',
+            'bg-card rounded-xl border border-border shadow-lg',
+            'overflow-y-auto',
           )}
+          style={{ padding: 'var(--ui-modal-padding)', maxHeight: 'calc(90vh / var(--ui-zoom, 1))' }}
         >
           <div className="flex items-start justify-between mb-4">
             <div>

@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, Activity, Heart, Phone, Calendar,
   User, FileText, AlertTriangle, Plus, Edit, Loader2, X,
+  PowerOff, RotateCcw, EyeOff,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -20,8 +21,19 @@ import { getPhoneDisplay } from '@/lib/phone'
 import { patientService } from '@/services/patientService'
 import { predictionService } from '@/services/predictionService'
 import { useSocket } from '@/context/SocketContext'
+import { useActionNotify } from '@/context/ToastContext'
+import { Dialog } from '@/components/ui/Dialog'
 import type { Patient, HealthRecord, Prediction, DashboardEventNavigationState, HistorySortBy, HistorySortOrder } from '@/types'
 import { recordService } from '@/services/recordService'
+
+// Y6.3B §38 — Risk Evolution chart (Recharts) text sizing. PatientDetailPage
+// is this chart's owning component (the chart is rendered inline here, not
+// factored into its own component). `height={180}` and all chart
+// geometry/colors are unchanged. Y6.4B — this used to scale with the
+// (now-removed) interface density/visibility preset via useAppearance();
+// these are simply the chart's permanent text sizes now (the former
+// Comfortable values).
+const CHART_TEXT_SIZES = { axisTick: 12, tooltip: 13, refLine: 11 }
 
 interface InfoRowProps {
   label: string
@@ -35,7 +47,7 @@ function InfoRow({ label, value, unit, highlight }: InfoRowProps) {
   return (
     <div className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
       <span className="text-sm text-muted-foreground">{label}</span>
-      <span className={cn('text-sm font-semibold', highlight ? 'text-red-600' : 'text-foreground')}>
+      <span className={cn('text-sm font-semibold', highlight ? 'text-red-600 dark:text-red-400' : 'text-foreground')}>
         {display}{unit && <span className="font-normal text-muted-foreground ml-1">{unit}</span>}
       </span>
     </div>
@@ -76,6 +88,8 @@ export default function PatientDetailPage() {
   const { subscribeToPatient, unsubscribeFromPatient, lastPrediction, lastHealthRecord, lastPatientUpdate,
           clearLastPrediction, clearLastHealthRecord, clearLastPatientUpdate,
           lastPredictionUnavailable, clearLastPredictionUnavailable } = useSocket()
+  const chartTextSizes = CHART_TEXT_SIZES
+  const { notifySuccess, notifyError } = useActionNotify()
 
   // INT-16/17 — join patient:{id} while viewing this patient's page, leave
   // on unmount or when navigating to a different patient (id changes).
@@ -90,6 +104,17 @@ export default function PatientDetailPage() {
   const [patient, setPatient] = useState<Patient | null>(null)
   const [patientLoading, setPatientLoading] = useState(true)
   const [patientError, setPatientError] = useState<string | null>(null)
+
+  // Z8 — lifecycle/visibility action state. `statusBusy` disables the
+  // relevant buttons for the duration of one in-flight request (status or
+  // visibility mutations are never fired concurrently with each other).
+  // `confirmDeactivateOpen`/`confirmHideOpen` back the two confirmation
+  // dialogs §21/§F require (hide) and the manual runtime matrix's own §F
+  // requires (deactivate) — Reactivar has no confirmation requirement
+  // anywhere in the brief, so it fires directly.
+  const [statusBusy, setStatusBusy] = useState(false)
+  const [confirmDeactivateOpen, setConfirmDeactivateOpen] = useState(false)
+  const [confirmHideOpen, setConfirmHideOpen] = useState(false)
 
   const [records, setRecords] = useState<HealthRecord[]>([])
   const [recordsLoading, setRecordsLoading] = useState(true)
@@ -359,7 +384,36 @@ export default function PatientDetailPage() {
         )
       }
     } finally {
-      if (requestId === patientRequestIdRef.current && !silent) setPatientLoading(false)
+      // PRE-Y8 (Alerts/Predictions/Navigation fix), Part C — root cause of
+      // the "Cargando paciente" indefinite spinner. When a stale
+      // `lastPrediction` socket event (left uncleared by a manual
+      // prediction on this same patient — see PredictionsPage.tsx's own
+      // correlation guard) is already pending at mount time, this
+      // effect's silent `loadPatient(true)` call and the plain mount
+      // effect's non-silent `loadPatient()` call both fire in the same
+      // commit, in source declaration order. Because requestId only
+      // increments, the silent call always ends up with the *higher*
+      // requestId and so is the one whose result actually gets applied —
+      // but the old `&& !silent` guard here meant its `finally` block
+      // never cleared `patientLoading`, and the earlier non-silent call's
+      // own `finally` no longer matches `patientRequestIdRef.current` by
+      // the time it resolves, so neither call ever set it back to
+      // `false`. `patient` was in fact set to correct fetched data by the
+      // silent call — the bug was purely that the loading flag never
+      // cleared, keeping the component pinned on the `patientLoading`
+      // spinner branch. Dropping `&& !silent` here means whichever call
+      // currently owns `requestId` always clears the flag when it
+      // settles, regardless of whether that call happened to be silent —
+      // preserving every other silent/non-silent distinction in this
+      // function (setPatientLoading(true) is still skipped on entry for
+      // silent calls, and setPatientError is still suppressed for silent
+      // failures, so a silent background refresh still never flashes the
+      // loading spinner or an error message; it now just correctly stops
+      // being "loading" once it resolves either way — a silent failure
+      // still falls through safely to the existing
+      // `patientError ?? 'Paciente no encontrado'` UI below instead of
+      // spinning forever).
+      if (requestId === patientRequestIdRef.current) setPatientLoading(false)
     }
   }, [id])
 
@@ -397,7 +451,23 @@ export default function PatientDetailPage() {
       if (requestId !== historyRequestIdRef.current) return
       if (!silent) setRecordsError('No se pudo cargar el historial clínico')
     } finally {
-      if (requestId === historyRequestIdRef.current && !silent) setRecordsLoading(false)
+      // Y8B F2 — was `requestId === historyRequestIdRef.current && !silent`.
+      // The CURRENT (most recently dispatched) request must always clear
+      // `recordsLoading` when it settles, regardless of whether that
+      // specific request happened to be silent — same ownership principle
+      // already validated for loadPatient's own fix (PRE-Y8 Part C). Under
+      // the old `&& !silent` guard, a silent refresh that ended up owning
+      // `historyRequestIdRef.current` when it resolved would never clear
+      // the flag (its own check failed on `!silent`), and the earlier
+      // non-silent request that DID set the flag no longer matches the ref
+      // by the time IT resolves — so neither call ever turned the spinner
+      // back off, leaving this card spinning forever even though `records`
+      // above was already updated correctly. Entry-time behavior is
+      // unchanged: `if (!silent) setRecordsLoading(true)` above still means
+      // a silent refresh never turns the spinner ON — this only changes
+      // whether a silent request is allowed to turn an existing spinner
+      // OFF once it becomes the current request.
+      if (requestId === historyRequestIdRef.current) setRecordsLoading(false)
     }
   }, [id, historyPage, historyLimit, historySortBy, historySortOrder])
 
@@ -417,7 +487,13 @@ export default function PatientDetailPage() {
       // Silent failure keeps whatever was last shown — same pattern used
       // elsewhere for background/realtime-triggered loaders in this file.
     } finally {
-      if (requestId === latestRecordRequestIdRef.current && !silent) setLatestRecordLoading(false)
+      // Y8B F3 — same ownership fix as loadHistory (F2) above, same root
+      // cause: the CURRENT request must clear `latestRecordLoading` when it
+      // settles regardless of its own `silent` flag, or a silent request
+      // that wins ownership of `latestRecordRequestIdRef.current` could
+      // leave this card's spinner stuck forever. Entry-time behavior is
+      // unchanged — a silent refresh still never sets the flag to `true`.
+      if (requestId === latestRecordRequestIdRef.current) setLatestRecordLoading(false)
     }
   }, [id])
 
@@ -435,17 +511,38 @@ export default function PatientDetailPage() {
   // existing PatientPredictionQueryDto max(100), and is sent explicitly,
   // so the backend's own default(20) (only used when no limit is sent)
   // never comes into play here.
+  // Y8B F6 — added `predictionsRequestIdRef`, matching the requestId-guard
+  // pattern `historyRequestIdRef`/`latestRecordRequestIdRef` already use.
+  // Before this fix, loadPredictions had NO staleness guard at all: two
+  // overlapping calls (e.g. the initial mount fetch and a `lastPrediction`-
+  // triggered silent refetch below) resolved last-write-wins regardless of
+  // DISPATCH order — a slower, earlier request resolving after a faster,
+  // later one could overwrite fresher prediction data (and the Risk Gauge/
+  // Risk Evolution chart built from it) with stale data. Only the request
+  // that still owns the current `requestId` when it settles may now update
+  // `predictions`/`predictionsError`, and that same current-request check
+  // — not `!silent` — now governs `predictionsLoading` too, so a silent
+  // winner can also correctly clear a spinner a non-silent request left on,
+  // the same ownership principle just applied to loadHistory (F2) and
+  // loadLatestRecord (F3) above.
+  const predictionsRequestIdRef = useRef(0)
   const loadPredictions = useCallback(async (silent = false) => {
     if (!id) return
+    const requestId = ++predictionsRequestIdRef.current
     if (!silent) setPredictionsLoading(true)
     setPredictionsError(null)
     try {
       const result = await predictionService.getHistory(id, { limit: 24 })
+      if (requestId !== predictionsRequestIdRef.current) return
       setPredictions(result.data)
     } catch {
+      // A stale request's failure must never overwrite a newer request's
+      // already-applied success (or a newer request's own error, keeping
+      // whichever is actually current).
+      if (requestId !== predictionsRequestIdRef.current) return
       if (!silent) setPredictionsError('No se pudo cargar el historial de predicciones')
     } finally {
-      if (!silent) setPredictionsLoading(false)
+      if (requestId === predictionsRequestIdRef.current) setPredictionsLoading(false)
     }
   }, [id])
 
@@ -522,6 +619,71 @@ export default function PatientDetailPage() {
     setPatient(updated)
   }
 
+  // Z8 §7/§8/§9/§21/§22/§37 — lifecycle/visibility actions. Each uses the
+  // exact same global ActionNotification system (Z3) already established —
+  // no local success banner is reintroduced. `patient` is narrowed non-null
+  // by the loading/error guards above these handlers are only reachable
+  // from (the JSX below), so no extra null check is needed inside them.
+  const handleDeactivate = async () => {
+    if (!patient) return
+    setStatusBusy(true)
+    try {
+      const updated = await patientService.setStatus(patient.id, false)
+      setPatient(updated)
+      setConfirmDeactivateOpen(false)
+      notifySuccess('Paciente desactivado.')
+    } catch (err) {
+      if (isAxiosError(err) && err.response?.data?.error) {
+        notifyError(err.response.data.error)
+      } else {
+        notifyError('No se pudo desactivar al paciente. Intenta de nuevo.')
+      }
+    } finally {
+      setStatusBusy(false)
+    }
+  }
+
+  // §9 — no confirmation: reversible, and nothing in the brief asks for one
+  // here (unlike Desactivar/Ocultar, both explicitly confirmed above).
+  const handleReactivate = async () => {
+    if (!patient) return
+    setStatusBusy(true)
+    try {
+      const updated = await patientService.setStatus(patient.id, true)
+      setPatient(updated)
+      notifySuccess('Paciente reactivado.')
+    } catch (err) {
+      if (isAxiosError(err) && err.response?.data?.error) {
+        notifyError(err.response.data.error)
+      } else {
+        notifyError('No se pudo reactivar al paciente. Intenta de nuevo.')
+      }
+    } finally {
+      setStatusBusy(false)
+    }
+  }
+
+  // §21 — after a successful hide, navigate back to Patients (preferred):
+  // this exact PatientDetailPage becomes inaccessible for a hidden patient
+  // (§25/§26), so staying here would show a now-stale, soon-to-404 page.
+  const handleHide = async () => {
+    if (!patient) return
+    setStatusBusy(true)
+    try {
+      await patientService.setVisibility(patient.id, true)
+      setConfirmHideOpen(false)
+      notifySuccess('Paciente ocultado. Podrás volver a mostrarlo desde Configuración.')
+      navigate('/patients')
+    } catch (err) {
+      if (isAxiosError(err) && err.response?.data?.error) {
+        notifyError(err.response.data.error)
+      } else {
+        notifyError('No se pudo ocultar al paciente. Intenta de nuevo.')
+      }
+      setStatusBusy(false)
+    }
+  }
+
   // U5.2 — passed as NewRecordModal's onCreated. The pre-U5 "prepend
   // locally" assumption (recordedAt-desc was always the visible order, and
   // records[] always held the FULL collection) no longer holds once
@@ -567,7 +729,7 @@ export default function PatientDetailPage() {
         <p className="font-medium text-foreground">{patientError ?? 'Paciente no encontrado'}</p>
         <button
           onClick={() => navigate('/patients')}
-          className="mt-4 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+          className="mt-4 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
         >
           Volver a pacientes
         </button>
@@ -579,7 +741,7 @@ export default function PatientDetailPage() {
   const age = calcAge(patient.birthDate)
 
   return (
-    <div className="space-y-5">
+    <div className="ui-section-stack-tight">
       {/* Header */}
       <div className="flex items-center gap-3">
         <button
@@ -596,6 +758,17 @@ export default function PatientDetailPage() {
             {patient.latestRisk && (
               <RiskBadge level={patient.latestRisk} score={patient.latestScore} showScore size="md" />
             )}
+            {/* Z8 §25 — clear "Inactivo" state/badge for INACTIVE_VISIBLE.
+                This page is only ever reachable at all for ACTIVE or
+                INACTIVE_VISIBLE (a hidden patient 404s at the fetch above —
+                see §25/§26), so !patient.isActive here always means
+                INACTIVE_VISIBLE, never INACTIVE_HIDDEN. */}
+            {!patient.isActive && (
+              <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium bg-muted text-muted-foreground border border-border">
+                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
+                Inactivo
+              </span>
+            )}
           </div>
           <p className="text-muted-foreground text-sm mt-1">
             {age} años · {sexLabel(patient.sex)} · Última actualización {timeAgo(patient.updatedAt)}
@@ -606,29 +779,141 @@ export default function PatientDetailPage() {
               información (repositioned only — its inline-edit behavior is
               unchanged; U4 will replace it with the full personal-info
               modal). flex-wrap keeps this from overflowing horizontally on
-              narrow viewports. */}
-          <button
-            onClick={() => setNewRecordModalOpen(true)}
-            className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Nuevo registro
-          </button>
-          <button
-            onClick={() => navigate(`/predictions/${patient.id}`)}
-            className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
-          >
-            <Activity className="w-4 h-4" />
-            Nueva predicción
-          </button>
-          <button
-            onClick={() => setEditPatientModalOpen(true)}
-            className="p-2 rounded-lg border border-border hover:bg-accent transition-colors"
-          >
-            <Edit className="w-4 h-4 text-muted-foreground" />
-          </button>
+              narrow viewports.
+              Z8 §25/§34 — Nuevo registro/Nueva predicción are ONLY rendered
+              for an ACTIVE patient: an INACTIVE_VISIBLE patient may not
+              receive new clinical activity, and the backend enforces this
+              authoritatively regardless (PatientInactiveError) — this is
+              the frontend half, hiding the actions rather than merely
+              disabling them, with the explanatory banner below replacing
+              any inline disabled-state tooltip. */}
+          {/* Z8-FIX2 §8/§9/§10/§11 — top-right is now split strictly by
+              lifecycle state instead of always showing Edit and branching
+              only the lifecycle button(s):
+              ACTIVE   → Nuevo registro, Nueva predicción, Editar información
+                         personal. Desactivar REMOVED from here — it now
+                         lives only in the dedicated lifecycle section below
+                         (§9/§14).
+              INACTIVE_VISIBLE → Reactivar, Ocultar only. Editar información
+                         personal is deliberately NOT shown here (§10) — see
+                         the matching change to the Información personal
+                         card's own secondary edit entry point further down,
+                         which is hidden for the same reason (one action,
+                         consistently unavailable while inactive, not merely
+                         relocated).
+              Terminology stays exactly Desactivar/Reactivar/Ocultar/Mostrar
+              (§17) — never Eliminar/Borrar. */}
+          {patient.isActive ? (
+            <>
+              <button
+                onClick={() => setNewRecordModalOpen(true)}
+                className="flex items-center gap-2 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                Nuevo registro
+              </button>
+              <button
+                onClick={() => navigate(`/predictions/${patient.id}`)}
+                className="flex items-center gap-2 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+              >
+                <Activity className="w-4 h-4" />
+                Nueva predicción
+              </button>
+              <button
+                onClick={() => setEditPatientModalOpen(true)}
+                className="p-2 rounded-lg border border-border hover:bg-accent transition-colors"
+              >
+                <Edit className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={handleReactivate}
+                disabled={statusBusy}
+                className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-border hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <RotateCcw className="w-4 h-4 text-muted-foreground" />
+                Reactivar
+              </button>
+              <button
+                onClick={() => setConfirmHideOpen(true)}
+                disabled={statusBusy}
+                className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-border hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <EyeOff className="w-4 h-4 text-muted-foreground" />
+                Ocultar
+              </button>
+            </>
+          )}
         </div>
       </div>
+
+      {/* Z8 §34 — concise explanation, backend-enforced regardless (the
+          actions themselves are simply not rendered above for this state,
+          per §25). */}
+      {!patient.isActive && (
+        <div className="flex items-start gap-3 bg-muted/50 border border-border rounded-lg px-4 py-3">
+          <AlertTriangle className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+          <p className="flex-1 text-sm text-muted-foreground">
+            El paciente está inactivo. Reactívalo para registrar nueva actividad clínica.
+          </p>
+        </div>
+      )}
+
+      {/* Z8 §21 — Desactivar confirmation. */}
+      <Dialog
+        open={confirmDeactivateOpen}
+        onOpenChange={setConfirmDeactivateOpen}
+        title="¿Desactivar paciente?"
+        description="El paciente dejará de poder recibir nuevos registros clínicos o predicciones hasta que lo reactives. Su información e historial clínico se conservarán sin cambios."
+        preventClose={statusBusy}
+      >
+        <div className="flex justify-end gap-2 mt-2">
+          <button
+            onClick={() => setConfirmDeactivateOpen(false)}
+            disabled={statusBusy}
+            className="px-4 ui-compact-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-60"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleDeactivate}
+            disabled={statusBusy}
+            className="flex items-center gap-2 px-4 ui-compact-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-60"
+          >
+            {statusBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+            Desactivar
+          </button>
+        </div>
+      </Dialog>
+
+      {/* Z8 §21 — Ocultar confirmation, exact suggested copy. */}
+      <Dialog
+        open={confirmHideOpen}
+        onOpenChange={setConfirmHideOpen}
+        title="¿Ocultar paciente?"
+        description="Este paciente dejará de aparecer en las vistas normales de CardioSense. Su información y su historial clínico se conservarán y podrás volver a mostrarlo desde Configuración."
+        preventClose={statusBusy}
+      >
+        <div className="flex justify-end gap-2 mt-2">
+          <button
+            onClick={() => setConfirmHideOpen(false)}
+            disabled={statusBusy}
+            className="px-4 ui-compact-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-60"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleHide}
+            disabled={statusBusy}
+            className="flex items-center gap-2 px-4 ui-compact-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-60"
+          >
+            {statusBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+            Ocultar
+          </button>
+        </div>
+      </Dialog>
 
       <NewRecordModal
         patientId={patient.id}
@@ -646,15 +931,15 @@ export default function PatientDetailPage() {
       />
 
       {/* U8.6C — model-ineligibility notice. Same visual pattern already
-          used for Calendar deep-link feedback (amber warning banner,
+          used for Calendar deep-link feedback (red warning banner,
           AlertTriangle icon), but its own separate state — never clinical:
           no risk label, no Alert, no Risk Evolution point. Dismissible;
           not persisted, so dismissing it (or navigating away) loses it for
           good — consistent with U8.6-DEBT-1..3's documented limitation. */}
       {predictionUnavailableNotice && (
-        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-          <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div className="flex-1 text-sm text-amber-800">
+        <div className="flex items-start gap-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 rounded-lg px-4 py-3">
+          <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 text-sm text-red-800 dark:text-red-300">
             <p>
               El registro clínico se guardó correctamente, pero no fue posible generar una predicción:
               la edad de este registro está fuera del rango de soporte de {predictionUnavailableNotice.modelVersion}{' '}
@@ -663,23 +948,23 @@ export default function PatientDetailPage() {
           </div>
           <button
             onClick={() => setPredictionUnavailableNotice(null)}
-            className="p-1 rounded-lg hover:bg-amber-100 transition-colors flex-shrink-0"
+            className="p-1 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors flex-shrink-0"
             aria-label="Cerrar aviso"
           >
-            <X className="w-3.5 h-3.5 text-amber-600" />
+            <X className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
           </button>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 ui-major-grid-gap">
 
         {/* ── Left column ──────────────────────────────────────────── */}
-        <div className="space-y-4">
+        <div className="ui-content-stack">
 
           {/* Risk gauge — real predictions (predictionService.getHistory) */}
-          <div className="bg-card rounded-xl border border-border p-5">
+          <div className="bg-card rounded-xl border border-border ui-card-density">
             <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
-              <Heart className="w-4 h-4 text-red-500" />
+              <Heart className="w-4 h-4 text-red-500 dark:text-red-400" />
               Riesgo cardiovascular
             </h3>
             {predictionsLoading ? (
@@ -687,7 +972,7 @@ export default function PatientDetailPage() {
                 <Loader2 className="w-5 h-5 text-primary animate-spin" />
               </div>
             ) : predictionsError ? (
-              <p className="text-sm text-red-600 text-center py-4">{predictionsError}</p>
+              <p className="text-sm text-red-600 dark:text-red-400 text-center py-4">{predictionsError}</p>
             ) : !latestPrediction ? (
               <div className="text-center py-6">
                 <p className="text-sm text-muted-foreground">Sin predicciones aún</p>
@@ -706,9 +991,9 @@ export default function PatientDetailPage() {
                   />
                 </div>
                 {latestPrediction.isAnomaly && (
-                  <div className="mt-3 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                    <p className="text-xs text-amber-700 font-medium">
+                  <div className="mt-3 flex items-center gap-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-lg px-3 py-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                    <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">
                       Anomalía detectada en indicadores
                     </p>
                   </div>
@@ -728,7 +1013,7 @@ export default function PatientDetailPage() {
           </div>
 
           {/* Patient info */}
-          <div className="bg-card rounded-xl border border-border p-5">
+          <div className="bg-card rounded-xl border border-border ui-card-density">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-foreground flex items-center gap-2">
                 <User className="w-4 h-4 text-muted-foreground" />
@@ -742,16 +1027,27 @@ export default function PatientDetailPage() {
                   borderless, muted) so it doesn't compete with the action
                   bar's control; icon-only with an aria-label/title so it
                   stays a fixed-size, usable hit target at narrow widths
-                  without ever wrapping the header. */}
-              <button
-                type="button"
-                onClick={() => setEditPatientModalOpen(true)}
-                aria-label="Editar información personal"
-                title="Editar información personal"
-                className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors flex-shrink-0"
-              >
-                <Edit className="w-3.5 h-3.5" />
-              </button>
+                  without ever wrapping the header.
+                  Z8-FIX2 §10 — gated behind patient.isActive for the same
+                  reason the action-bar's own Edit button is now hidden
+                  while inactive: this is the identical edit action through
+                  a second door, and the brief's requirement is that
+                  PatientDetail "no longer expose[s] the Edit personal
+                  information action while inactive" — not merely that its
+                  primary button move. Leaving this secondary entry point
+                  visible would silently reopen the same action the
+                  top-right change just closed. */}
+              {patient.isActive && (
+                <button
+                  type="button"
+                  onClick={() => setEditPatientModalOpen(true)}
+                  aria-label="Editar información personal"
+                  title="Editar información personal"
+                  className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors flex-shrink-0"
+                >
+                  <Edit className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             {/* U4.2A — editing now happens exclusively via EditPatientModal
@@ -793,6 +1089,15 @@ export default function PatientDetailPage() {
                   </div>
                 )
               })()}
+              {/* Z6 — same pattern as CURP/phone immediately above: the row
+                  is only rendered when a value exists (nothing to show as
+                  a fabricated "No registrado" row — this codebase's
+                  existing convention for these optional contact fields is
+                  to omit the row entirely, never render undefined/null/
+                  blank). */}
+              {patient.email && (
+                <InfoRow label="Correo electrónico" value={patient.email} />
+              )}
               {/* W7 — "Registrado" is a date-only label/value row (no "el"/
                   "del" preposition to get wrong), so the relative result's
                   `label` alone ("Hoy"/"Ayer"/absolute) is exactly what this
@@ -803,11 +1108,15 @@ export default function PatientDetailPage() {
             </div>
           </div>
 
-          {/* Patient Calendar (P3-FIX) — moved into the left column, right
-              below Información personal, instead of the previous
-              full-width section after the whole grid. Same component/logic
-              as P3 (no realtime — P5's responsibility), now with P4's
-              cross-navigation into Clinical History/Risk Evolution below. */}
+          {/* Patient Calendar (P3-FIX) — left column, right below
+              Información personal. Z8-FIX3 had moved this into the right
+              column (to force a single global linear order with Historial/
+              Lifecycle) without product authorization; Z8-FIX4 restores it
+              to this exact pre-FIX3 structural position. Same component/
+              props/logic as P3/P4 (no realtime — P5's responsibility;
+              cross-navigation into Clinical History/Risk Evolution below;
+              RISK_CHANGE handling) — untouched, only its location moved
+              back. */}
           <PatientCalendar
             patientId={patient.id}
             onSelectHealthRecord={handleSelectHealthRecord}
@@ -819,14 +1128,17 @@ export default function PatientDetailPage() {
         </div>
 
         {/* ── Right columns ─────────────────────────────────────────── */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="lg:col-span-2 ui-content-stack">
 
           {/* Risk trend chart — real predictions (predictionService.getHistory),
               chronological (oldest→newest; backend returns newest-first) */}
-          <div ref={riskEvolutionRef} className="bg-card rounded-xl border border-border p-5">
+          <div ref={riskEvolutionRef} className="bg-card rounded-xl border border-border ui-card-density">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="font-semibold text-foreground">Evolución del riesgo</h3>
+                <h3 className="font-semibold text-foreground flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-muted-foreground" />
+                  Evolución del riesgo
+                </h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {predictions.length > 0
                     ? `Última${predictions.length === 1 ? '' : 's'} ${predictions.length} predicci${predictions.length === 1 ? 'ón' : 'ones'}`
@@ -849,22 +1161,54 @@ export default function PatientDetailPage() {
                   score: p.riskScore,
                   predictionId: p.id,
                 }))}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9CA3AF' }} axisLine={false} tickLine={false} />
+                  {/* Y6.2 — grid/tick colors were hardcoded #F3F4F6/#9CA3AF
+                      (fixed light-gray). Recharts passes these straight
+                      through as SVG presentation attributes, which resolve
+                      CSS custom properties through the cascade same as any
+                      other element — so the existing --border/
+                      --muted-foreground tokens apply with no JS needed.
+                      Risk-tier reference lines (#DC2626 "Alto"/#D97706
+                      "Moderado") are UNCHANGED — same values RISK_CONFIG
+                      uses for these tiers; not a color this block may
+                      redefine (Y6.2 §9/§49). */}
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="date" tick={{ fontSize: chartTextSizes.axisTick, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
                   <YAxis
                     domain={[0, 1]}
                     tickFormatter={v => `${(v * 100).toFixed(0)}%`}
-                    tick={{ fontSize: 11, fill: '#9CA3AF' }}
+                    tick={{ fontSize: chartTextSizes.axisTick, fill: 'hsl(var(--muted-foreground))' }}
                     axisLine={false}
                     tickLine={false}
                   />
-                  <Tooltip formatter={(v: number) => [`${(v * 100).toFixed(1)}%`, 'Riesgo']} />
-                  <ReferenceLine y={0.65} stroke="#DC2626" strokeDasharray="4 4" label={{ value: 'Alto', fill: '#DC2626', fontSize: 10 }} />
-                  <ReferenceLine y={0.35} stroke="#D97706" strokeDasharray="4 4" label={{ value: 'Moderado', fill: '#D97706', fontSize: 10 }} />
+                  {/* Y6.2 — Recharts' <Tooltip> renders its own floating box
+                      with NO styling by default (a plain white box, fixed
+                      regardless of app theme) — contentStyle/itemStyle/
+                      labelStyle are CSS-var-driven here for the same reason
+                      as the axes above, so it now matches the app's
+                      popover surface in both themes instead of always
+                      rendering white-on-white-adjacent in dark mode. */}
+                  <Tooltip
+                    formatter={(v: number) => [`${(v * 100).toFixed(1)}%`, 'Riesgo']}
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--popover))',
+                      borderColor: 'hsl(var(--border))',
+                      borderRadius: '0.5rem',
+                      fontSize: `${chartTextSizes.tooltip}px`,
+                    }}
+                    labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
+                    itemStyle={{ color: 'hsl(var(--popover-foreground))' }}
+                  />
+                  <ReferenceLine y={0.65} stroke="#DC2626" strokeDasharray="4 4" label={{ value: 'Alto', fill: '#DC2626', fontSize: chartTextSizes.refLine }} />
+                  <ReferenceLine y={0.35} stroke="#D97706" strokeDasharray="4 4" label={{ value: 'Moderado', fill: '#D97706', fontSize: chartTextSizes.refLine }} />
                   <Line
                     type="monotone"
                     dataKey="score"
-                    stroke="#2563EB"
+                    // Y6.2 — was a hardcoded #2563EB. This line represents
+                    // the score trend itself (not a specific risk tier), so
+                    // it maps to the app's own --primary token — which is
+                    // the same blue family already, and Y6.1 already tuned
+                    // --primary specifically for dark-mode contrast.
+                    stroke="hsl(var(--primary))"
                     strokeWidth={2.5}
                     dot={(dotProps: { cx?: number; cy?: number; payload?: { predictionId: string } }) => {
                       const { cx, cy, payload } = dotProps
@@ -875,8 +1219,17 @@ export default function PatientDetailPage() {
                           cx={cx}
                           cy={cy}
                           r={isSelected ? 7 : 4}
-                          fill={isSelected ? '#DC2626' : '#2563EB'}
-                          stroke="#fff"
+                          // Unselected dots follow the line's own color
+                          // (--primary); the selected dot keeps the same
+                          // #DC2626 "high" red used everywhere else as a
+                          // selection highlight — unchanged, not a risk
+                          // reclassification of that specific point.
+                          fill={isSelected ? '#DC2626' : 'hsl(var(--primary))'}
+                          // Was a hardcoded pure-white ring, which only
+                          // "cut out" correctly against a white card. Using
+                          // --card makes the ring match whatever the actual
+                          // surrounding card background is in either theme.
+                          stroke="hsl(var(--card))"
                           strokeWidth={isSelected ? 3 : 2}
                         />
                       )
@@ -889,8 +1242,11 @@ export default function PatientDetailPage() {
           </div>
 
           {/* Clinical indicators — from the most recent real Health Record (INT-08/INT-10) */}
-          <div className="bg-card rounded-xl border border-border p-5">
-            <h3 className="font-semibold text-foreground mb-4">Indicadores clínicos</h3>
+          <div className="bg-card rounded-xl border border-border ui-card-density">
+            <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+              <Activity className="w-4 h-4 text-muted-foreground" />
+              Indicadores clínicos
+            </h3>
 
             {latestRecordLoading ? (
               <div className="flex items-center justify-center py-8">
@@ -916,15 +1272,15 @@ export default function PatientDetailPage() {
                   ].map(item => (
                     <div key={item.label} className={cn(
                       'bg-card rounded-xl border p-4',
-                      item.high ? 'border-red-200 bg-red-50/50' : 'border-border',
+                      item.high ? 'border-red-200 dark:border-red-800/60 bg-red-50/50 dark:bg-red-950/40' : 'border-border',
                     )}>
                       <p className="text-xs text-muted-foreground">{item.label}</p>
-                      <p className={cn('text-2xl font-bold font-mono mt-1', item.high ? 'text-red-600' : 'text-foreground')}>
+                      <p className={cn('text-2xl font-bold font-mono mt-1', item.high ? 'text-red-600 dark:text-red-400' : 'text-foreground')}>
                         {item.value}
                       </p>
                       <p className="text-xs text-muted-foreground">{item.unit}</p>
                       {item.high && (
-                        <p className="text-[10px] text-red-600 font-medium mt-1 flex items-center gap-1">
+                        <p className="text-[10px] text-red-600 dark:text-red-400 font-medium mt-1 flex items-center gap-1">
                           <AlertTriangle className="w-2.5 h-2.5" />
                           Fuera de rango
                         </p>
@@ -952,7 +1308,7 @@ export default function PatientDetailPage() {
               container changed, from "always-mounted table with conditional
               rows" to "one of four mutually exclusive body states"); no
               backend/API/pagination/sorting contract changed. */}
-          <div className="bg-card rounded-xl border border-border p-5">
+          <div className="bg-card rounded-xl border border-border ui-card-density">
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <h3 className="font-semibold text-foreground flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-muted-foreground" />
@@ -966,7 +1322,7 @@ export default function PatientDetailPage() {
                 <Loader2 className="w-5 h-5 text-primary animate-spin" />
               </div>
             ) : recordsError ? (
-              <p className="text-sm text-red-600 text-center py-4">{recordsError}</p>
+              <p className="text-sm text-red-600 dark:text-red-400 text-center py-4">{recordsError}</p>
             ) : historyTotal === 0 ? (
               <div className="text-center py-6">
                 <p className="text-sm text-muted-foreground">No hay registros clínicos todavía.</p>
@@ -988,7 +1344,7 @@ export default function PatientDetailPage() {
                           ['glucose', 'Glucosa'],
                           ['bmi', 'IMC'],
                         ] as [HistorySortBy, string][]).map(([field, label]) => (
-                          <th key={field} className="py-2 pr-4">
+                          <th key={field} className="ui-clinical-row pr-4">
                             <button
                               type="button"
                               onClick={() => handleSortClick(field)}
@@ -1016,12 +1372,12 @@ export default function PatientDetailPage() {
                             r.id === selectedHealthRecordId && 'bg-primary/10 ring-1 ring-inset ring-primary',
                           )}
                         >
-                          <td className="py-2 pr-4 text-muted-foreground">{formatRelativeBusinessDateTime(r.recordedAt)}</td>
-                          <td className="py-2 pr-4">{r.sysBP}</td>
-                          <td className="py-2 pr-4">{r.diaBP}</td>
-                          <td className="py-2 pr-4">{r.totChol}</td>
-                          <td className="py-2 pr-4">{r.glucose}</td>
-                          <td className="py-2">{r.bmi}</td>
+                          <td className="ui-clinical-row pr-4 text-muted-foreground">{formatRelativeBusinessDateTime(r.recordedAt)}</td>
+                          <td className="ui-clinical-row pr-4">{r.sysBP}</td>
+                          <td className="ui-clinical-row pr-4">{r.diaBP}</td>
+                          <td className="ui-clinical-row pr-4">{r.totChol}</td>
+                          <td className="ui-clinical-row pr-4">{r.glucose}</td>
+                          <td className="ui-clinical-row">{r.bmi}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1071,13 +1427,110 @@ export default function PatientDetailPage() {
             )}
           </div>
 
+          {/* Z8-FIX4 §1/§4 — dedicated lifecycle/visibility management
+              section. MUST sit immediately after Historial de registros
+              clínicos (the card right above), in THIS right column's own
+              JSX flow (not a CSS re-ordering), so that relationship holds
+              at every breakpoint, including the single-column mobile
+              stack. This placement is unchanged from Z8-FIX3 and is the
+              one part of that fix the product confirmed as correct.
+              PatientCalendar/"Actividad cardiovascular" is NOT required to
+              be adjacent to this section — Z8-FIX3 had also relocated it
+              into this column to force a single global linear order
+              (Historial → Lifecycle → Calendar) that was never actually
+              authorized; Z8-FIX4 restored PatientCalendar to its original,
+              independent left-column position (see above) and this
+              section no longer references or depends on where the
+              calendar lives.
+              Always rendered for every patient this page can be reached
+              for — ACTIVE or INACTIVE_VISIBLE; an INACTIVE_HIDDEN patient
+              never reaches this far (the fetch above 404s first, §15 of
+              Z8-FIX2), so no "Mostrar" control is needed or rendered here
+              — that action stays exclusively in Configuración → Pacientes.
+              Reuses the EXACT SAME handlers/dialogs as the top-right quick
+              actions above — handleDeactivate/handleReactivate/handleHide,
+              confirmDeactivateOpen/confirmHideOpen, statusBusy — unchanged
+              from Z8-FIX2, no new mutation path, no duplicated business
+              logic. statusBusy is shared with the top-right buttons, so a
+              click from either entry point disables both while the
+              request is in flight. The INACTIVE_VISIBLE overlap with the
+              top-right Reactivar/Ocultar remains intentional (Z8-FIX2
+              §11) — fast actions up top, a persistent management area
+              with explanatory context here. */}
+          <div className="bg-card rounded-xl border border-border ui-card-density">
+            <h3 className="font-semibold text-foreground flex items-center gap-2">
+              {patient.isActive
+                ? <Activity className="w-4 h-4 text-muted-foreground" />
+                : <PowerOff className="w-4 h-4 text-muted-foreground" />}
+              Estado y visibilidad del paciente
+            </h3>
+
+            <div className="flex items-center gap-2 mt-3 mb-4">
+              <span className="text-sm text-muted-foreground">Estado:</span>
+              <span className={cn(
+                'inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium',
+                patient.isActive
+                  ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800/60'
+                  : 'bg-muted text-muted-foreground border border-border',
+              )}>
+                <span className={cn('w-1.5 h-1.5 rounded-full', patient.isActive ? 'bg-teal-500' : 'bg-muted-foreground/50')} />
+                {patient.isActive ? 'Activo' : 'Inactivo'}
+              </span>
+            </div>
+
+            {patient.isActive ? (
+              <>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Al desactivar a este paciente, su información y su historial clínico se conservarán sin cambios,
+                  pero no podrá recibir nuevos registros clínicos ni predicciones mientras esté inactivo. Podrás
+                  reactivarlo en cualquier momento.
+                </p>
+                <button
+                  onClick={() => setConfirmDeactivateOpen(true)}
+                  disabled={statusBusy}
+                  className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-border hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <PowerOff className="w-4 h-4 text-muted-foreground" />
+                  Desactivar
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Este paciente está inactivo: su información y su historial clínico se conservan, pero no puede
+                  recibir nueva actividad clínica. Reactívalo para que vuelva a estar disponible, u ocúltalo para
+                  retirarlo de las vistas normales de CardioSense — podrás volver a mostrarlo desde
+                  Configuración → Pacientes.
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={handleReactivate}
+                    disabled={statusBusy}
+                    className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-border hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <RotateCcw className="w-4 h-4 text-muted-foreground" />
+                    Reactivar
+                  </button>
+                  <button
+                    onClick={() => setConfirmHideOpen(true)}
+                    disabled={statusBusy}
+                    className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-border hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <EyeOff className="w-4 h-4 text-muted-foreground" />
+                    Ocultar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
           {/* Feature importance — real data only; the backend does not
               persist featureImportance on historical predictions (only the
               immediate POST /predictions response has it, per
               predictionService.ts), so this stays hidden until that changes
               upstream — never fabricated here. */}
           {latestPrediction?.featureImportance && (
-            <div className="bg-card rounded-xl border border-border p-5">
+            <div className="bg-card rounded-xl border border-border ui-card-density">
               <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
                 <FileText className="w-4 h-4 text-muted-foreground" />
                 Factores de mayor impacto en la predicción

@@ -112,7 +112,8 @@ export function buildCalendarDays(year: number, month: number, todayKey: string)
 // Groups events by their business-timezone calendar day, preserving the
 // order they arrived in within each day (the backend already returns a
 // globally deterministic order — eventDate ASC with a CLINICAL_RECORD <
-// PREDICTION < RISK_CHANGE < ALERT tie-break — this never re-sorts).
+// PREDICTION < RISK_CHANGE tie-break (Z2 removed ALERT) — this never
+// re-sorts).
 export function groupEventsByBusinessDay<T extends { eventDate: string }>(
   events: T[],
 ): Map<string, T[]> {

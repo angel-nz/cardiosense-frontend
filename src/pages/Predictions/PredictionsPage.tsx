@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
-  ArrowLeft, Activity, AlertTriangle, CheckCircle, Loader2, Info, Edit,
+  ArrowLeft, Activity, AlertTriangle, Loader2, Edit,
   FileWarning, History, Sparkles, ChevronLeft, ChevronRight, Search,
 } from 'lucide-react'
 import { RiskGauge } from '@/components/charts/RiskGauge'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import { ClinicalSourceDisclosure } from '@/components/predictions/ClinicalSourceDisclosure'
-import { FeatureImportanceBar } from '@/components/charts/FeatureImportanceBar'
 import { NewRecordModal } from '@/components/patients/NewRecordModal'
 import { cn, formatScore, formatTime, formatRelativeBusinessDate, formatRelativeBusinessDateTime } from '@/lib/utils'
 import { getBusinessDateKey, BUSINESS_TIMEZONE } from '@/lib/businessDate'
@@ -257,7 +256,7 @@ function GlobalPredictionHistory() {
   const hasActiveFilters = debouncedSearch || from || to || riskLevel
 
   return (
-    <div className="max-w-2xl mx-auto mt-4 space-y-4">
+    <div className="max-w-2xl mx-auto mt-4 ui-content-stack">
       <div className="text-center">
         <Activity className="w-10 h-10 text-primary mx-auto mb-3" />
         <h1 className="text-xl font-bold text-foreground">Historial de predicciones</h1>
@@ -276,7 +275,7 @@ function GlobalPredictionHistory() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar por nombre o CURP..."
-            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+            className="w-full pl-9 pr-3 ui-compact-control-density text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
           />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -284,19 +283,19 @@ function GlobalPredictionHistory() {
             type="date"
             value={from}
             onChange={e => setFrom(e.target.value)}
-            className="px-2.5 py-1.5 text-xs rounded-lg border border-border bg-card"
+            className="px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card"
           />
           <span className="text-xs text-muted-foreground">a</span>
           <input
             type="date"
             value={to}
             onChange={e => setTo(e.target.value)}
-            className="px-2.5 py-1.5 text-xs rounded-lg border border-border bg-card"
+            className="px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card"
           />
           <select
             value={riskLevel}
             onChange={e => setRiskLevel(e.target.value as PredictionRiskFilter | '')}
-            className="px-2.5 py-1.5 text-xs rounded-lg border border-border bg-card cursor-pointer"
+            className="px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card cursor-pointer"
           >
             <option value="">Todos los niveles</option>
             <option value="LOW">Bajo</option>
@@ -323,10 +322,10 @@ function GlobalPredictionHistory() {
           </div>
         ) : error ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <p className="font-medium text-red-600">{error}</p>
+            <p className="font-medium text-red-600 dark:text-red-400">{error}</p>
             <button
               onClick={() => load()}
-              className="mt-3 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+              className="mt-3 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
             >
               Reintentar
             </button>
@@ -364,7 +363,7 @@ function GlobalPredictionHistory() {
                       disclosure below it, since a toggle button can't
                       nest inside another button. */}
                   {group.items.map(pred => (
-                    <div key={pred.id} className="px-4 py-3.5 hover:bg-accent/50 transition-colors">
+                    <div key={pred.id} className="px-4 ui-row-density hover:bg-accent/50 transition-colors">
                       <button
                         type="button"
                         onClick={() => goToPrediction(pred)}
@@ -377,7 +376,7 @@ function GlobalPredictionHistory() {
                           <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
                             <span className="font-mono">Riesgo: {formatScore(pred.riskScore)}</span>
                             {pred.isAnomaly && (
-                              <span className="text-purple-600 font-medium">⚠ Anomalía</span>
+                              <span className="text-amber-600 dark:text-amber-400 font-medium">⚠ Anomalía</span>
                             )}
                             <span>{formatRelativeBusinessDateTime(pred.predictedAt)}</span>
                           </div>
@@ -709,7 +708,7 @@ export default function PredictionsPage() {
         <p className="font-medium text-foreground">{patientError ?? 'Paciente no encontrado'}</p>
         <button
           onClick={() => navigate('/patients')}
-          className="mt-4 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+          className="mt-4 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
         >
           Volver a pacientes
         </button>
@@ -718,10 +717,9 @@ export default function PredictionsPage() {
   }
 
   const hasRecord = !recordLoading && !!latestRecord
-  const showAlertNotice = result && (result.riskLevel !== 'low' || result.isAnomaly)
 
   return (
-    <div className="space-y-5">
+    <div className="ui-section-stack-tight">
       {/* Header */}
       <div className="flex items-center gap-3">
         <button onClick={() => navigate(`/patients/${patient.id}`)} className="p-2 rounded-lg hover:bg-accent transition-colors">
@@ -773,16 +771,16 @@ export default function PredictionsPage() {
       {activeTab === 'history' ? (
         <PredictionHistoryPage />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-5 ui-major-grid-gap">
 
           {/* ── Latest health record + run panel ────────────────────── */}
           <div className="lg:col-span-3">
-            <div className="bg-card rounded-xl border border-border p-5 space-y-4">
+            <div className="bg-card rounded-xl border border-border ui-card-density ui-content-stack">
               <div className="flex items-center justify-between pb-3 border-b border-border">
                 <div>
                   <h3 className="font-semibold text-foreground">Registro clínico más reciente</h3>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200 flex-shrink-0">
+                <div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 rounded-full border border-blue-200 dark:border-blue-800/60 flex-shrink-0">
                   <Activity className="w-3.5 h-3.5" />
                   Skorp Beta 0.1
                 </div>
@@ -801,7 +799,7 @@ export default function PredictionsPage() {
                   </p>
                   <button
                     onClick={() => navigate(`/patients/${patient.id}`)}
-                    className="mt-4 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+                    className="mt-4 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
                   >
                     Ir a la ficha del paciente
                   </button>
@@ -832,13 +830,22 @@ export default function PredictionsPage() {
                         automatic prediction is still resolving is an
                         explicitly-supported case (§16/Case B): the newest
                         save always supersedes the previous pending target. */}
-                    <button
-                      type="button"
-                      onClick={() => setNewRecordModalOpen(true)}
-                      className="flex items-center gap-1.5 text-xs font-medium text-primary hover:bg-primary/10 px-2.5 py-1.5 rounded-lg transition-colors flex-shrink-0"
-                    >
-                      <Edit className="w-3.5 h-3.5" />
-                    </button>
+                    {/* Z8 §25/§34 — an INACTIVE_VISIBLE patient may not
+                        receive new clinical activity; this trigger opens
+                        NewRecordModal, which always creates a brand-new
+                        HealthRecord (see its own comment above), so it is
+                        hidden here exactly like PatientDetailPage hides its
+                        own "Nuevo registro" action for the same state. The
+                        backend enforces this regardless (PatientInactiveError). */}
+                    {patient.isActive && (
+                      <button
+                        type="button"
+                        onClick={() => setNewRecordModalOpen(true)}
+                        className="flex items-center gap-1.5 text-xs font-medium text-primary hover:bg-primary/10 px-2.5 ui-secondary-control-density rounded-lg transition-colors flex-shrink-0"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {[
@@ -860,10 +867,10 @@ export default function PredictionsPage() {
               )}
 
               {error && (
-                <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
-                  <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                <div className="flex items-start gap-2 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 rounded-lg px-3 py-2.5">
+                  <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <p className="text-xs text-red-700">{error}</p>
+                    <p className="text-xs text-red-700 dark:text-red-300">{error}</p>
                     {/* V-AGE-FIX-2 §7 — CTA reuses the same navigation this
                         page already uses for the "no records" empty state
                         (below); it does not duplicate NewRecordModal's form,
@@ -872,7 +879,7 @@ export default function PredictionsPage() {
                       <button
                         type="button"
                         onClick={() => navigate(`/patients/${patient.id}`)}
-                        className="mt-2 text-xs font-medium text-red-700 underline hover:no-underline"
+                        className="mt-2 text-xs font-medium text-red-700 dark:text-red-300 underline hover:no-underline"
                       >
                         Ir a la ficha del paciente para crear un nuevo registro clínico
                       </button>
@@ -893,7 +900,7 @@ export default function PredictionsPage() {
                     — this stays a separate, explicit doctor action. */}
                 <button
                   onClick={handlePredict}
-                  disabled={predicting || !hasRecord || autoStatus === 'pending'}
+                  disabled={predicting || !hasRecord || autoStatus === 'pending' || !patient.isActive}
                   className="w-full flex items-center justify-center gap-2 bg-primary text-white py-3 rounded-lg text-sm font-semibold hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors shadow-sm"
                 >
                   {predicting ? (
@@ -908,7 +915,21 @@ export default function PredictionsPage() {
                     </>
                   )}
                 </button>
-                {autoStatus === 'pending' && (
+                {/* Z8 §25/§34 — takes precedence over the pre-existing W4.2
+                    pending-message below (mutually exclusive: autoStatus
+                    can only be 'pending' while a HealthRecord was just
+                    created, which itself requires the patient to have been
+                    ACTIVE at that moment — see record.service.ts's
+                    PatientInactiveError guard — so both conditions are never
+                    true for the same patient at the same time in practice;
+                    ordered first here purely so an inactive patient always
+                    sees the lifecycle explanation, matching
+                    PatientDetailPage's identical copy). */}
+                {!patient.isActive ? (
+                  <p className="text-[11px] text-muted-foreground text-center mt-2">
+                    El paciente está inactivo. Reactívalo para registrar nueva actividad clínica.
+                  </p>
+                ) : autoStatus === 'pending' && (
                   <p className="text-[11px] text-muted-foreground text-center mt-2">
                     Deshabilitado mientras se genera la predicción automática del nuevo registro.
                   </p>
@@ -918,7 +939,7 @@ export default function PredictionsPage() {
           </div>
 
           {/* ── Result Panel ──────────────────────────────────────────── */}
-          <div className="lg:col-span-2 space-y-4">
+          <div className="lg:col-span-2 ui-content-stack">
             {/* W4.2 §9/§10/§12/§13/§15 — the automatic (W4) outcome takes
                 precedence over the manual-flow's own `result`/empty state
                 whenever it is active (pending or a terminal outcome not yet
@@ -945,10 +966,10 @@ export default function PredictionsPage() {
               // PatientDetailPage's predictionUnavailableNotice). The saved
               // HealthRecord is untouched/still the visible latestRecord;
               // no fake Prediction, no riskScore 0, no LOW, no RiskGauge.
-              <div className="bg-card rounded-xl border border-border p-5">
-                <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1 text-sm text-amber-800">
+              <div className="bg-card rounded-xl border border-border ui-card-density">
+                <div className="flex items-start gap-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-lg px-4 py-3">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 text-sm text-amber-800 dark:text-amber-300">
                     <p>
                       El registro clínico se guardó correctamente, pero no fue posible generar una predicción:
                       la edad de este registro está fuera del rango de soporte de {autoUnavailable.modelVersion}{' '}
@@ -960,10 +981,10 @@ export default function PredictionsPage() {
             ) : autoStatus === 'failed' && autoFailedReason ? (
               // §17 — concise, cause-specific copy; no stack traces, no
               // Axios/internal details, no implied clinical conclusion.
-              <div className="bg-card rounded-xl border border-border p-5">
-                <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
-                  <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-red-700">{AI_FAILURE_MESSAGES[autoFailedReason]}</p>
+              <div className="bg-card rounded-xl border border-border ui-card-density">
+                <div className="flex items-start gap-2 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 rounded-lg px-3 py-2.5">
+                  <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-700 dark:text-red-300">{AI_FAILURE_MESSAGES[autoFailedReason]}</p>
                 </div>
               </div>
             ) : autoStatus === 'success' && autoResult ? (
@@ -974,7 +995,7 @@ export default function PredictionsPage() {
               // no FeatureImportanceBar (none of those are available here;
               // see the AutoPredictionResult comment above — never
               // fabricated, per F31).
-              <div className="bg-card rounded-xl border border-border p-5">
+              <div className="bg-card rounded-xl border border-border ui-card-density">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-semibold text-foreground">Resultado</h3>
                   <RiskBadge level={autoResult.riskLevel} size="md" />
@@ -991,17 +1012,17 @@ export default function PredictionsPage() {
                   </div>
                   <div className="text-center">
                     <p className="text-xs text-muted-foreground">Anomalía</p>
-                    <p className={cn('text-xl font-bold mt-1', autoResult.isAnomaly ? 'text-amber-600' : 'text-teal-600')}>
+                    <p className={cn('text-xl font-bold mt-1', autoResult.isAnomaly ? 'text-amber-600 dark:text-amber-400' : 'text-teal-600 dark:text-teal-400')}>
                       {autoResult.isAnomaly ? 'Sí' : 'No'}
                     </p>
                   </div>
                 </div>
                 {autoResult.isAnomaly && (
-                  <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="mt-3 flex items-start gap-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-lg px-3 py-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-xs font-semibold text-amber-700">Anomalía detectada</p>
-                      <p className="text-xs text-amber-600 mt-0.5">
+                      <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">Anomalía detectada</p>
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
                         Indicadores fuera del patrón normal en el nuevo registro.
                       </p>
                     </div>
@@ -1010,7 +1031,7 @@ export default function PredictionsPage() {
               </div>
             ) : result ? (
               <>
-                <div className="bg-card rounded-xl border border-border p-5">
+                <div className="bg-card rounded-xl border border-border ui-card-density">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-semibold text-foreground">Resultado</h3>
                     <RiskBadge level={result.riskLevel} size="md" />
@@ -1027,17 +1048,17 @@ export default function PredictionsPage() {
                     </div>
                     <div className="text-center">
                       <p className="text-xs text-muted-foreground">Anomalía</p>
-                      <p className={cn('text-xl font-bold mt-1', result.isAnomaly ? 'text-amber-600' : 'text-teal-600')}>
+                      <p className={cn('text-xl font-bold mt-1', result.isAnomaly ? 'text-amber-600 dark:text-amber-400' : 'text-teal-600 dark:text-teal-400')}>
                         {result.isAnomaly ? 'Sí' : 'No'}
                       </p>
                     </div>
                   </div>
                   {result.isAnomaly && (
-                    <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="mt-3 flex items-start gap-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-lg px-3 py-2.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
                       <div>
-                        <p className="text-xs font-semibold text-amber-700">Anomalía detectada</p>
-                        <p className="text-xs text-amber-600 mt-0.5">
+                        <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">Anomalía detectada</p>
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
                           Indicadores fuera del patrón normal. Score: {result.anomalyScore.toFixed(4)}
                         </p>
                       </div>

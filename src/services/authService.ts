@@ -1,44 +1,15 @@
 import { api } from './api'
-import type { LoginRequest, LoginResponse, RegisterRequest, User, UserRole } from '@/types'
+import { normalizeUser, type BackendAuthPayload, type BackendUser } from '@/lib/normalizeUser'
+import type { LoginRequest, LoginResponse, RegisterRequest, User } from '@/types'
 
-// ─── Backend wire shapes ──────────────────────────────────────────────────
-// The backend (auth.service.ts) currently returns { user, accessToken,
-// refreshToken } — not the canonical { token, user } contract — and role as
-// an uppercase enum ('MEDICO' | 'ADMIN'). We normalize at this boundary so
-// the rest of the frontend only ever sees the contractual LoginResponse/User
-// shape, per Matriz de Integración v1.0 (no accessToken leaking upward).
-interface BackendUser {
-  id: string
-  email: string
-  firstName: string
-  lastName: string
-  role: string
-  isActive: boolean
-  createdAt: string
-  medico?: { id: string; especialidad: string | null; hospital: string | null } | null
-}
-
-interface BackendAuthPayload {
-  user: BackendUser
-  accessToken: string
-  refreshToken: string
-}
-
-function normalizeUser(u: BackendUser): User {
-  return {
-    id: u.id,
-    email: u.email,
-    firstName: u.firstName,
-    lastName: u.lastName,
-    role: u.role.toLowerCase() as UserRole,
-    createdAt: u.createdAt,
-    medico: u.medico ? {
-      id: u.medico.id,
-      especialidad: u.medico.especialidad ?? undefined,
-      hospital: u.medico.hospital ?? undefined,
-    } : undefined,
-  }
-}
+// Y8D4 — the backend wire-shape interfaces (BackendUser/BackendAuthPayload)
+// and normalizeUser() used to be private to this file. They moved to
+// lib/normalizeUser.ts (unchanged in content) so lib/refreshCoordinator.ts
+// could share the exact same mapping without this file becoming a
+// dependency of that one (see refreshCoordinator.ts's own header comment
+// for the full circular-dependency reasoning). Nothing about login/
+// register/getCurrentUser below changed — they still return the same
+// LoginResponse/User shapes as before.
 
 export const authService = {
   async login(credentials: LoginRequest): Promise<LoginResponse> {
@@ -51,12 +22,29 @@ export const authService = {
     return normalizeUser(data)
   },
 
-  // POST /api/auth/register — backend endpoint exists and is operative.
-  // No RegisterPage exists in the frontend yet (out of scope for this
-  // block: only existing screens are integrated), so this is exposed at
-  // the service layer for a future block/UI to consume.
+  // POST /api/auth/register.
   async register(payload: RegisterRequest): Promise<LoginResponse> {
     const { data } = await api.post<BackendAuthPayload>('/auth/register', payload)
     return { token: data.accessToken, user: normalizeUser(data.user) }
+  },
+
+  // Y8D4 — the independent `refresh()` bare-axios implementation that used
+  // to live here was REMOVED, not merely rewritten: it was the second of
+  // the two low-level `POST /auth/refresh` implementations Y8D4 §3
+  // requires collapsing into one (lib/refreshCoordinator.ts is now that
+  // one implementation). AuthContext.tsx's bootstrap effect — the only
+  // caller of this method anywhere in the frontend (grep-confirmed) — now
+  // calls the shared coordinator directly instead, per Y8D4 §26/§27
+  // ("remove it if no caller remains"). No wrapper was kept here since
+  // nothing outside AuthContext.tsx ever called this method.
+
+  // Y5.2 — POST /api/auth/logout. No request body; idempotent server-side.
+  // Uses the `api` instance (not bare axios) since a 401 here is harmless
+  // and logout's own idempotent success response is what actually matters
+  // — AuthContext.logout() clears local state unconditionally regardless of
+  // this call's outcome (Y5.2 §"call backend logout, then unconditionally
+  // clear memory state + socket regardless of network outcome").
+  async logout(): Promise<void> {
+    await api.post('/auth/logout')
   },
 }

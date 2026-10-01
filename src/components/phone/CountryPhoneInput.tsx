@@ -41,7 +41,7 @@ const baseFieldClass = (hasError?: boolean) => cn(
   'w-full px-3 py-2.5 text-sm rounded-lg border bg-card',
   'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
   'transition-all disabled:opacity-60 disabled:cursor-not-allowed',
-  hasError ? 'border-red-400' : 'border-border',
+  hasError ? 'border-red-400 dark:border-red-500/70' : 'border-border',
 )
 
 export function CountryPhoneInput({
@@ -235,18 +235,18 @@ export function CountryPhoneInput({
       </div>
 
       {isUnresolvedLegacy && (
-        <p className="flex items-center gap-1.5 text-xs text-amber-600 mt-1.5">
+        <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 mt-1.5">
           <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
           Este número existente no pudo interpretarse automáticamente. Selecciona el país correcto para confirmarlo o corregirlo.
         </p>
       )}
       {!isUnresolvedLegacy && localStatus === 'invalid' && !hasExternalError && (
-        <p id={errorId} className="text-xs text-red-600 mt-1.5">
+        <p id={errorId} className="text-xs text-red-600 dark:text-red-400 mt-1.5">
           El número no está completo o no es válido para el país seleccionado.
         </p>
       )}
       {hasExternalError && (
-        <p id={errorId} className="text-xs text-red-600 mt-1.5">{error}</p>
+        <p id={errorId} className="text-xs text-red-600 dark:text-red-400 mt-1.5">{error}</p>
       )}
     </div>
   )

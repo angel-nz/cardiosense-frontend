@@ -42,10 +42,198 @@
     --sidebar-text-active: 0 0% 100%;
     --sidebar-width: 260px;
     --sidebar-collapsed: 68px;
+
+    /*
+      Y6.1/Y6.3B — CardioSense design-system tokens. Independent axis from
+      the color tokens above (this block never sets a color) and from .dark
+      below (colors and typography/spacing are orthogonal).
+
+      Y6.4B — the former interface density/visibility PRESET axis (Y6.3B:
+      Classic/Compact/Comfortable/High Visibility, user-selectable) has been
+      deimplemented as a product decision (Y6.4A/Y6.4B): it is no longer
+      configurable, and there is only ever one CardioSense design now. The
+      values below are simply the permanent CardioSense baseline — they are
+      what "Comfortable" used to mean, carried forward as the single design,
+      not as a retained "mode." Every per-preset override block that used to
+      sit below this one (`[data-interface='compact']` etc.) has been
+      removed; these are now the only values that exist.
+    */
+    --ui-font-body: 0.9375rem;         /* 15px */
+    --ui-font-meta: 0.8125rem;         /* 13px */
+    --ui-line-body: 1.6;
+    --ui-font-page-title: 1.625rem;    /* 26px */
+    --ui-font-section-title: 1.0625rem; /* 17px */
+    --ui-font-kpi: 2rem;               /* 32px */
+    --ui-card-padding: 1.5rem;         /* 24px */
+    --ui-section-gap: 1.75rem;         /* 28px */
+    --ui-element-gap: 1.125rem;        /* 18px */
+    --ui-control-padding-y: 0.75rem;   /* 12px */
+    --ui-row-padding-y: 1rem;          /* 16px */
+    --ui-modal-padding: 1.75rem;       /* 28px */
+    --ui-icon-size: 1.125rem;          /* 18px */
+
+    /*
+      Y6.3B-FIX1 — two additional roles whose values are genuine outliers
+      from the general --ui-control-padding-y (12px) / --ui-row-padding-y
+      (16px) tokens, kept on their own scale so an already-tight surface
+      (Clinical History's row padding, a secondary/small button) doesn't
+      inherit the "standard" row/control size.
+    */
+    --ui-clinical-row-padding-y: 0.625rem;      /* 10px — Clinical History table row */
+    --ui-secondary-control-padding-y: 0.5rem;   /* 8px — secondary/small buttons */
+
+    /*
+      Y6.3B §36 — calendar micro-text (PatientCalendar/DashboardCalendar
+      weekday header, event timestamps, and the Dashboard day-cell
+      event-count badge). Deliberately separate from --ui-font-meta (too
+      large for this role).
+    */
+    --ui-calendar-micro-size: 0.6875rem; /* 11px — weekday header + event timestamps */
+    --ui-calendar-count-size: 0.625rem;  /* 10px — Dashboard day-cell event count */
+
+    /*
+      Y6.3B §34 — component-local geometry for NotificationSettings'
+      PreferenceToggle (a hardcoded pixel switch, not expressible via the
+      core --ui-* tokens above). Scoped to this one component.
+    */
+    --toggle-track-w: 2.75rem;  /* 44px */
+    --toggle-track-h: 1.625rem; /* 26px */
+    --toggle-thumb: 1.25rem;    /* 20px */
+    --toggle-inset: 0.1875rem;  /* 3px */
+    --toggle-travel: 1.3125rem; /* 21px */
+
+    /*
+      PRE-Y8 (Interface Size Preference), FIX1 — default/fallback only.
+      The REAL, canonical 1 / 1.10 / 1.25 mapping lives EXCLUSIVELY in the
+      three `:root[data-ui-size="..."]` rules immediately below — this is
+      the ONE runtime location that defines those numbers anywhere in the
+      app (FIX1 §4: "the actual 1/1.10/1.25 scale mapping exists in one
+      canonical implementation location"). Nothing in TypeScript —
+      index.html's bootstrap script, AppearanceContext.tsx, or
+      Sidebar.tsx's CollapsedTooltip — carries its own copy of these
+      numbers any more; they all either set the semantic `data-ui-size`
+      attribute (bootstrap/Context) or read this custom property back via
+      `getComputedStyle` at runtime (CollapsedTooltip) rather than
+      re-deriving it.
+    */
+    --ui-zoom: 1;
+  }
+
+  /*
+    PRE-Y8 (Interface Size Preference), FIX1 — semantic document state, not
+    a numeric one. `data-ui-size` is set to the exact lowercase preference
+    value ('original' | 'medium' | 'large' — the same strings
+    InterfaceSizePreference and the `cardiosense_interface_size` cache
+    already use, so no separate normalization table exists anywhere either)
+    by index.html's pre-hydration script and by AppearanceContext.tsx's own
+    effect — both simply mirror the current preference onto this attribute
+    and never compute a scale number themselves. CSS is what turns that
+    semantic state into the actual factor.
+
+    This is a NEW, independent mechanism — `data-ui-size` — and must never
+    be confused with the REMOVED Y6.3B/Y6.4B `data-interface` attribute
+    (Classic/Compact/Comfortable/High Visibility, deimplemented in Y6.4B);
+    that one drove many per-component design tokens, this one drives a
+    single global `zoom` factor.
+  */
+  :root[data-ui-size="original"] {
+    --ui-zoom: 1;
+  }
+  :root[data-ui-size="medium"] {
+    --ui-zoom: 1.10;
+  }
+  :root[data-ui-size="large"] {
+    --ui-zoom: 1.25;
+  }
+
+  /*
+    PRE-Y8 (Interface Size Preference) — applied at the true document root
+    (`html`, i.e. `:root` itself), not `body`: this way EVERY descendant —
+    ordinary app content under #root AND anything portaled to
+    document.body (Radix Dialog, Sidebar's CollapsedTooltip), since
+    document.body is itself a child of `html` — sits inside the same single
+    zoomed subtree and scales uniformly together. `zoom` (not
+    `transform: scale`) is used deliberately: unlike `transform`, it affects
+    LAYOUT (not just paint), so `getBoundingClientRect()`, pointer
+    coordinates (`clientX`/`clientY`), and hit-testing all agree with the
+    already-scaled visual result — verified directly against a real
+    Chromium instance for this exact scenario (see final report). Historical
+    browser-support caveat, disclosed transparently: `zoom` is a long-
+    standing, widely-supported Chromium/WebKit property; Firefox only added
+    support relatively recently (~v126). No fallback for older Firefox is
+    implemented in this block (out of scope — flagged as a known
+    limitation, not silently ignored).
+  */
+  html {
+    zoom: var(--ui-zoom, 1);
+  }
+
+  /*
+    Y6.1 — foundational dark-mode variable set. Mirrors the :root semantic
+    tokens above one-for-one (same variable names, same HSL triplet format
+    consumed by tailwind.config.ts's `hsl(var(--x))` color definitions) so
+    every existing `bg-background`, `text-foreground`, `border-border`, etc.
+    utility class automatically repaints for dark mode with no class-name
+    changes anywhere in the app. Toggled by ThemeContext.tsx adding/removing
+    the 'dark' class on <html> (tailwind.config.ts already has
+    `darkMode: ['class']`).
+
+    Deliberately NOT touched here (out of this block's scope — Y6.1 is
+    infrastructure only, not a visual redesign): --radius (not theme-
+    dependent), and the --sidebar-* tokens, which are already a fixed dark
+    navy in the current light theme by design and are not re-themed by this
+    block. Per-component dark-mode polish beyond these shared tokens is
+    explicitly deferred to the Y6.2 visual-debt inventory this block hands
+    off.
+  */
+  .dark {
+    --background: 222 47% 9%;
+    --foreground: 210 40% 96%;
+
+    --card: 222 44% 13%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 222 44% 13%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+
+    --secondary: 217 33% 20%;
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 217 33% 18%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 217 33% 22%;
+    --accent-foreground: 210 40% 96%;
+
+    --destructive: 0 63% 45%;
+    --destructive-foreground: 210 40% 96%;
+
+    --border: 217 33% 22%;
+    --input: 217 33% 22%;
+    --ring: 217 91% 60%;
   }
 
   * {
     @apply border-border;
+  }
+
+  /*
+    Y6.1 — the one global reduced-motion rule this block adds: shortens
+    every animation/transition to effectively nothing for users who have
+    asked the OS for reduced motion, without removing the rules entirely
+    (so layout/visibility logic that happens to ride on an animation's
+    `animation-fill-mode`/keyframe endpoint still resolves correctly).
+  */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 
   body {
@@ -70,8 +258,15 @@
 }
 
 @layer components {
+  /*
+    Y6.3B §29 — nav-row INTERNAL vertical padding responds to
+    --ui-control-padding-y. Horizontal padding (`px-3`), text size,
+    row/column width and every other shell dimension stay invariant.
+  */
   .sidebar-nav-item {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer;
+    @apply flex items-center gap-3 px-3 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer;
+    padding-top: var(--ui-control-padding-y);
+    padding-bottom: var(--ui-control-padding-y);
     color: hsl(var(--sidebar-text));
   }
   .sidebar-nav-item:hover {
@@ -84,8 +279,10 @@
     @apply shadow-sm;
   }
 
+  /* Y6.3B — padding responds to --ui-card-padding. */
   .stat-card {
-    @apply bg-card rounded-xl border border-border p-5 transition-shadow hover:shadow-md;
+    @apply bg-card rounded-xl border border-border transition-shadow hover:shadow-md;
+    padding: var(--ui-card-padding);
   }
 
   .risk-badge-low {
@@ -100,5 +297,267 @@
 
   .page-enter {
     @apply animate-fade-in;
+  }
+
+  /*
+    Y6.3B — semantic design-system classes. Each consumes the --ui-* tokens
+    above; none of them touch color (Y6.2 stays frozen). Deliberately a
+    small, fixed set rather than one class per component. Retained in
+    Y6.4B as the permanent CardioSense design system even though the
+    density/visibility PRESET axis they originally scaled with is gone —
+    they remain valuable purely for consistency/readability at their call
+    sites. `.ui-section-stack`/`.ui-element-gap` mirror Tailwind's own
+    `space-y-*`/`gap-*` mechanisms exactly (the same
+    `:not([hidden]) ~ :not([hidden])` sibling-margin technique Tailwind's
+    `space-y-*` utilities use) so they are drop-in replacements at their
+    call sites, not a second incompatible layout model.
+  */
+  .ui-text-body {
+    font-size: var(--ui-font-body);
+    line-height: var(--ui-line-body);
+  }
+  .ui-text-meta {
+    font-size: var(--ui-font-meta);
+    line-height: var(--ui-line-body);
+  }
+  /*
+    line-height is a fixed unitless ratio here (not a --ui-* token) chosen to
+    reproduce each role's original Tailwind-bundled line-height ratio
+    (text-2xl's 1.5rem/2rem = 1.3333; text-3xl's 1.875rem/2.25rem = 1.2).
+    Being unitless it scales proportionally with the font-size token above
+    it rather than breaking the ratio.
+  */
+  .ui-heading-page {
+    font-size: var(--ui-font-page-title);
+    line-height: 1.3333;
+  }
+  .ui-heading-section {
+    font-size: var(--ui-font-section-title);
+  }
+  .ui-text-kpi {
+    font-size: var(--ui-font-kpi);
+    line-height: 1.2;
+  }
+  .ui-card-density {
+    padding: var(--ui-card-padding);
+  }
+  .ui-section-stack > :not([hidden]) ~ :not([hidden]) {
+    margin-top: var(--ui-section-gap);
+  }
+  /*
+    Y6.3B-FIX1, flattened Y6.4B — a section rhythm slightly tighter than the
+    standard --ui-section-gap (28px). This used to be expressed as a
+    calc() offset from --ui-section-gap so it could scale proportionally
+    across multiple presets; with only one baseline left, that relationship
+    has no remaining variable axis to track, so it is now a plain literal
+    (28px - 4px = 24px) — the class NAME is kept since it is still widely
+    used and reads more clearly at its call sites than a bare Tailwind
+    utility would.
+  */
+  .ui-section-stack-tight > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 1.5rem; /* 24px */
+  }
+  /*
+    Y6.3B-FIX1 §10/§12 — vertical rhythm BETWEEN form controls, and the
+    equivalent "card internal rhythm" spacing in small confirmation
+    dialogs (message → button row). Direct reuse of --ui-element-gap, just
+    via the sibling-margin technique (space-y-*) rather than `gap`
+    (flex/grid), since these call sites are plain stacked divs. Named
+    generically (not `.ui-field-stack`) since it covers both roles
+    identically. Y6.4B — widely used (confirmed via source scan, 24
+    occurrences across 13 files) and kept per the review requirement not to
+    replace clean semantic call sites with arbitrary literals merely to
+    retire a class.
+  */
+  .ui-content-stack > :not([hidden]) ~ :not([hidden]) {
+    margin-top: var(--ui-element-gap);
+  }
+  .ui-element-gap {
+    gap: var(--ui-element-gap);
+  }
+  .ui-control-density {
+    padding-top: var(--ui-control-padding-y);
+    padding-bottom: var(--ui-control-padding-y);
+  }
+  .ui-row-density {
+    padding-top: var(--ui-row-padding-y);
+    padding-bottom: var(--ui-row-padding-y);
+  }
+  .ui-modal-density {
+    padding: var(--ui-modal-padding);
+  }
+  .ui-icon-density {
+    width: var(--ui-icon-size);
+    height: var(--ui-icon-size);
+  }
+
+  /*
+    Y6.3B §35 — EditPatientModal field grid. Y6.4B — the High-Visibility-
+    only single-column override has been removed along with that preset;
+    this is unconditionally the two-column grid at every viewport width
+    above the component's own responsive breakpoints (unchanged from
+    before).
+  */
+  .ui-field-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  /*
+    Y6.3B §36 — calendar micro-text (weekday header, event timestamps, and
+    the Dashboard day-cell event-count badge). Pure CSS, no useAppearance()
+    read in either calendar component.
+  */
+  .ui-calendar-micro {
+    font-size: var(--ui-calendar-micro-size);
+  }
+  .ui-calendar-count {
+    font-size: var(--ui-calendar-count-size);
+  }
+
+  /* Y6.3B-FIX1 §6 — Clinical History table row density. */
+  .ui-clinical-row {
+    padding-top: var(--ui-clinical-row-padding-y);
+    padding-bottom: var(--ui-clinical-row-padding-y);
+  }
+
+  /*
+    Y6.3B-FIX1 §9 — secondary/small button vertical padding, distinct from
+    the primary-button --ui-control-padding-y role.
+  */
+  .ui-secondary-control-density {
+    padding-top: var(--ui-secondary-control-padding-y);
+    padding-bottom: var(--ui-secondary-control-padding-y);
+  }
+
+  /*
+    Y6.3B-FIX1, flattened Y6.4B — the app's other common control height:
+    primary CTA buttons and a handful of compact inputs/selects, a couple
+    of pixels tighter than --ui-control-padding-y's own 12px. Previously a
+    calc() offset from that token so it could scale across multiple
+    presets; flattened to a literal (12px - 2px = 10px) now that only one
+    baseline exists. Name kept — still a clear, widely-used call site.
+  */
+  .ui-compact-control-density {
+    padding-top: 0.625rem;    /* 10px */
+    padding-bottom: 0.625rem; /* 10px */
+  }
+
+  /*
+    Y6.3B-FIX1, flattened Y6.4B — PatientsPage's own table header/footer/
+    pagination-bar and its stat-strip cards, a couple of pixels tighter
+    than --ui-row-padding-y's own 16px. Flattened to a literal
+    (16px - 2px = 14px).
+  */
+  .ui-table-header-density {
+    padding-top: 0.875rem;    /* 14px */
+    padding-bottom: 0.875rem; /* 14px */
+  }
+
+  /*
+    Y6.3B-FIX1, flattened Y6.4B — major layout-column gaps, a few pixels
+    above --ui-element-gap's own 18px. Flattened to a literal
+    (18px + 4px = 22px).
+  */
+  .ui-major-grid-gap {
+    gap: 1.375rem; /* 22px */
+  }
+
+  /*
+    PRE-Y8 (Interface Size Preference), FIX2 — the ONE centralized
+    replacement for Tailwind's `min-h-screen` (`min-height: 100vh`)
+    wherever that utility was being used for SHELL/full-viewport page
+    sizing (the app shell, its main-content column, and every standalone
+    full-page layout — login/register split screens, the 404 page, the
+    auth-bootstrap loading screens). Verified against a real Chromium
+    instance (FIX1's mechanism test) that a `vh` unit inside the zoomed
+    `html` subtree is ITSELF re-scaled by the ambient zoom (a 50vh probe
+    measured 350/385/437.5px at zoom 1/1.10/1.25 instead of a constant
+    350px) — meaning a plain `min-h-screen` here would demand a logical
+    100vh, which zoom then inflates to ~110vh/~125vh of PHYSICAL viewport
+    at Medium/Large, creating artificial blank vertical scroll space on any
+    page whose real content is shorter than the (now-inflated) minimum.
+    Dividing by the same `--ui-zoom` custom property the root's own zoom
+    reads from cancels that re-scaling — identical technique, and the same
+    real-Chromium-verified fix, as Dialog.tsx's `max-h-[90vh]` compensation
+    (see that file's own comment) — so Original (--ui-zoom: 1) renders
+    byte-for-byte the same `100vh` as before, and Medium/Large render a
+    PHYSICAL minimum height approximately equal to the true viewport,
+    exactly as at Original, rather than growing with Interface Size.
+    Applies ONLY to shell-level minimum-height sizing. Ordinary fixed-pixel
+    component dimensions (Sidebar/Topbar's 68px, the collapsed rail width,
+    AlertToast's own `right-6`/`bottom-6` anchor offsets, etc.) are
+    deliberately NOT divided by --ui-zoom — those are supposed to scale
+    WITH Interface Size, unlike a viewport-relative bound. AlertToast's own
+    `vw`-based safety margin has its own dedicated class,
+    `.ui-toast-viewport-max-width`, immediately below — a second,
+    independent case of the same underlying `vh`/`vw`-under-zoom
+    re-scaling bug, audited and fixed separately (FIX3) since it involves a
+    genuinely different formula (see that class's own comment for why a
+    naive "just divide the vw term" version is wrong here).
+  */
+  .ui-viewport-min-height {
+    min-height: calc(100vh / var(--ui-zoom, 1));
+  }
+
+  /*
+    PRE-Y8 (Interface Size Preference), FIX3 — AlertToast.tsx's narrow-
+    viewport safety bound, `max-w-[calc(100vw-3rem)]`, exhibited the SAME
+    `vw`-under-zoom re-scaling bug as `vh` (FIX1/FIX2). FIX3 first shipped
+    `calc((100vw - 3rem) / var(--ui-zoom, 1))` (divide the WHOLE bracketed
+    expression), which was safe from overflow but held the physical margin
+    CONSTANT at every Interface Size (24.0 / 21.6 / 18.0px) — the same
+    "keep it constant" treatment as `.ui-viewport-min-height` above.
+
+    FIX4 superseded that acceptance criterion. This app's Interface Size
+    product contract is Original/Medium/Large ≈ native browser zoom
+    100%/110%/125%, and under REAL native browser zoom this margin does
+    NOT stay constant — it's an ordinary `rem`-based application dimension,
+    which native zoom (like every other ordinary CSS length in this app)
+    visually enlarges along with everything else, while only the *viewport*
+    term shrinks in effective-CSS-pixel terms. So FIX3's constant-margin
+    behavior, while safe, was not calibrated to what Angel's own product
+    spec calls for.
+
+    FIX4's formula, `calc((100vw / var(--ui-zoom, 1)) - 3rem)`, divides
+    ONLY the viewport term — this is the one case in this app where doing
+    that is *correct*, not a mistake, precisely because it targets a
+    different reference (native zoom parity) than every other `vw`/`vh`
+    fix in this app (which target a constant physical size). Derivation:
+    this element's zoomed rendering multiplies whatever CSS-px value this
+    expression resolves to by `zoom` at render time (the same "final box ×
+    zoom" model established by the FIX2 `vh` probe). Native zoom itself
+    resolves `100vw` against an effective CSS viewport of
+    (true-viewport / zoom), then physically re-magnifies the whole layout
+    by `zoom`. Pre-dividing just the `100vw` term by `--ui-zoom` reproduces
+    that same effective-viewport shrink under this app's own zoom
+    mechanism, while leaving `3rem` to resolve and then get re-magnified
+    normally (exactly like `right-6`/`bottom-6`, which are deliberately NOT
+    divided — see `.ui-viewport-min-height`'s comment above). The result:
+    physical rendered max-width = `true-viewport-width - (3rem * zoom)`,
+    i.e. the safety margin now GROWS with Interface Size at the same rate
+    every other on-screen dimension does, matching native browser zoom.
+
+    Empirically verified (real Chromium, real compiled CSS, 375/768/1440px
+    viewports × Original/Medium/Large) against an independent native-zoom
+    reference built by handing Chromium a genuinely shrunk viewport
+    (true-width / zoom) and re-scaling its real layout measurements back to
+    physical terms — the browser-chrome zoom rendering model, not a guess.
+    At 375px (the only width where this class actually binds — `w-96`
+    always wins at 768/1440px, confirmed unaffected there):
+      left margin — native ref / this formula:
+        Original:  24.0 / 24.0   (Δ 0.0)
+        Medium:    26.4 / 26.4   (Δ 0.0)
+        Large:     30.0 / 30.0   (Δ 0.0)
+    exact match at every size, versus FIX3's old formula which measured
+    21.6/18.0 at Medium/Large — a growing, uncalibrated mismatch of -4.8px
+    and -12.0px against the same native-zoom reference. Original is
+    unaffected (byte-for-byte `calc(100vw - 3rem)` at `--ui-zoom: 1`), and
+    no viewport/size combination produces any off-screen overflow (left and
+    right margins stay positive at every tested case).
+  */
+  .ui-toast-viewport-max-width {
+    max-width: calc((100vw / var(--ui-zoom, 1)) - 3rem);
   }
 }

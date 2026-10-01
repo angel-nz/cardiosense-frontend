@@ -23,8 +23,9 @@ interface TimelineEventGroupProps {
 // role="button", no tabIndex — it is never a navigation target and is
 // never keyboard-focusable (no existing pattern justifies a "scenario"
 // destination). Each child event keeps its own real <button> (or
-// non-interactive <div> for ALERT) exactly as before — those stay siblings
-// inside this wrapper, never nested inside another interactive element.
+// non-interactive <div> for RISK_CHANGE) exactly as before — those stay
+// siblings inside this wrapper, never nested inside another interactive
+// element.
 // `role="group"` + `aria-label` give screen readers the scenario context
 // once, without duplicating each child row's own accessible name.
 export function TimelineEventGroup({ memberCount, children }: TimelineEventGroupProps) {

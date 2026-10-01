@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Activity, ChevronLeft, ChevronRight, FileText, Bell,
+  Activity, ChevronLeft, ChevronRight, FileText,
   ArrowRight, AlertTriangle, Loader2, CalendarDays,
 } from 'lucide-react'
-import { cn, formatScore, formatLongDate, formatTime, formatRelativeBusinessDate, RISK_CONFIG, SEVERITY_CONFIG } from '@/lib/utils'
+import { cn, formatScore, formatLongDate, formatTime, formatRelativeBusinessDate, RISK_CONFIG } from '@/lib/utils'
 import {
   BUSINESS_TIMEZONE, getBusinessDateKey, getMonthRange,
   buildCalendarDays, groupEventsByBusinessDay,
@@ -108,7 +108,7 @@ export function DashboardCalendar() {
   }, [])
 
   // dashboard_activity_changed — canonical refetch only, never a hand-built
-  // CLINICAL_RECORD/PREDICTION/RISK_CHANGE/ALERT from the (intentionally
+  // CLINICAL_RECORD/PREDICTION/RISK_CHANGE from the (intentionally
   // minimal) socket payload. No patientId filtering needed here (unlike
   // PatientCalendar's per-patient events): this signal already means "some
   // patient of yours changed", and the canonical GET already scopes to the
@@ -167,13 +167,13 @@ export function DashboardCalendar() {
 
   if (error) {
     return (
-      <div className="bg-card rounded-xl border border-border p-5">
+      <div className="bg-card rounded-xl border border-border ui-card-density">
         <div className="flex flex-col items-center justify-center py-10 text-center">
           <AlertTriangle className="w-7 h-7 text-red-400 mb-2" />
-          <p className="text-sm text-red-600">{error}</p>
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
           <button
             onClick={() => loadMonth()}
-            className="mt-3 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+            className="mt-3 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
           >
             Reintentar
           </button>
@@ -201,14 +201,14 @@ export function DashboardCalendar() {
           (68px, confirmed in Topbar.tsx/AppLayout.tsx's own `pt-[68px]`
           page-content offset) plus 8px of breathing room, so the sticky
           card settles just below the Topbar rather than touching it. */}
-      <div className="bg-card rounded-xl border border-border p-5 lg:sticky lg:top-[76px]">
+      <div className="bg-card rounded-xl border border-border ui-card-density lg:sticky lg:top-[76px]">
         <div className="mb-4">
           <h3 className="font-semibold text-foreground flex items-center gap-2">
             <CalendarDays className="w-4 h-4 text-muted-foreground" />
             Actividad cardiovascular
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Historial de registros clínicos, predicciones, cambios de riesgo y alertas de tus pacientes.
+            Historial de registros clínicos, predicciones y cambios de riesgo de tus pacientes.
           </p>
         </div>
 
@@ -248,7 +248,7 @@ export function DashboardCalendar() {
         {/* Weekday header */}
         <div className="grid grid-cols-7 gap-1 mb-1">
           {WEEKDAY_LABELS.map(label => (
-            <div key={label} className="text-center text-[10px] font-medium text-muted-foreground uppercase py-1">
+            <div key={label} className="ui-calendar-micro text-center font-medium text-muted-foreground uppercase py-1">
               {label}
             </div>
           ))}
@@ -277,7 +277,7 @@ export function DashboardCalendar() {
               >
                 <span>{day.dayOfMonth}</span>
                 {dayEvents.length > 0 && (
-                  <span className="text-[9px] font-semibold text-primary leading-none">
+                  <span className="ui-calendar-count font-semibold text-primary leading-none">
                     {dayEvents.length}
                   </span>
                 )}
@@ -301,7 +301,7 @@ export function DashboardCalendar() {
           occupy. Error is handled above as a single full-section replacement
           (matches the original single-card component's behavior) rather
           than duplicated independently in this pane. */}
-      <div className="bg-card rounded-xl border border-border p-5">
+      <div className="bg-card rounded-xl border border-border ui-card-density">
         <div className="mb-4">
           <h3 className="font-semibold text-foreground">
             {/* W7 — same "de Hoy"/"de Ayer" vs "del <fecha>" grammar as
@@ -363,8 +363,9 @@ function DashboardEventRow({
   // Navigation classification (O1/O1-FIX, unchanged): CLINICAL_RECORD/
   // PREDICTION/RISK_CHANGE → B (exact patient reachable via /patients/:id,
   // but no deep-link to the specific record/prediction — P4 keeps that
-  // selection as local React state with no URL encoding). ALERT → C (no
-  // /alerts/:id route exists) — stays informational, never a button.
+  // selection as local React state with no URL encoding). Z2 removed the
+  // ALERT → C classification (no /alerts/:id route exists) along with the
+  // Alert-model calendar event itself.
   //
   // O3-FIX-4/5 — B is now a *little* more exact: the specific record/
   // prediction ID (for History/Risk Evolution) AND this Dashboard event's
@@ -401,14 +402,14 @@ function DashboardEventRow({
   if (event.eventType === 'CLINICAL_RECORD') {
     return shell(true, (
       <>
-        <FileText className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+        <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-foreground truncate">{event.patientName}</p>
           <p className="text-xs text-muted-foreground">
             Registro clínico · {event.metadata.sysBP}/{event.metadata.diaBP} mmHg
           </p>
         </div>
-        <span className="text-[10px] text-muted-foreground flex-shrink-0">{time}</span>
+        <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
       </>
     ))
   }
@@ -425,53 +426,39 @@ function DashboardEventRow({
             <span className="text-xs text-muted-foreground">{formatScore(event.metadata.riskScore)}</span>
           </div>
           {event.metadata.isAnomaly && (
-            <p className="text-xs text-purple-600 font-medium mt-1">⚠ Anomalía detectada</p>
+            <p className="text-xs text-amber-600 dark:text-amber-400 font-medium mt-1">⚠ Anomalía detectada</p>
           )}
         </div>
-        <span className="text-[10px] text-muted-foreground flex-shrink-0">{time}</span>
+        <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
       </>
     ))
   }
 
-  if (event.eventType === 'RISK_CHANGE') {
-    const fromCfg = RISK_CONFIG[event.metadata.fromLevel]
-    const toCfg = RISK_CONFIG[event.metadata.toLevel]
-    // X3 — RISK_CHANGE is deliberately noninteractive (product requirement):
-    // no navigation, no goToPatient invocation. shell(false, ...) renders a
-    // plain <div> with no onClick wired at all, mirroring the existing ALERT
-    // noninteractive precedent below. goToPatient's own RISK_CHANGE branch
-    // (still present, unchanged) is therefore never reached for this event —
-    // left in place rather than removed, since it's shared by the same
-    // function used by CLINICAL_RECORD/PREDICTION and touching it isn't
-    // required to satisfy this requirement.
-    return shell(false, (
-      <>
-        <ArrowRight className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground truncate">{event.patientName}</p>
-          <div className="flex items-center gap-1.5 mt-1">
-            <span className="text-xs text-muted-foreground">Cambio de riesgo:</span>
-            <span className={cn('text-xs font-medium', fromCfg.text)}>{fromCfg.label}</span>
-            <ArrowRight className="w-3 h-3 text-muted-foreground" />
-            <span className={cn('text-xs font-medium', toCfg.text)}>{toCfg.label}</span>
-          </div>
-        </div>
-        <span className="text-[10px] text-muted-foreground flex-shrink-0">{time}</span>
-      </>
-    ))
-  }
-
-  // ALERT — not navigable (Classification C).
-  const cfg = SEVERITY_CONFIG[event.metadata.severity]
+  // event.eventType === 'RISK_CHANGE' — the only remaining case (Z2 removed
+  // the ALERT branch that previously followed as an unconditional fallback
+  // here).
+  const fromCfg = RISK_CONFIG[event.metadata.fromLevel]
+  const toCfg = RISK_CONFIG[event.metadata.toLevel]
+  // X3 — RISK_CHANGE is deliberately noninteractive (product requirement):
+  // no navigation, no goToPatient invocation. shell(false, ...) renders a
+  // plain <div> with no onClick wired at all. goToPatient's own RISK_CHANGE
+  // branch (still present, unchanged) is therefore never reached for this
+  // event — left in place rather than removed, since it's shared by the
+  // same function used by CLINICAL_RECORD/PREDICTION and touching it isn't
+  // required to satisfy this requirement.
   return shell(false, (
     <>
-      <Bell className={cn('w-4 h-4 mt-0.5 flex-shrink-0', cfg.text)} />
+      <ArrowRight className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-foreground truncate">{event.patientName}</p>
-        <p className="text-xs text-muted-foreground break-words">{event.metadata.message}</p>
-        <span className={cn('text-[10px] font-bold uppercase', cfg.text)}>{cfg.label}</span>
+        <div className="flex items-center gap-1.5 mt-1">
+          <span className="text-xs text-muted-foreground">Cambio de riesgo:</span>
+          <span className={cn('text-xs font-medium', fromCfg.text)}>{fromCfg.label}</span>
+          <ArrowRight className="w-3 h-3 text-muted-foreground" />
+          <span className={cn('text-xs font-medium', toCfg.text)}>{toCfg.label}</span>
+        </div>
       </div>
-      <span className="text-[10px] text-muted-foreground flex-shrink-0">{time}</span>
+      <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
     </>
   ))
 }

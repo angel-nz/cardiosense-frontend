@@ -1,12 +1,17 @@
 import { useNavigate } from 'react-router-dom'
-import { Heart, ArrowLeft } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 
 export default function NotFoundPage() {
   const navigate = useNavigate()
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center text-center px-4 bg-background">
-      <div className="w-16 h-16 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center mb-6">
-        <Heart className="w-8 h-8 text-red-400" />
+    // PRE-Y8 (Interface Size Preference), FIX2 — was `min-h-screen`; see
+    // AppLayout.tsx/index.css's `.ui-viewport-min-height` comment.
+    <div className="ui-viewport-min-height flex flex-col items-center justify-center text-center px-4 bg-background">
+      {/* Z1 — official chromatic CardioSense icon; alt="" (decorative —
+          the "404"/"Página no encontrada" text right below already
+          establishes the page context). */}
+      <div className="w-16 h-16 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 flex items-center justify-center mb-6">
+        <img src="/brand/cardiosense-icon.png" alt="" className="w-8 h-8 object-contain" />
       </div>
       <h1 className="text-6xl font-bold text-foreground">404</h1>
       <p className="text-xl font-semibold text-foreground mt-3">Página no encontrada</p>

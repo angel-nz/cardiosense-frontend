@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { Activity, Calendar, ChevronLeft, ChevronRight, Cpu, History, Loader2 } from 'lucide-react'
+import { Calendar, ChevronLeft, ChevronRight, Cpu, History, Loader2 } from 'lucide-react'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import { RiskGauge } from '@/components/charts/RiskGauge'
 import { ClinicalSourceDisclosure } from '@/components/predictions/ClinicalSourceDisclosure'
-import { cn, formatRelativeBusinessDate, formatRelativeBusinessDateTime, formatScore } from '@/lib/utils'
+import { formatRelativeBusinessDate, formatRelativeBusinessDateTime } from '@/lib/utils'
 import { getBusinessDateKey, BUSINESS_TIMEZONE } from '@/lib/businessDate'
 import { predictionService } from '@/services/predictionService'
 import { useSocket } from '@/context/SocketContext'
@@ -148,7 +148,7 @@ export default function PredictionHistoryPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="ui-content-stack">
       {/* §10 — filter controls, ported from GlobalPredictionHistory's proven
           pattern: date/select changes apply immediately, no debounce, no
           free-text search (the patient is already scoped by the route). */}
@@ -161,7 +161,7 @@ export default function PredictionHistoryPage() {
             value={from}
             max={to || undefined}
             onChange={e => setFrom(e.target.value)}
-            className="px-2.5 py-1.5 text-xs rounded-lg border border-border bg-card"
+            className="px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card"
           />
           <label htmlFor="history-to" className="text-xs text-muted-foreground">Hasta</label>
           <input
@@ -170,14 +170,14 @@ export default function PredictionHistoryPage() {
             value={to}
             min={from || undefined}
             onChange={e => setTo(e.target.value)}
-            className="px-2.5 py-1.5 text-xs rounded-lg border border-border bg-card"
+            className="px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card"
           />
           <label htmlFor="history-risk" className="sr-only">Nivel de riesgo</label>
           <select
             id="history-risk"
             value={riskLevel}
             onChange={e => setRiskLevel(e.target.value as PredictionRiskFilter | '')}
-            className="px-2.5 py-1.5 text-xs rounded-lg border border-border bg-card cursor-pointer"
+            className="px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card cursor-pointer"
           >
             <option value="">Todos los niveles</option>
             <option value="LOW">Bajo</option>
@@ -198,7 +198,7 @@ export default function PredictionHistoryPage() {
             (see `invalidRange` guard in load() above) and current filters/
             results stay exactly as they were — no silent date swapping. */}
         {invalidRange && (
-          <p className="text-[11px] text-red-600">
+          <p className="text-[11px] text-red-600 dark:text-red-400">
             La fecha "Desde" no puede ser posterior a "Hasta".
           </p>
         )}
@@ -211,10 +211,10 @@ export default function PredictionHistoryPage() {
         </div>
       ) : error ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <p className="font-medium text-red-600">{error}</p>
+          <p className="font-medium text-red-600 dark:text-red-400">{error}</p>
           <button
             onClick={() => load()}
-            className="mt-3 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+            className="mt-3 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
           >
             Reintentar
           </button>
@@ -242,7 +242,7 @@ export default function PredictionHistoryPage() {
           )}
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="ui-content-stack">
           {groups.map(group => (
             <div key={group.dayKey} className="space-y-3">
               {(groups.indexOf(group) === 0 || groups[groups.indexOf(group) - 1].monthKey !== group.monthKey) && (
@@ -259,8 +259,8 @@ export default function PredictionHistoryPage() {
               </div>
               <div className="space-y-3">
                 {group.items.map(pred => (
-                  <div key={pred.id} className="bg-card rounded-xl border border-border p-5">
-                    <div className="flex items-start gap-4">
+                  <div key={pred.id} className="bg-card rounded-xl border border-border ui-card-density">
+                    <div className="flex items-start ui-element-gap">
                       <div className="flex-shrink-0 hidden sm:block">
                         <RiskGauge score={pred.riskScore} level={pred.riskLevel} size={80} showLabel={false} />
                       </div>
@@ -268,12 +268,12 @@ export default function PredictionHistoryPage() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <RiskBadge level={pred.riskLevel} showScore />
                           {pred.isAnomaly && (
-                            <span className="text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full">
+                            <span className="text-[10px] font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 px-2 py-0.5 rounded-full">
                               ⚠ Anomalía
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground flex-wrap">
+                        <div className="flex items-center ui-element-gap mt-3 text-xs text-muted-foreground flex-wrap">
                           {pred.modelVersion && (
                             <span className="flex items-center gap-1">
                               <Cpu className="w-3.5 h-3.5" />

@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Save, User } from 'lucide-react'
-import { cn, CURP_REGEX } from '@/lib/utils'
+import { cn, CURP_REGEX, EMAIL_REGEX } from '@/lib/utils'
 import { getBusinessDateKey } from '@/lib/businessDate'
 import { patientService } from '@/services/patientService'
 import { isAxiosError } from 'axios'
 import { CountryPhoneInput, type PhoneInputState } from '@/components/phone/CountryPhoneInput'
+import { useActionNotify } from '@/context/ToastContext'
 
 interface FormData {
   firstName: string
@@ -13,6 +14,13 @@ interface FormData {
   birthDate: string
   sex: '0' | '1' | ''
   curp: string
+  // Z6 — optional patient contact email. Plain controlled string (unlike
+  // phone, email needs no stateful country/canonicalization machinery) —
+  // trimmed client-side; lowercasing/full-syntax validation stays
+  // server-authoritative (patient.dto.ts's PatientEmailField), matching
+  // this codebase's existing split between light client-side feedback and
+  // backend-owned normalization.
+  email: string
 }
 
 // Separate from FormData: error messages are always strings, regardless of
@@ -26,6 +34,7 @@ const INITIAL: FormData = {
   birthDate: '',
   sex: '',
   curp: '',
+  email: '',
 }
 
 // V6.4 §3 — phone is tracked as CountryPhoneInput's own PhoneInputState
@@ -56,10 +65,10 @@ function FormField({ label, required, error, children }: {
     <div className="space-y-1.5">
       <label className="text-sm font-medium text-foreground">
         {label}
-        {required && <span className="text-red-500 ml-1">*</span>}
+        {required && <span className="text-red-500 dark:text-red-400 ml-1">*</span>}
       </label>
       {children}
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>
   )
 }
@@ -72,9 +81,9 @@ const inputClass = cn(
 
 export default function PatientCreatePage() {
   const navigate = useNavigate()
+  const { notifyError } = useActionNotify()
   const [form, setForm] = useState<FormData>(INITIAL)
   const [errors, setErrors] = useState<FormErrors>({})
-  const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   // V6.4 §3 — untouched by default (null); CountryPhoneInput starts blank
@@ -96,6 +105,11 @@ export default function PatientCreatePage() {
     if (form.curp && !CURP_REGEX.test(form.curp)) {
       errs.curp = 'CURP no válido'
     }
+    // Z6 — optional: blank is never an error, only an actively-entered
+    // malformed address blocks submit.
+    if (form.email.trim() && !EMAIL_REGEX.test(form.email.trim())) {
+      errs.email = 'Correo electrónico no válido'
+    }
     setErrors(errs)
 
     // V6.4 §3/§10 — blank/untouched is never an error (phone stays
@@ -114,7 +128,6 @@ export default function PatientCreatePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setFormError(null)
     if (!validate()) return
 
     const phoneResolution = resolveCreatePhone(phoneState)
@@ -129,6 +142,7 @@ export default function PatientCreatePage() {
         sex: Number(form.sex) as 0 | 1,
         curp: form.curp || undefined,
         phone: phoneResolution.phone,
+        email: form.email.trim() || undefined,
       })
       navigate('/patients')
     } catch (err) {
@@ -145,9 +159,11 @@ export default function PatientCreatePage() {
         // the generic field-error list (which has no phone input to attach to).
         if (phoneDetail) setPhoneError(phoneDetail)
       } else if (isAxiosError(err) && err.response?.data?.error) {
-        setFormError(err.response.data.error)
+        // Z3 — generic create-failure feedback now goes through the
+        // global action-notification toast instead of an inline banner.
+        notifyError(err.response.data.error)
       } else {
-        setFormError('No se pudo guardar el paciente. Intenta de nuevo.')
+        notifyError('No se pudo guardar el paciente. Intenta de nuevo.')
       }
     } finally {
       setSaving(false)
@@ -155,7 +171,7 @@ export default function PatientCreatePage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-5">
+    <div className="max-w-2xl mx-auto ui-section-stack-tight">
       {/* Header */}
       <div className="flex items-center gap-3">
         <button
@@ -170,9 +186,9 @@ export default function PatientCreatePage() {
       </div>
 
       {/* Form card */}
-      <form onSubmit={handleSubmit} className="bg-card rounded-xl border border-border p-6 space-y-5">
+      <form onSubmit={handleSubmit} className="bg-card rounded-xl border border-border ui-modal-density ui-section-stack-tight">
         <div className="flex items-center gap-3 pb-4 border-b border-border">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 flex items-center justify-center">
             <User className="w-5 h-5 text-blue-600" />
           </div>
           <div>
@@ -180,11 +196,9 @@ export default function PatientCreatePage() {
           </div>
         </div>
 
-        {formError && (
-          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 text-sm text-red-700">
-            {formError}
-          </div>
-        )}
+        {/* Z3 — the generic create-failure banner previously here now shows
+            as a global action notification instead (see handleSubmit's
+            catch). Field-level errors (below) remain inline. */}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FormField label="Nombre(s)" required error={errors.firstName}>
@@ -192,7 +206,7 @@ export default function PatientCreatePage() {
               type="text"
               value={form.firstName}
               onChange={set('firstName')}
-              className={cn(inputClass, errors.firstName && 'border-red-400 focus:border-red-400')}
+              className={cn(inputClass, errors.firstName && 'border-red-400 dark:border-red-500/70 focus:border-red-400 dark:focus:border-red-500/70')}
             />
           </FormField>
 
@@ -201,7 +215,7 @@ export default function PatientCreatePage() {
               type="text"
               value={form.lastName}
               onChange={set('lastName')}
-              className={cn(inputClass, errors.lastName && 'border-red-400 focus:border-red-400')}
+              className={cn(inputClass, errors.lastName && 'border-red-400 dark:border-red-500/70 focus:border-red-400 dark:focus:border-red-500/70')}
             />
           </FormField>
 
@@ -211,7 +225,7 @@ export default function PatientCreatePage() {
               value={form.birthDate}
               onChange={set('birthDate')}
               max={getBusinessDateKey(new Date().toISOString())}
-              className={cn(inputClass, errors.birthDate && 'border-red-400 focus:border-red-400')}
+              className={cn(inputClass, errors.birthDate && 'border-red-400 dark:border-red-500/70 focus:border-red-400 dark:focus:border-red-500/70')}
             />
           </FormField>
 
@@ -219,7 +233,7 @@ export default function PatientCreatePage() {
             <select
               value={form.sex}
               onChange={set('sex')}
-              className={cn(inputClass, 'cursor-pointer', errors.sex && 'border-red-400 focus:border-red-400')}
+              className={cn(inputClass, 'cursor-pointer', errors.sex && 'border-red-400 dark:border-red-500/70 focus:border-red-400 dark:focus:border-red-500/70')}
             >
               <option value="">Seleccionar...</option>
               <option value="0">Femenino</option>
@@ -233,7 +247,17 @@ export default function PatientCreatePage() {
               value={form.curp}
               onChange={e => setForm(f => ({ ...f, curp: e.target.value.toUpperCase() }))}
               maxLength={18}
-              className={cn(inputClass, 'font-mono uppercase', errors.curp && 'border-red-400 focus:border-red-400')}
+              className={cn(inputClass, 'font-mono uppercase', errors.curp && 'border-red-400 dark:border-red-500/70 focus:border-red-400 dark:focus:border-red-500/70')}
+            />
+          </FormField>
+
+          <FormField label="Correo electrónico" error={errors.email}>
+            <input
+              type="email"
+              value={form.email}
+              onChange={set('email')}
+              placeholder="paciente@ejemplo.com"
+              className={cn(inputClass, errors.email && 'border-red-400 dark:border-red-500/70 focus:border-red-400 dark:focus:border-red-500/70')}
             />
           </FormField>
 
@@ -254,14 +278,14 @@ export default function PatientCreatePage() {
           <button
             type="button"
             onClick={() => navigate('/patients')}
-            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            className="px-4 ui-compact-control-density text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
           >
             Cancelar
           </button>
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center gap-2 bg-primary text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors shadow-sm"
+            className="flex items-center gap-2 bg-primary text-white px-5 ui-compact-control-density rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors shadow-sm"
           >
             <Save className="w-4 h-4" />
             {saving ? 'Guardando...' : 'Guardar paciente'}

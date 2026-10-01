@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
+import { Save } from 'lucide-react'
 import { isAxiosError } from 'axios'
 import { Dialog } from '@/components/ui/Dialog'
 import { cn, calcAge } from '@/lib/utils'
 import { recordService } from '@/services/recordService'
+import { useActionNotify } from '@/context/ToastContext'
 import type { HealthRecord, CreateHealthRecordRequest } from '@/types'
 
 const inputClass = cn(
@@ -76,11 +78,11 @@ interface NewRecordModalProps {
 }
 
 export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCreated, prefillRecord }: NewRecordModalProps) {
+  const { notifyError } = useActionNotify()
   const [loadingLatest, setLoadingLatest] = useState(false)
   const [hadPreviousRecord, setHadPreviousRecord] = useState(false)
   const [form, setForm] = useState<RecordFormState>(BLANK_FORM)
   const [saving, setSaving] = useState(false)
-  const [formError, setFormError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const savingRef = useRef(false)
   const prefillRequestIdRef = useRef(0)
@@ -115,7 +117,6 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
   // previous open (with no explicit prop) can never land after it.
   useEffect(() => {
     if (!open) return
-    setFormError(null)
     setFieldErrors({})
 
     const explicitPrefill = prefillRecordRef.current
@@ -168,7 +169,6 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
     if (savingRef.current) return
     savingRef.current = true
     setSaving(true)
-    setFormError(null)
     setFieldErrors({})
     try {
       // U3.2 — `age` deliberately omitted: backend always derives and
@@ -196,9 +196,11 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
       if (isAxiosError(err) && err.response?.status === 400 && err.response.data?.details) {
         setFieldErrors(err.response.data.details as Record<string, string>)
       } else if (isAxiosError(err) && err.response?.data?.error) {
-        setFormError(err.response.data.error)
+        // Z3 — generic create-failure feedback now goes through the
+        // global action-notification toast instead of an inline banner.
+        notifyError(err.response.data.error)
       } else {
-        setFormError('No se pudo guardar el registro clínico. Intenta de nuevo.')
+        notifyError('No se pudo guardar el registro clínico. Intenta de nuevo.')
       }
     } finally {
       setSaving(false)
@@ -232,12 +234,14 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
       description={prefillSubtitle}
       preventClose={saving}
     >
-      <form onSubmit={submit} className="space-y-4">
-        {formError && (
-          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
-            {formError}
-          </div>
-        )}
+      <form onSubmit={submit} className="ui-content-stack">
+        {/* Z3 — the generic create-failure banner previously here now shows
+            as a global action notification instead (see submit's catch).
+            Field-level errors (below, per input) remain inline. The
+            provenance notice just below (loading / "Primer registro
+            clínico.") is untouched — it is informational/source context
+            restored in R1, not an action result, and must not be removed
+            just because it visually resembles a banner. */}
 
         {/* Age — read-only information, never an input (section 22 of
             U3.2). Backend remains the sole authority; this value is
@@ -246,49 +250,58 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
           Edad: <span className="font-medium text-foreground">{displayAge} años</span>
         </div>
 
-        <fieldset disabled={loadingLatest || saving} className="space-y-4">
+        {/* Provenance status — surfaces why the fieldset below is disabled
+            while the previous record is loading, and otherwise tells the
+            clinician whether this is the patient's first clinical record.
+            Renders nothing once a previous record was found (empty string
+            per provenanceMessage above — that case needs no extra text). */}
+        {provenanceMessage && (
+          <p className="text-xs text-muted-foreground">{provenanceMessage}</p>
+        )}
+
+        <fieldset disabled={loadingLatest || saving} className="ui-content-stack">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Presión sistólica</label>
               <input type="number" min={60} max={300} required className={inputClass}
                 value={form.sysBP}
                 onChange={e => setForm(f => ({ ...f, sysBP: e.target.value }))} />
-              {fieldErrors.sysBP && <p className="text-[11px] text-red-600">{fieldErrors.sysBP}</p>}
+              {fieldErrors.sysBP && <p className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.sysBP}</p>}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Presión diastólica</label>
               <input type="number" min={40} max={200} required className={inputClass}
                 value={form.diaBP}
                 onChange={e => setForm(f => ({ ...f, diaBP: e.target.value }))} />
-              {fieldErrors.diaBP && <p className="text-[11px] text-red-600">{fieldErrors.diaBP}</p>}
+              {fieldErrors.diaBP && <p className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.diaBP}</p>}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Colesterol total</label>
               <input type="number" min={50} max={800} required className={inputClass}
                 value={form.totChol}
                 onChange={e => setForm(f => ({ ...f, totChol: e.target.value }))} />
-              {fieldErrors.totChol && <p className="text-[11px] text-red-600">{fieldErrors.totChol}</p>}
+              {fieldErrors.totChol && <p className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.totChol}</p>}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">IMC</label>
               <input type="number" step="0.1" min={10} max={80} required className={inputClass}
                 value={form.bmi}
                 onChange={e => setForm(f => ({ ...f, bmi: e.target.value }))} />
-              {fieldErrors.bmi && <p className="text-[11px] text-red-600">{fieldErrors.bmi}</p>}
+              {fieldErrors.bmi && <p className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.bmi}</p>}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Frec. cardíaca</label>
               <input type="number" min={30} max={250} required className={inputClass}
                 value={form.heartRate}
                 onChange={e => setForm(f => ({ ...f, heartRate: e.target.value }))} />
-              {fieldErrors.heartRate && <p className="text-[11px] text-red-600">{fieldErrors.heartRate}</p>}
+              {fieldErrors.heartRate && <p className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.heartRate}</p>}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Glucosa</label>
               <input type="number" min={30} max={500} required className={inputClass}
                 value={form.glucose}
                 onChange={e => setForm(f => ({ ...f, glucose: e.target.value }))} />
-              {fieldErrors.glucose && <p className="text-[11px] text-red-600">{fieldErrors.glucose}</p>}
+              {fieldErrors.glucose && <p className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.glucose}</p>}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Cigarrillos/día</label>
@@ -298,7 +311,7 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 text-sm">
+          <div className="flex flex-wrap items-center ui-element-gap text-sm">
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={form.currentSmoker}
                 onChange={e => setForm(f => ({ ...f, currentSmoker: e.target.checked }))} />
@@ -328,15 +341,16 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
           <button
             type="submit"
             disabled={saving || loadingLatest}
-            className="flex items-center gap-1.5 bg-primary text-white px-4 py-2 rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors"
+            className="flex items-center gap-1.5 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors"
           >
+            <Save className="w-4 h-4" />
             {saving ? 'Guardando...' : 'Guardar registro'}
           </button>
           <button
             type="button"
             onClick={handleClose}
             disabled={saving}
-            className="px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-accent rounded-lg transition-colors disabled:opacity-60"
+            className="px-4 ui-compact-control-density text-xs font-medium text-muted-foreground hover:bg-accent rounded-lg transition-colors disabled:opacity-60"
           >
             Cancelar
           </button>

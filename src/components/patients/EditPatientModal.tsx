@@ -1,10 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
+import { Save } from 'lucide-react'
 import { isAxiosError } from 'axios'
 import { Dialog } from '@/components/ui/Dialog'
-import { cn, calcAge, CURP_REGEX } from '@/lib/utils'
+import { cn, calcAge, CURP_REGEX, EMAIL_REGEX } from '@/lib/utils'
 import { getBusinessDateKey } from '@/lib/businessDate'
 import { patientService } from '@/services/patientService'
 import { CountryPhoneInput, type PhoneInputState } from '@/components/phone/CountryPhoneInput'
+// Z6-FIX1 — resolveEditPhone now lives in lib/phoneInputState.ts (shared
+// phone-input infrastructure), not defined in this feature component —
+// ProfileSettings.tsx (Medico.phone) reuses the exact same function.
+import { resolveEditPhone } from '@/lib/phoneInputState'
+import { useActionNotify } from '@/context/ToastContext'
 import type { Patient, UpdatePatientRequest, Sex } from '@/types'
 
 const inputClass = cn(
@@ -25,6 +31,11 @@ interface FormState {
   curp: string
   birthDate: string
   sex: '' | '0' | '1'
+  // Z6 — optional patient contact email. Plain string draft field (unlike
+  // phone, which needs CountryPhoneInput's own stateful machinery) — folded
+  // into the same dirty-checking/normalization path as firstName/lastName/
+  // curp below.
+  email: string
 }
 
 function draftFromPatient(patient: Patient): FormState {
@@ -34,6 +45,7 @@ function draftFromPatient(patient: Patient): FormState {
     curp: patient.curp ?? '',
     birthDate: patient.birthDate,
     sex: String(patient.sex) as '0' | '1',
+    email: patient.email ?? '',
   }
 }
 
@@ -52,6 +64,10 @@ interface NormalizedPatientFields {
   curp: string | null
   birthDate: string
   sex: Sex | null
+  // Z6 — lowercased here (not just trimmed) so dirty-checking compares the
+  // exact same normalized shape the backend will actually persist (mirrors
+  // PatientEmailField's own trim+lowercase+empty→null contract).
+  email: string | null
 }
 
 function normalizeForCompare(f: FormState): NormalizedPatientFields {
@@ -61,6 +77,7 @@ function normalizeForCompare(f: FormState): NormalizedPatientFields {
     curp: f.curp.trim().toUpperCase() || null,
     birthDate: f.birthDate,
     sex: f.sex === '' ? null : (Number(f.sex) as Sex),
+    email: f.email.trim().toLowerCase() || null,
   }
 }
 
@@ -70,32 +87,15 @@ function fieldsEqual(a: NormalizedPatientFields, b: NormalizedPatientFields): bo
     && a.curp === b.curp
     && a.birthDate === b.birthDate
     && a.sex === b.sex
+    && a.email === b.email
 }
 
 // V6.4 §4/§5/§6/§7/§8/§9 — the phone legacy-compatibility contract, mirrored
-// from CountryPhoneInput's own state machine (V6.3) onto the Update payload:
-//   - untouched (`phoneState === null`) → resend `originalPhone` EXACTLY as
-//     persisted (spaces/punctuation and all) — this is what makes an
-//     unrelated field edit safe for a canonical, parseable-legacy, OR
-//     unresolved-legacy phone alike, and is exactly what V6.2's backend
-//     service-layer guard expects (identical-value resend is always allowed).
-//   - touched + 'empty' → explicit clear → null.
-//   - touched + 'valid' → the emitted canonical string.
-//   - touched + anything else ('invalid', or defensively any future status)
-//     → not resolvable; the caller must block save. `dirty: true` here
-//     specifically implements V6.4 §9: "invalid → form may be dirty, but
-//     save must be blocked".
-export function resolveEditPhone(originalPhone: string | null, phoneState: PhoneInputState | null):
-  | { ok: true; phone: string | null; dirty: boolean }
-  | { ok: false; dirty: true } {
-  if (!phoneState) return { ok: true, phone: originalPhone, dirty: false }
-  if (phoneState.status === 'empty') return { ok: true, phone: null, dirty: originalPhone !== null }
-  if (phoneState.status === 'valid') {
-    const canonical = phoneState.canonical!
-    return { ok: true, phone: canonical, dirty: canonical !== originalPhone }
-  }
-  return { ok: false, dirty: true }
-}
+// from CountryPhoneInput's own state machine (V6.3) onto the Update payload.
+// Z6-FIX1 — `resolveEditPhone` itself has moved to lib/phoneInputState.ts
+// (imported above) so it's shared, generic phone-input infrastructure rather
+// than something defined inside this one feature component; see its own doc
+// comment there for the full untouched/empty/valid/invalid contract.
 
 interface EditPatientModalProps {
   patient: Patient
@@ -108,10 +108,11 @@ interface EditPatientModalProps {
 }
 
 export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: EditPatientModalProps) {
+  const { notifyError } = useActionNotify()
   const [form, setForm] = useState<FormState>(() => draftFromPatient(patient))
   const [saving, setSaving] = useState(false)
-  const [formError, setFormError] = useState<string | null>(null)
   const [curpError, setCurpError] = useState<string | null>(null)
+  const [emailError, setEmailError] = useState<string | null>(null)
   const savingRef = useRef(false)
 
   // V6.4 §3/§4 — the authoritative persisted phone, kept separate from any
@@ -173,8 +174,8 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
     setPhoneState(null)
     setPhoneError(null)
     setResetNonce(n => n + 1)
-    setFormError(null)
     setCurpError(null)
+    setEmailError(null)
   }, [open, patient.id])
 
   // U4.2A-FIX-3 — recomputed every render (cheap primitive-field
@@ -212,6 +213,14 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
       return
     }
 
+    // Z6 — optional: blank clears it (allowed through), only an actively-
+    // entered malformed address blocks save.
+    const trimmedEmail = form.email.trim().toLowerCase()
+    if (trimmedEmail && !EMAIL_REGEX.test(trimmedEmail)) {
+      setEmailError('Correo electrónico no válido')
+      return
+    }
+
     // V6.4 §3/§5/§6/§7/§9 — an actively invalid/incomplete phone blocks
     // save entirely (never sent, never silently dropped in favor of the
     // original). Untouched, cleared, or a resolved valid edit all fall
@@ -224,9 +233,9 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
 
     savingRef.current = true
     setSaving(true)
-    setFormError(null)
     setCurpError(null)
     setPhoneError(null)
+    setEmailError(null)
     try {
       // U4.2A — `| null` clears an existing curp (nullable in Prisma); an
       // empty string is never sent — omission would mean "don't touch this
@@ -243,6 +252,9 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
         birthDate: form.birthDate,
         sex: Number(form.sex) as Sex,
         phone: resolvedPhone.phone,
+        // Z6 — `| null` clears an existing email (nullable in Prisma), same
+        // convention as curp/phone above; an empty string is never sent.
+        email: trimmedEmail || null,
       }
       const updated = await patientService.update(patient.id, payload)
       onUpdated(updated)
@@ -253,6 +265,12 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
         // message (Prisma P2002 `meta.target`) — CURP is the only unique
         // column this modal can touch, so any 409 here is a CURP conflict.
         setCurpError('Este CURP ya está registrado para otro paciente.')
+      } else if (isAxiosError(err) && err.response?.status === 400 && err.response.data?.details?.email) {
+        // Z6 — UpdatePatientDto's email field DOES go through Zod (unlike
+        // phone's own service-layer legacy-compat exception), so a
+        // field-scoped detail is reliably available here, routed to this
+        // field's own inline error rather than the generic banner.
+        setEmailError(err.response.data.details.email as string)
       } else if (isAxiosError(err) && err.response?.data?.error) {
         // V6.4 §10 — Update's phone rejection (patient.service.ts's
         // service-layer ValidationError, V6.2) is a plain {error, code}
@@ -262,11 +280,12 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
         // covers every Update validation failure). This is an accepted,
         // documented boundary of the existing error architecture (V6.4
         // §10's "where the existing error architecture allows") — the
-        // message still reaches the doctor via this general banner rather
-        // than being lost, just not attached to CountryPhoneInput itself.
-        setFormError(err.response.data.error)
+        // message still reaches the doctor via the global action
+        // notification (Z3) rather than being lost, just not attached to
+        // CountryPhoneInput itself.
+        notifyError(err.response.data.error)
       } else {
-        setFormError('No se pudo actualizar la información del paciente. Intenta de nuevo.')
+        notifyError('No se pudo actualizar la información del paciente. Intenta de nuevo.')
       }
     } finally {
       setSaving(false)
@@ -286,15 +305,16 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
       title="Editar información personal"
       preventClose={saving}
     >
-      <form onSubmit={submit} className="space-y-4">
-        {formError && (
-          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
-            {formError}
-          </div>
-        )}
+      <form onSubmit={submit} className="ui-content-stack">
+        {/* Z3 — the generic update-failure banner previously here now shows
+            as a global action notification instead (see submit's catch).
+            Field-level errors (CURP, phone) remain inline below their own
+            inputs. No success notice is migrated here — none existed
+            before (the modal simply closes on success), so none is
+            introduced now. */}
 
-        <fieldset disabled={saving} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+        <fieldset disabled={saving} className="ui-content-stack">
+          <div className="ui-field-grid">
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Nombre(s)</label>
               <input required className={inputClass}
@@ -314,10 +334,18 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
             <input className={cn(inputClass, 'font-mono uppercase')}
               value={form.curp}
               onChange={e => { setForm(f => ({ ...f, curp: e.target.value.toUpperCase() })); setCurpError(null) }} />
-            {curpError && <p className="text-[11px] text-red-600">{curpError}</p>}
+            {curpError && <p className="text-[11px] text-red-600 dark:text-red-400">{curpError}</p>}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Correo electrónico</label>
+            <input type="email" className={inputClass}
+              value={form.email}
+              onChange={e => { setForm(f => ({ ...f, email: e.target.value })); setEmailError(null) }} />
+            {emailError && <p className="text-[11px] text-red-600 dark:text-red-400">{emailError}</p>}
+          </div>
+
+          <div className="ui-field-grid">
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Fecha de nacimiento</label>
               <input type="date" required className={inputClass}
@@ -370,15 +398,16 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
           <button
             type="submit"
             disabled={saving || !isDirty}
-            className="flex items-center gap-1.5 bg-primary text-white px-4 py-2 rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors"
+            className="flex items-center gap-1.5 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors"
           >
+            <Save className="w-4 h-4" />
             {saving ? 'Guardando...' : 'Guardar cambios'}
           </button>
           <button
             type="button"
             onClick={handleClose}
             disabled={saving}
-            className="px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-accent rounded-lg transition-colors disabled:opacity-60"
+            className="px-4 ui-compact-control-density text-xs font-medium text-muted-foreground hover:bg-accent rounded-lg transition-colors disabled:opacity-60"
           >
             Cancelar
           </button>

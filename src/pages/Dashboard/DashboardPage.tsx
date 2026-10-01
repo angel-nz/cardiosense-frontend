@@ -203,14 +203,21 @@ export default function DashboardPage() {
   // X2 — keeps the `{ state: { dashboardStatNav } }` shape in exactly one
   // place, mirroring DashboardCalendar's own navigateToPatientTarget
   // helper (O3-FIX-4) for the analogous DashboardEventNavigationState
-  // convention. Intent is omitted entirely for the plain Patients card
-  // (no filter requested — a bare navigate, never a stale/empty payload).
+  // convention. Still used by the Alertas/Predicciones cards below.
+  // Z8-FIX2 — the two Patients cards ("Pacientes bajo tu cuidado"/"Riesgo
+  // alto") no longer go through this helper at all: they navigate with a
+  // real `?status=.../&risk=...` query string directly (see their onClick
+  // below), since that's what survives a refresh of the destination URL
+  // (§5/§21-D) — location.state does not.
   const goToWithStatNav = useCallback((path: string, intent?: DashboardStatNavigationIntent) => {
     navigate(path, intent ? { state: { dashboardStatNav: intent } } : undefined)
   }, [navigate])
 
   return (
-    <div className="space-y-6">
+    // Y6.3B — `ui-section-stack` replaces `space-y-6` (Classic 1.5rem/24px,
+    // exact match via the same sibling-margin mechanism Tailwind's own
+    // `space-y-*` uses, §45).
+    <div className="ui-section-stack">
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between">
@@ -221,7 +228,7 @@ export default function DashboardPage() {
         </div>
         <button
           onClick={() => navigate('/patients/new')}
-          className="hidden sm:flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+          className="hidden sm:flex items-center gap-2 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
         >
           <Users className="w-4 h-4" />
           Nuevo paciente
@@ -229,23 +236,29 @@ export default function DashboardPage() {
       </div>
 
       {/* ── KPI Cards ──────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 ui-element-gap">
         <StatCard
           title="Pacientes"
           value={patientsError ? '—' : totalPatients}
           subtitle={patientsError ? 'No se pudo cargar' : 'Bajo tu cuidado'}
           icon={Users}
-          iconColor="text-blue-600"
-          iconBg="bg-blue-50"
-          onClick={() => goToWithStatNav('/patients')}
+          iconColor="text-blue-600 dark:text-blue-400"
+          iconBg="bg-blue-50 dark:bg-blue-950/40"
+          // Z8-FIX2 §1 — "Pacientes bajo tu cuidado" must open Patients with
+          // the lifecycle filter explicitly set to Activos. A real URL query
+          // param (not the dashboardStatNav location.state mechanism used
+          // below for Alerts/Predictions) is what lets this survive a
+          // refresh of the destination URL (§5/§21-D) — PatientsPage reads
+          // `status` straight from useSearchParams.
+          onClick={() => navigate('/patients?status=ACTIVE')}
         />
         <StatCard
-          title="Notificaciones"
+          title="Alertas"
           value={alertsError ? '—' : unreadCount}
           subtitle={alertsError ? 'No se pudo cargar' : 'Pendientes'}
           icon={Bell}
-          iconColor="text-red-600"
-          iconBg="bg-red-50"
+          iconColor="text-amber-600 dark:text-amber-400"
+          iconBg="bg-amber-50 dark:bg-amber-950/40"
           onClick={() => goToWithStatNav('/alerts', { kind: 'ALERTS_UNREAD' })}
         />
         <StatCard
@@ -253,8 +266,8 @@ export default function DashboardPage() {
           value={metricsLoading ? '…' : metricsError ? '—' : metrics!.predictionsToday}
           subtitle={metricsError ? 'No se pudo cargar' : 'Hoy'}
           icon={Activity}
-          iconColor="text-teal-600"
-          iconBg="bg-teal-50"
+          iconColor="text-teal-600 dark:text-teal-400"
+          iconBg="bg-teal-50 dark:bg-teal-950/40"
           onClick={() => goToWithStatNav('/predictions', {
             kind: 'PREDICTIONS_TODAY',
             businessDateKey: getTodayBusinessDateKey(),
@@ -265,18 +278,24 @@ export default function DashboardPage() {
           value={metricsLoading ? '…' : metricsError ? '—' : metrics!.highRiskPatients}
           subtitle={metricsError ? 'No se pudo cargar' : 'Pacientes'}
           icon={AlertTriangle}
-          iconColor="text-amber-600"
-          iconBg="bg-amber-50"
-          onClick={() => goToWithStatNav('/patients', { kind: 'PATIENTS_HIGH' })}
+          iconColor="text-red-600 dark:text-red-400"
+          iconBg="bg-red-50 dark:bg-red-950/40"
+          // Z8-FIX2 §2 — "Pacientes con riesgo alto" must open Patients with
+          // BOTH status=ACTIVE and the existing canonical high-risk filter
+          // value PatientsPage already uses (`risk=high`, mapped to the
+          // backend's 'HIGH' internally — see CANONICAL_RISK in
+          // PatientsPage.tsx). Same real-URL-param rationale as the card
+          // above.
+          onClick={() => navigate('/patients?status=ACTIVE&risk=high')}
         />
       </div>
 
       {/* ── Charts Row ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 ui-element-gap">
 
         {/* Weekly predictions — GET /api/dashboard/stats, medico-scoped,
             lunes–domingo en America/Mexico_City (Bloque I). */}
-        <div className="lg:col-span-2 bg-card rounded-xl border border-border p-5">
+        <div className="lg:col-span-2 bg-card rounded-xl border border-border ui-card-density">
           <div className="mb-4">
             <h3 className="font-semibold text-foreground">Predicciones de la semana</h3>
           </div>
@@ -285,7 +304,7 @@ export default function DashboardPage() {
               <Loader2 className="w-5 h-5 text-primary animate-spin" />
             </div>
           ) : metricsError ? (
-            <p className="text-sm text-red-600 text-center py-10">{metricsError}</p>
+            <p className="text-sm text-red-600 dark:text-red-400 text-center py-10">{metricsError}</p>
           ) : (
             <div className="flex items-end justify-between gap-2 h-32 px-1">
               {metrics!.predictionsThisWeek.map(day => (
@@ -304,7 +323,7 @@ export default function DashboardPage() {
 
         {/* Risk distribution — misma fuente que "Riesgo alto" (Bloque I):
             última Prediction de cada paciente del médico autenticado. */}
-        <div className="bg-card rounded-xl border border-border p-5">
+        <div className="bg-card rounded-xl border border-border ui-card-density">
           <div className="mb-4">
             <h3 className="font-semibold text-foreground">Pacientes con riesgo</h3>
           </div>
@@ -313,7 +332,7 @@ export default function DashboardPage() {
               <Loader2 className="w-5 h-5 text-primary animate-spin" />
             </div>
           ) : metricsError ? (
-            <p className="text-sm text-red-600 text-center py-8">{metricsError}</p>
+            <p className="text-sm text-red-600 dark:text-red-400 text-center py-8">{metricsError}</p>
           ) : riskTotal === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">
               Ningún paciente con predicción todavía.
@@ -321,7 +340,13 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {([
-                { label: 'Alto',     count: metrics!.riskDistribution.high,     bar: 'bg-red-500' },
+                // Y6.2-FIX2 — DARK uses the app's own canonical critical-red
+                // token (--destructive, already defined/tuned in Y6.1's
+                // .dark block; unused elsewhere) instead of the raw,
+                // theme-invariant red-500, so this bar matches the same
+                // dark-mode red chosen for Patients (RiskGauge) and Sidebar
+                // (alert counter). LIGHT is untouched (still red-500).
+                { label: 'Alto',     count: metrics!.riskDistribution.high,     bar: 'bg-red-500 dark:bg-destructive' },
                 { label: 'Moderado', count: metrics!.riskDistribution.moderate, bar: 'bg-amber-500' },
                 { label: 'Bajo',     count: metrics!.riskDistribution.low,      bar: 'bg-teal-500' },
               ]).map(row => (

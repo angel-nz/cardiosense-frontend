@@ -18,8 +18,8 @@ export const dashboardService = {
 
   // O3 — GET /api/dashboard/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD (O2,
   // medico-scoped, multi-patient). Reuses timelineService's normalizeEvent
-  // verbatim (identical CLINICAL_RECORD/PREDICTION/ALERT/RISK_CHANGE
-  // metadata contract to Patient Timeline, per O2) — only patientName is
+  // verbatim (identical CLINICAL_RECORD/PREDICTION/RISK_CHANGE metadata
+  // contract to Patient Timeline, per O2; Z2 removed ALERT) — only patientName is
   // decorated on top here, exactly mirroring how the backend itself
   // decorates P2's mappers rather than duplicating the switch-case.
   async getCalendar(range: { from?: string; to?: string } = {}): Promise<DashboardCalendarEvent[]> {

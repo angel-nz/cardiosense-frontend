@@ -1,8 +1,9 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Heart, Eye, EyeOff, Loader2, Activity, Shield, Zap } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Activity, Shield, Zap, Mail, Phone } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/context/AuthContext'
+import { CountryPhoneInput, type PhoneInputState } from '@/components/phone/CountryPhoneInput'
 
 const FEATURES = [
   { icon: Activity, text: 'Predicción IA en tiempo real' },
@@ -12,26 +13,67 @@ const FEATURES = [
 
 // V2 — same convention as RegisterPage's RequiredMark: visual-only,
 // aria-hidden (the real required semantics live on the inputs below).
-const RequiredMark = () => <span className="text-red-500" aria-hidden="true"> *</span>
+const RequiredMark = () => <span className="text-red-500 dark:text-red-400" aria-hidden="true"> *</span>
+
+// Z6-R1 §11/§12/§22 — a doctor may now authenticate with EITHER identifier.
+// Per the brief's explicit UX preference, this is a deliberate mode toggle
+// (not a single free-text field that tries to guess email-vs-phone from
+// arbitrary digits) — email mode keeps the plain email input; phone mode
+// reuses the same CountryPhoneInput/canonical-E.164 machinery the rest of
+// the app already uses, so the backend always receives either a trimmed
+// email or an already-canonical phone, never a guess.
+type IdentifierMode = 'email' | 'phone'
 
 export default function LoginPage() {
   const navigate = useNavigate()
   const { login } = useAuth()
+  const [mode, setMode] = useState<IdentifierMode>('email')
   const [email,    setEmail]    = useState('dr.garcia@cardiosense.mx')
+  const [phoneState, setPhoneState] = useState<PhoneInputState | null>(null)
   const [password, setPassword] = useState('Demo1234!')
   const [showPwd,  setShowPwd]  = useState(false)
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState('')
 
+  // Switching modes clears whatever the OTHER mode's field/error held —
+  // never silently carries a stale email/phone value or error across the
+  // switch.
+  const switchMode = (next: IdentifierMode) => {
+    if (next === mode) return
+    setMode(next)
+    setError('')
+  }
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!email || !password) { setError('Completa todos los campos'); return }
+    if (!password) { setError('Completa todos los campos'); return }
+
+    let identifier: string
+    if (mode === 'email') {
+      if (!email.trim()) { setError('Completa todos los campos'); return }
+      identifier = email.trim()
+    } else {
+      if (!phoneState || phoneState.status !== 'valid') {
+        setError('Número de teléfono incompleto o no válido para el país seleccionado.')
+        return
+      }
+      identifier = phoneState.canonical!
+    }
+
+    // Z6-R1-FIX1 §1 — `method` is derived directly from the already-explicit
+    // `mode` state (the Correo/Teléfono toggle below), never inferred from
+    // `identifier`'s shape — this is the one place that mapping happens.
+    const method: 'EMAIL' | 'PHONE' = mode === 'email' ? 'EMAIL' : 'PHONE'
+
     setError('')
     setLoading(true)
     try {
-      await login(email, password)
+      await login(method, identifier, password)
       navigate('/dashboard')
     } catch {
+      // Z6-R1 §13 — deliberately the same generic message regardless of
+      // identifier mode or which part of the credential was wrong (never
+      // "this email/phone doesn't exist" vs "wrong password").
       setError('Credenciales inválidas. Intenta de nuevo.')
     } finally {
       setLoading(false)
@@ -39,7 +81,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex">
+    // PRE-Y8 (Interface Size Preference), FIX2 — was `min-h-screen`; see
+    // AppLayout.tsx/index.css's `.ui-viewport-min-height` comment.
+    <div className="ui-viewport-min-height flex">
 
       {/* ── Left panel — branding ──────────────────────────────────── */}
       <div
@@ -55,9 +99,7 @@ export default function LoginPage() {
 
         {/* Logo */}
         <div className="flex items-center gap-3 relative z-10">
-          <div className="w-10 h-10 rounded-xl bg-red-500/20 border border-red-400/30 flex items-center justify-center">
-            <Heart className="w-5 h-5 text-red-400 fill-red-400/40" />
-          </div>
+          <img src="/brand/cardiosense-icon.png" alt="" className="w-20 h-20 object-contain" />
           <div>
             <p className="text-white font-bold text-xl">CardioSense</p>
             <p className="text-white/40 text-xs">Sistema Cardiovascular Inteligente</p>
@@ -96,41 +138,84 @@ export default function LoginPage() {
 
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-200 flex items-center justify-center">
-              <Heart className="w-5 h-5 text-red-500 fill-red-200" />
+            <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-200 dark:border-red-800/60 flex items-center justify-center">
+              <img src="/brand/cardiosense-icon.png" alt="" className="w-5 h-5 object-contain" />
             </div>
             <p className="font-bold text-xl text-foreground">CardioSense</p>
           </div>
 
-          {/* Heading */}
+          {/* Heading. Y6.3B — `.ui-heading-page` replaces `text-2xl`
+              (Classic 1.5rem/24px, exact match — spot-check "Login
+              input/button" family, §45). */}
           <div>
-            <h2 className="text-2xl font-bold text-foreground">Bienvenido</h2>
+            <h2 className="ui-heading-page font-bold text-foreground">Bienvenido</h2>
             <p className="text-muted-foreground text-sm mt-1">
               Inicia sesión para continuar
             </p>
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="ui-content-stack">
             <div>
-              <label className="text-sm font-medium text-foreground block mb-1.5">
-                Correo electrónico<RequiredMark />
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="dr.medico@hospital.mx"
-                autoComplete="email"
-                required
-                aria-required="true"
-                className={cn(
-                  'w-full px-3 py-2.5 text-sm rounded-lg border bg-card',
-                  'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
-                  'transition-all',
-                  error ? 'border-red-400' : 'border-border',
-                )}
-              />
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-sm font-medium text-foreground">
+                  {mode === 'email' ? 'Correo electrónico' : 'Teléfono'}<RequiredMark />
+                </label>
+                {/* Z6-R1 §12/§22 — compact mode toggle, consistent with the
+                    rest of this form rather than a redesign. Reuses the
+                    same "secondary control" visual weight the rest of the
+                    app already uses for small inline switches. */}
+                <div className="flex items-center gap-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => switchMode('email')}
+                    className={cn(
+                      'flex items-center gap-1 px-2 py-1 rounded-md transition-colors',
+                      mode === 'email' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <Mail className="w-3 h-3" aria-hidden="true" />
+                    Correo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchMode('phone')}
+                    className={cn(
+                      'flex items-center gap-1 px-2 py-1 rounded-md transition-colors',
+                      mode === 'phone' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <Phone className="w-3 h-3" aria-hidden="true" />
+                    Teléfono
+                  </button>
+                </div>
+              </div>
+
+              {mode === 'email' ? (
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="dr.medico@hospital.mx"
+                  autoComplete="email"
+                  required
+                  aria-required="true"
+                  className={cn(
+                    'w-full px-3 text-sm rounded-lg border bg-card',
+                    'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
+                    'transition-all',
+                    error ? 'border-red-400 dark:border-red-500/70' : 'border-border',
+                  )}
+                  style={{ paddingTop: 'var(--ui-control-padding-y)', paddingBottom: 'var(--ui-control-padding-y)' }}
+                />
+              ) : (
+                <CountryPhoneInput
+                  key={mode}
+                  value={null}
+                  onChange={state => { setPhoneState(state); if (error) setError('') }}
+                  label=""
+                />
+              )}
             </div>
 
             <div>
@@ -153,11 +238,12 @@ export default function LoginPage() {
                   required
                   aria-required="true"
                   className={cn(
-                    'w-full px-3 py-2.5 pr-10 text-sm rounded-lg border bg-card',
+                    'w-full px-3 pr-10 text-sm rounded-lg border bg-card',
                     'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
                     'transition-all',
-                    error ? 'border-red-400' : 'border-border',
+                    error ? 'border-red-400 dark:border-red-500/70' : 'border-border',
                   )}
+                  style={{ paddingTop: 'var(--ui-control-padding-y)', paddingBottom: 'var(--ui-control-padding-y)' }}
                 />
                 <button
                   type="button"
@@ -170,16 +256,17 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+              <div className="flex items-center gap-2 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 rounded-lg px-3 py-2.5">
                 <div className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
-                <p className="text-xs text-red-700">{error}</p>
+                <p className="text-xs text-red-700 dark:text-red-300">{error}</p>
               </div>
             )}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 bg-primary text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-primary/90 disabled:opacity-70 transition-colors shadow-sm"
+              className="w-full flex items-center justify-center gap-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary/90 disabled:opacity-70 transition-colors shadow-sm"
+              style={{ paddingTop: 'var(--ui-control-padding-y)', paddingBottom: 'var(--ui-control-padding-y)' }}
             >
               {loading ? (
                 <>

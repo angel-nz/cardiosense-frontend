@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
 import {
-  Activity, ChevronLeft, ChevronRight, FileText, Bell,
+  Activity, ChevronLeft, ChevronRight, FileText,
   ArrowRight, AlertTriangle, Loader2,
+  Calendar,
 } from 'lucide-react'
-import { cn, formatScore, formatLongDate, formatTime, formatRelativeBusinessDate, RISK_CONFIG, SEVERITY_CONFIG } from '@/lib/utils'
+import { cn, formatScore, formatLongDate, formatTime, formatRelativeBusinessDate, RISK_CONFIG } from '@/lib/utils'
 import { BUSINESS_TIMEZONE, getBusinessDateKey, getMonthRange, buildCalendarDays, groupEventsByBusinessDay } from '@/lib/businessDate'
 import { timelineService } from '@/services/timelineService'
 import { RiskBadge } from '@/components/ui/RiskBadge'
@@ -31,8 +32,7 @@ const MONTH_LABEL_FORMATTER = new Intl.DateTimeFormat('es-MX', {
 interface PatientCalendarProps {
   patientId: string
   // P4 — cross-navigation into the longitudinal views already rendered by
-  // PatientDetailPage. Omitted entirely for ALERT (Classification C — no
-  // exact, unambiguous destination exists yet; see P4 report).
+  // PatientDetailPage.
   onSelectHealthRecord?: (healthRecordId: string) => void
   onSelectPrediction?: (predictionId: string) => void
   // P4-FIX — called whenever the Calendar's own temporal context changes
@@ -69,7 +69,7 @@ export function PatientCalendar({
   // redundant subscription for the same room (section 36).
   const {
     connected, lastHealthRecord, lastPrediction, lastAlert,
-    clearLastHealthRecord, clearLastPrediction, clearLastAlert,
+    clearLastHealthRecord, clearLastPrediction,
   } = useSocket()
   const todayKey = useMemo(() => getBusinessDateKey(new Date().toISOString()), [])
   const [viewYear, setViewYear] = useState(now.getFullYear())
@@ -219,10 +219,24 @@ export function PatientCalendar({
     scheduleCoalescedRefresh()
     if (lastHealthRecord?.patientId === patientId) clearLastHealthRecord()
     if (lastPrediction?.patientId === patientId) clearLastPrediction()
-    if (lastAlert?.patientId === patientId) clearLastAlert()
+    // PRE-Y8 FIX1 (Alert Toast Gap) — `lastAlert` is READ here only as a
+    // "refresh my calendar" signal (via `relevant` above); it is
+    // deliberately never cleared/consumed by this component. Its
+    // lifecycle belongs exclusively to AppLayout/AlertToast (AppLayout
+    // renders `<AlertToast alert={lastAlert} onClose={clearLastAlert} />`
+    // and only THAT `onClose` — auto-close or manual dismiss — is allowed
+    // to clear it; see AlertsContext.tsx's own comment: "AppLayout's
+    // toast owns that lifecycle"). This component previously also called
+    // clearLastAlert() here, which raced AppLayout's toast render
+    // whenever both were mounted for the same patient (i.e. whenever the
+    // doctor was viewing this patient's own detail page when a qualifying
+    // automatic prediction fired) — the toast could be torn down again
+    // before it was ever seen. Removed; `lastHealthRecord`/`lastPrediction`
+    // are untouched — THEIR clearing here is unrelated, pre-existing,
+    // intentional ownership that this fix does not touch.
   }, [
     patientId, lastHealthRecord, lastPrediction, lastAlert, scheduleCoalescedRefresh,
-    clearLastHealthRecord, clearLastPrediction, clearLastAlert,
+    clearLastHealthRecord, clearLastPrediction,
   ])
 
   // Reconnect resync (sections 33-35). `connected` also becomes true on the
@@ -346,14 +360,14 @@ export function PatientCalendar({
   const hasAnyEventsThisMonth = events.length > 0
 
   return (
-    <div className="bg-card rounded-xl border border-border p-5">
+    <div className="bg-card rounded-xl border border-border ui-card-density">
       <div className="mb-4">
         <h3 className="font-semibold text-foreground flex items-center gap-2">
-          <Activity className="w-4 h-4 text-muted-foreground" />
+          <Calendar className="w-4 h-4 text-muted-foreground" />
           Actividad cardiovascular
         </h3>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Historial temporal de registros clínicos, predicciones, cambios de riesgo y alertas.
+          Historial temporal de registros clínicos, predicciones y cambios de riesgo.
         </p>
       </div>
 
@@ -393,10 +407,10 @@ export function PatientCalendar({
       {error ? (
         <div className="flex flex-col items-center justify-center py-10 text-center">
           <AlertTriangle className="w-7 h-7 text-red-400 mb-2" />
-          <p className="text-sm text-red-600">{error}</p>
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
           <button
             onClick={() => loadMonth()}
-            className="mt-3 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+            className="mt-3 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
           >
             Reintentar
           </button>
@@ -406,7 +420,7 @@ export function PatientCalendar({
           {/* Weekday header */}
           <div className="grid grid-cols-7 gap-1 mb-1">
             {WEEKDAY_LABELS.map(label => (
-              <div key={label} className="text-center text-[10px] font-medium text-muted-foreground uppercase py-1">
+              <div key={label} className="ui-calendar-micro text-center font-medium text-muted-foreground uppercase py-1">
                 {label}
               </div>
             ))}
@@ -459,9 +473,9 @@ export function PatientCalendar({
                 })()}
               </h4>
               {feedback && (
-                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-700">{feedback}</p>
+                <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-lg px-3 py-2 mb-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-700 dark:text-amber-300">{feedback}</p>
                 </div>
               )}
               {selectedEvents.length === 0 ? (
@@ -511,10 +525,10 @@ interface TimelineEventRowProps {
 
 // Shared shell for the row: a <button> when the event type has an exact,
 // unambiguous longitudinal destination (Classification A — CLINICAL_RECORD/
-// PREDICTION/RISK_CHANGE), a plain non-interactive <div> otherwise (ALERT —
-// Classification C, no `/alerts/:id` route exists; see P4 report). Using a
-// real <button> (not a styled div) gives focus/hover/Enter-Space activation
-// for free, and never makes a non-actionable row look clickable.
+// PREDICTION), a plain non-interactive <div> otherwise (RISK_CHANGE, always
+// noninteractive by product requirement — see X3 below). Using a real
+// <button> (not a styled div) gives focus/hover/Enter-Space activation for
+// free, and never makes a non-actionable row look clickable.
 function EventRowShell({
   interactive, isSelected, onClick, children,
 }: { interactive: boolean; isSelected: boolean; onClick?: () => void; children: ReactNode }) {
@@ -546,14 +560,14 @@ function TimelineEventRow({ event, isSelected, onSelectHealthRecord, onSelectPre
         isSelected={isSelected}
         onClick={() => { onRowClick(); onSelectHealthRecord?.(healthRecordId) }}
       >
-        <FileText className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+        <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-foreground">Registro clínico</p>
           <p className="text-xs text-muted-foreground">
             Presión arterial: {event.metadata.sysBP}/{event.metadata.diaBP} mmHg
           </p>
         </div>
-        <span className="text-[10px] text-muted-foreground flex-shrink-0">{time}</span>
+        <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
       </EventRowShell>
     )
   }
@@ -574,61 +588,45 @@ function TimelineEventRow({ event, isSelected, onSelectHealthRecord, onSelectPre
             <RiskBadge level={event.metadata.riskLevel} size="sm" />
             <span className="text-xs text-muted-foreground">{formatScore(event.metadata.riskScore)}</span>
             {event.metadata.modelVersion && (
-              <span className="text-[10px] text-muted-foreground">Modelo {event.metadata.modelVersion}</span>
+              <span className="ui-calendar-micro text-muted-foreground">Modelo {event.metadata.modelVersion}</span>
             )}
           </div>
           {event.metadata.isAnomaly && (
-            <p className="text-xs text-purple-600 font-medium mt-1">⚠ Anomalía detectada</p>
+            <p className="text-xs text-amber-600 dark:text-amber-400 font-medium mt-1">⚠ Anomalía detectada</p>
           )}
         </div>
-        <span className="text-[10px] text-muted-foreground flex-shrink-0">{time}</span>
+        <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
       </EventRowShell>
     )
   }
 
-  if (event.eventType === 'RISK_CHANGE') {
-    const fromCfg = RISK_CONFIG[event.metadata.fromLevel]
-    const toCfg = RISK_CONFIG[event.metadata.toLevel]
-    // X3 — RISK_CHANGE is deliberately noninteractive (product requirement):
-    // it must remain visible and keep its W2 causal-group membership, but no
-    // longer selects/scrolls to its associated prediction. currentPredictionId
-    // (event.metadata) is no longer read here — it was only ever used to
-    // drive the onSelectPrediction call this block removes; the timeline
-    // event contract itself is untouched (still present on `event.metadata`
-    // for any other consumer). Mirrors the existing ALERT noninteractive
-    // precedent below (interactive={false}, no onClick).
-    return (
-      <EventRowShell
-        interactive={false}
-        isSelected={false}
-      >
-        <ArrowRight className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground">Cambio de riesgo</p>
-          <div className="flex items-center gap-1.5 mt-1">
-            <span className={cn('text-xs font-medium', fromCfg.text)}>{fromCfg.label}</span>
-            <ArrowRight className="w-3 h-3 text-muted-foreground" />
-            <span className={cn('text-xs font-medium', toCfg.text)}>{toCfg.label}</span>
-          </div>
-        </div>
-        <span className="text-[10px] text-muted-foreground flex-shrink-0">{time}</span>
-      </EventRowShell>
-    )
-  }
-
-  // ALERT — Classification C: no exact per-alert destination exists
-  // (no /alerts/:id route, and /alerts has no highlight-by-id mechanism),
-  // so this stays informational only, never rendered as a button.
-  const cfg = SEVERITY_CONFIG[event.metadata.severity]
+  // event.eventType === 'RISK_CHANGE' — the only remaining case (Z2 removed
+  // the ALERT branch that previously followed as an unconditional fallback
+  // here).
+  const fromCfg = RISK_CONFIG[event.metadata.fromLevel]
+  const toCfg = RISK_CONFIG[event.metadata.toLevel]
+  // X3 — RISK_CHANGE is deliberately noninteractive (product requirement):
+  // it must remain visible and keep its W2 causal-group membership, but no
+  // longer selects/scrolls to its associated prediction. currentPredictionId
+  // (event.metadata) is no longer read here — it was only ever used to
+  // drive the onSelectPrediction call this block removes; the timeline
+  // event contract itself is untouched (still present on `event.metadata`
+  // for any other consumer).
   return (
-    <EventRowShell interactive={false} isSelected={false}>
-      <Bell className={cn('w-4 h-4 mt-0.5 flex-shrink-0', cfg.text)} />
+    <EventRowShell
+      interactive={false}
+      isSelected={false}
+    >
+      <ArrowRight className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground">Alerta</p>
-        <p className="text-xs text-muted-foreground break-words">{event.metadata.message}</p>
-        <span className={cn('text-[10px] font-bold uppercase', cfg.text)}>{cfg.label}</span>
+        <p className="text-sm font-medium text-foreground">Cambio de riesgo</p>
+        <div className="flex items-center gap-1.5 mt-1">
+          <span className={cn('text-xs font-medium', fromCfg.text)}>{fromCfg.label}</span>
+          <ArrowRight className="w-3 h-3 text-muted-foreground" />
+          <span className={cn('text-xs font-medium', toCfg.text)}>{toCfg.label}</span>
+        </div>
       </div>
-      <span className="text-[10px] text-muted-foreground flex-shrink-0">{time}</span>
+      <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
     </EventRowShell>
   )
 }

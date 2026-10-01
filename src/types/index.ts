@@ -3,24 +3,52 @@ export type UserRole = 'admin' | 'medico' | 'paciente'
 
 export interface User {
   id: string
-  email: string
+  // Z6-R1 — nullable: a doctor may register and authenticate with phone
+  // only (medico.phone below), with no email at all. `null` is a real,
+  // honest state here — never normalized to `undefined` the way Patient.
+  // email is (see patientService.ts's normalizePatient) — this is the
+  // login identity itself, not optional contact info, so "no email" must
+  // stay a visible, deliberate fact wherever this type is consumed.
+  email: string | null
   firstName: string
   lastName: string
   role: UserRole
-  avatarUrl?: string
+  // Y3.1B — replaces the dead `avatarUrl?: string` (never populated by any
+  // backend response, never read by any consumer — confirmed by exhaustive
+  // grep during Y3.1A). This is the ONE frozen avatar metadata shape
+  // (Y3.1A-FIX1 §13): presence of a row vs. `null` IS the "has an avatar"
+  // signal — no separate boolean. This field is metadata only; the actual
+  // image bytes are fetched separately and privately (see
+  // services/avatarService.ts + context/AvatarContext.tsx) — never inline
+  // here, never a public URL.
+  avatar: { updatedAt: string } | null
   createdAt: string
-  // Only present for role MEDICO — mirrors backend sanitizeUser()/PATCH
-  // /users/:id response (medico: {id, especialidad, hospital}).
+  // Only present for role MEDICO — mirrors the wire shape login/register/
+  // GET /auth/me/PATCH /users/:id/GET+PATCH /users/me/profile all share
+  // (Y3 §14: one User shape regardless of source). `cedulaProfesional`
+  // added in Y3 — previously silently dropped by every normalizer despite
+  // already existing on the backend Medico model and already being sent
+  // over the wire (Y1 finding). `especialidad`/`hospital` are `string |
+  // null` (not `| undefined`) for the same reason: this is what
+  // /users/me/profile actually speaks, and one shape must mean the same
+  // thing everywhere.
   medico?: {
     id: string
-    especialidad?: string
-    hospital?: string
+    cedulaProfesional: string | null
+    especialidad: string | null
+    hospital: string | null
+    // Z6 — optional doctor contact phone, persisted as E.164. `string |
+    // null` (not `| undefined`) for the exact same reason as the three
+    // fields above: this is what /users/me/profile actually speaks.
+    phone: string | null
   }
 }
 
 // PATCH /api/users/:id — flat payload, exactly matching UpdateProfileDto
 // (backend/src/modules/users/user.routes.ts). especialidad/hospital are
-// only applied server-side when role === MEDICO.
+// only applied server-side when role === MEDICO. Unrelated to Y3's new
+// /users/me/profile contract (ProfileMyUpdateRequest below) — this type/
+// route is untouched, kept for any other existing caller of PATCH /:id.
 export interface UpdateUserRequest {
   firstName?: string
   lastName?: string
@@ -28,23 +56,92 @@ export interface UpdateUserRequest {
   hospital?: string
 }
 
-// GET/PATCH /api/users/me/notification-preferences (Bloque N-B).
-// Deliberately only these two: email/push/SMS/sound have no backend
-// channel, so they are NOT persisted and are not part of this contract.
-export interface NotificationPreferences {
-  highRiskAlerts: boolean
-  weeklySummary: boolean
+// GET/PATCH /api/users/me/profile (Y3) — the Settings self-service Profile
+// contract. `null` on any professional field clears it; a field omitted
+// from a PATCH payload is left unchanged server-side. email/role/id are
+// never writable through this contract (read-only/backend-authoritative).
+export interface ProfileMyUpdateRequest {
+  firstName?: string
+  lastName?: string
+  cedulaProfesional?: string | null
+  especialidad?: string | null
+  hospital?: string | null
+  // Z6 — omitted leaves it unchanged; null clears it; a string must be a
+  // valid canonical E.164 phone (backend-enforced, CanonicalPhoneField).
+  phone?: string | null
 }
 
+// GET/PATCH /api/users/me/notification-preferences (Bloque N-B, rebuilt in
+// Y4). These three gate ONLY realtime `new_alert` delivery — they never
+// affect Alert persistence, clinical history, or Prediction execution (Y4
+// §1). Deliberately only these three: email/push/SMS/sound have no backend
+// delivery channel, and weeklySummary was removed — none of those are part
+// of this contract.
+// Z5 — four additional independent realtime toggles, one per Configurable
+// Information Alert event, following the exact same gating contract as the
+// three above (realtime `new_alert` popup ONLY — never Alert persistence,
+// never AlertsPage history, never `alerts_changed`).
+// Z6-R2 §5 — the doctor-profile realtime toggle REMOVED: the one event it
+// gated no longer exists as a product decision. Exactly three Z5
+// information toggles remain.
+export interface NotificationPreferences {
+  highRiskRealtime: boolean
+  moderateRiskRealtime: boolean
+  anomalyRealtime: boolean
+  patientCreatedRealtime: boolean
+  patientUpdatedRealtime: boolean
+  healthRecordCreatedRealtime: boolean
+}
+
+// GET/PATCH /api/users/me/appearance (Bloque Y6.1). Frontend-facing values
+// are lowercase — the exhaustive mapping to/from the backend's uppercase
+// AppearanceTheme enum ('LIGHT'|'DARK'|'SYSTEM') lives entirely in
+// appearanceService.ts, never duplicated or inlined elsewhere. 'system'
+// means "follow the OS/browser color-scheme" and is a real, storable
+// preference — not merely what's shown before a preference is loaded.
+export type ThemePreference = 'light' | 'dark' | 'system'
+
+// PRE-Y8 (Interface Size Preference) — a second, independent Appearance
+// axis (GET/PATCH /api/users/me/appearance now carries both). Deliberately
+// NOT the removed Y6.3B/Y6.4B interface-density/visibility PRESET axis
+// (Density/InterfacePreset) — this is a single global scale factor, not a
+// set of per-component token overrides. 'original' is the exact pre-
+// existing baseline (scale 1.00) and a real, storable preference, same as
+// 'system' is for ThemePreference — not merely "nothing chosen yet".
+export type InterfaceSizePreference = 'original' | 'medium' | 'large'
+
+export interface AppearancePreferenceResponse {
+  theme: ThemePreference
+  interfaceSize: InterfaceSizePreference
+  updatedAt: string | null
+}
+
+// Y5.2 — no `token` field: the access token lives exclusively in
+// lib/tokenStore.ts (in-memory, shared by api.ts and SocketContext.tsx), not
+// duplicated into this React state. AuthContext still exposes an
+// `isAuthenticated` boolean derived from whether that store currently holds
+// a token, so existing consumers (ProtectedRoute, etc.) are unaffected.
 export interface AuthState {
   user: User | null
-  token: string | null
   isAuthenticated: boolean
   isLoading: boolean
 }
 
+// Z6-R1 — `identifier` replaces the old `email`-only field: it may be a
+// trimmed email OR a canonical E.164 phone (LoginPage reuses
+// CountryPhoneInput to produce the latter).
+//
+// Z6-R1-FIX1 §1/§3 — `method` makes the client's already-known identifier
+// kind an explicit, required part of the wire contract — the backend no
+// longer infers it from `identifier`'s shape (leading '+', '@', regex).
+// LoginPage's existing Correo/Teléfono mode toggle is the source of truth
+// for this field; it is derived directly from that mode, never guessed.
+// Mirrors auth.dto.ts's LoginDto discriminated union (method: 'EMAIL' |
+// 'PHONE') exactly — this is a backend contract change, not just a
+// frontend relabeling.
 export interface LoginRequest {
-  email: string
+  method: 'EMAIL' | 'PHONE'
+  identifier: string
   password: string
 }
 
@@ -54,9 +151,17 @@ export interface LoginResponse {
   user: User
 }
 
-// POST /api/auth/register — role defaults to MEDICO on the backend if omitted
+// POST /api/auth/register — role defaults to MEDICO on the backend if omitted.
+// Z6-R1 — email and phone are BOTH optional now (a MEDICO registration
+// needs at least one of the two — enforced server-side by RegisterDto's
+// superRefine, auth.dto.ts); phone is new, reusing the same canonical
+// E.164 contract CreatePatientRequest.phone/ProfileMyUpdateRequest.phone
+// already use. Non-MEDICO (ADMIN) registration still requires email in
+// practice (backend-enforced) — this type stays permissive since it
+// describes the one shared wire shape, not a role-specific variant.
 export interface RegisterRequest {
-  email: string
+  email?: string
+  phone?: string
   password: string
   firstName: string
   lastName: string
@@ -78,7 +183,21 @@ export interface Patient {
   sex: Sex
   curp?: string
   phone?: string
+  // Z6 — optional patient contact email. CONTACT INFORMATION only, no
+  // relationship to login/auth. `undefined` when absent, matching curp/
+  // phone's existing convention on this frontend-facing shape (the backend
+  // itself speaks `null` — see normalizePatient in patientService.ts).
+  email?: string
   isActive: boolean
+  // Z8 — PATIENT LIFECYCLE & VISIBILITY MANAGEMENT. Orthogonal to isActive
+  // — see backend schema.prisma's Paciente.isHidden comment for the full
+  // three-state model (ACTIVE / INACTIVE_VISIBLE / INACTIVE_HIDDEN).
+  // isActive=true && isHidden=true never legitimately occurs; the frontend
+  // never constructs that combination either. A hidden patient is never
+  // returned by any normal patient list/detail endpoint — this field is
+  // only ever true for rows read through the dedicated Settings ->
+  // Pacientes hidden-list/summary surface (see patientService.ts).
+  isHidden: boolean
   createdAt: string
   updatedAt: string
   // Computed
@@ -94,6 +213,8 @@ export interface CreatePatientRequest {
   sex: Sex
   curp?: string
   phone?: string
+  // Z6 — omitted/blank → null server-side; invalid syntax is rejected.
+  email?: string
 }
 
 // Backend only allows updating a limited subset of fields — see
@@ -110,7 +231,66 @@ export interface UpdatePatientRequest {
   birthDate?: string
   sex?: Sex
   phone?: string | null
-  isActive?: boolean
+  // Z6 — same nullable-PATCH convention as curp/phone: omitted → don't
+  // touch; null → clear; a string → normalized (trim + lowercase) and
+  // validated server-side.
+  email?: string | null
+  // Z8 — `isActive` REMOVED from this contract. Lifecycle state is no
+  // longer settable through PUT /patients/:id — it now has its own
+  // dedicated endpoint (see PatientStatusRequest/patientService.setStatus
+  // below), per Z8's "no endpoint should silently combine two product
+  // actions" principle.
+}
+
+// Z8 §13/§24 — Patients-list lifecycle filter. Matches backend
+// PatientStatusFilter exactly. ACTIVE is the default (today's implicit
+// "doctor opens Patients and sees the active roster" expectation). Hidden
+// patients are excluded from every one of these three values, always,
+// server-side — there is deliberately no 'HIDDEN'/'INCLUDE_HIDDEN' value
+// here; the only way to see a hidden patient is the dedicated hidden-
+// patient management surface (Settings -> Pacientes).
+export type PatientLifecycleFilter = 'ACTIVE' | 'INACTIVE' | 'ALL'
+
+// PATCH /api/patients/:id/status — the one explicit lifecycle mutation.
+export interface PatientStatusRequest {
+  isActive: boolean
+}
+
+// PATCH /api/patients/:id/visibility and PATCH /api/patients/inactive/
+// visibility (bulk) — the one explicit visibility mutation.
+export interface PatientVisibilityRequest {
+  isHidden: boolean
+}
+
+// GET /api/patients/visibility/hidden — minimal patient summary only (no
+// clinical data), matching the backend's deliberately thin hidden-list
+// projection (patient.repository.ts::findHidden).
+export interface HiddenPatientSummary {
+  id: string
+  firstName: string
+  lastName: string
+  birthDate: string
+  sex: Sex
+  curp?: string
+  updatedAt: string
+}
+
+export interface HiddenPatientQueryParams {
+  page?: number
+  limit?: number
+  search?: string
+}
+
+// GET /api/patients/visibility/summary — counts for Settings -> Pacientes.
+// Deliberately never reused as Dashboard patient counts (Z8 §18).
+export interface PatientVisibilitySummary {
+  visibleInactive: number
+  hiddenInactive: number
+}
+
+// PATCH /api/patients/inactive/visibility response.
+export interface BulkVisibilityResponse {
+  affectedCount: number
 }
 
 // ─── Health Record ────────────────────────────────────────────────────────────
@@ -196,7 +376,10 @@ export type RiskLevel = 'low' | 'moderate' | 'high'
 // real backend contract (patient.timeline.ts). Normalized casing
 // (riskLevel/severity lowercase) is applied in timelineService.ts, same
 // convention already used by predictionService.ts/alertService.ts.
-export type TimelineEventType = 'CLINICAL_RECORD' | 'PREDICTION' | 'ALERT' | 'RISK_CHANGE'
+// Z2 — 'ALERT' removed: no calendar/timeline endpoint produces Alert-model
+// events anymore (calendar-specific; the Alerts subsystem's own `Alert`
+// type below is untouched).
+export type TimelineEventType = 'CLINICAL_RECORD' | 'PREDICTION' | 'RISK_CHANGE'
 
 export interface ClinicalRecordEventMetadata {
   healthRecordId: string
@@ -212,14 +395,6 @@ export interface PredictionEventMetadata {
   isAnomaly: boolean
   anomalyScore: number | null
   modelVersion: string | null
-}
-
-export interface AlertEventMetadata {
-  alertId: string
-  predictionId: string | null
-  severity: AlertSeverity
-  message: string
-  isRead: boolean
 }
 
 export interface RiskChangeEventMetadata {
@@ -251,11 +426,6 @@ export interface PredictionTimelineEvent extends TimelineEventBase {
   metadata: PredictionEventMetadata
 }
 
-export interface AlertTimelineEvent extends TimelineEventBase {
-  eventType: 'ALERT'
-  metadata: AlertEventMetadata
-}
-
 export interface RiskChangeTimelineEvent extends TimelineEventBase {
   eventType: 'RISK_CHANGE'
   metadata: RiskChangeEventMetadata
@@ -264,7 +434,6 @@ export interface RiskChangeTimelineEvent extends TimelineEventBase {
 export type PatientTimelineEvent =
   | ClinicalRecordTimelineEvent
   | PredictionTimelineEvent
-  | AlertTimelineEvent
   | RiskChangeTimelineEvent
 
 // GET /api/dashboard/calendar (O2) — same discriminated union as
@@ -308,8 +477,16 @@ export interface DashboardEventNavigationState {
 // requested — never a destination-internal filter representation (no
 // 'high'/'HIGH' casing choice, no unread boolean, no from/to instant) —
 // each destination maps the intent onto its own existing filter state.
+//
+// Z8-FIX2 §1/§2/§5 — the two Patients stat cards ("Pacientes bajo tu
+// cuidado"/"Riesgo alto") no longer use this location.state mechanism:
+// PatientsPage's status/risk filters are now real `?status=/&risk=`
+// URLSearchParams (see PatientsPage.tsx), which is the only representation
+// that survives a browser refresh of the Dashboard-generated URL (§5/§21-D)
+// — location.state does not reliably satisfy that requirement. The former
+// 'PATIENTS_HIGH' member is removed accordingly; Dashboard now navigates
+// those two cards with `navigate('/patients?status=...')` directly.
 export type DashboardStatNavigationIntent =
-  | { kind: 'PATIENTS_HIGH' }
   | { kind: 'ALERTS_UNREAD' }
   | { kind: 'PREDICTIONS_TODAY'; businessDateKey: string }
 
@@ -380,11 +557,35 @@ export interface DashboardMetrics {
 // ─── Alert ───────────────────────────────────────────────────────────────────
 export type AlertSeverity = 'info' | 'warning' | 'critical'
 
+// Z5 — the explicit cause of a Configurable Information Alert. Undefined
+// for every prediction-generated Alert (HIGH/MODERATE/ANOMALY risk) — those
+// continue to have no `type` at all, exactly mirroring the backend's
+// nullable AlertType column (schema.prisma). Casing matches the backend
+// enum member names exactly — never re-cased on the wire (unlike
+// AlertSeverity, which the backend sends uppercase and this frontend
+// normalizes to lowercase; AlertType has no such normalization step).
+//
+// Z6-R2 §1/§2/§6/§7 — the doctor-profile information alert type REMOVED,
+// no replacement added. Exactly three values remain.
+export type AlertType =
+  | 'INFO_PATIENT_CREATED'
+  | 'INFO_PATIENT_UPDATED'
+  | 'INFO_HEALTH_RECORD_CREATED'
+
 export interface Alert {
   id: string
-  patientId: string
+  // Z5 — nullable: doctor-scoped Alert ownership has no patient at all
+  // (see backend schema.prisma Alert model comment). Z6-R2 — no current
+  // AlertType value ever produces a doctor-scoped Alert anymore (its one
+  // producer, the doctor-profile information alert, was removed), but `patientId`
+  // stays nullable as generic infrastructure rather than being narrowed
+  // back to non-null. Every live Alert today (prediction-generated,
+  // INFO_PATIENT_*, INFO_HEALTH_RECORD_CREATED) always carries a real
+  // patientId.
+  patientId: string | null
   patientName: string
   predictionId?: string
+  type?: AlertType
   severity: AlertSeverity
   message: string
   isRead: boolean
@@ -431,13 +632,24 @@ export interface DashboardStats {
 }
 
 // ─── Socket Events ────────────────────────────────────────────────────────────
+// Z5 — patientId/patientName/riskScore are no longer unconditionally
+// present: a doctor-scoped `new_alert` payload would carry patientId: null,
+// no patientName, and no riskScore at all (the backend's
+// createInformationAlert never includes a riskScore key — that field only
+// ever exists on a prediction-generated Alert's payload). Z6-R2 — the one
+// event that ever produced such a payload (the doctor-profile information
+// alert) was removed, so every live payload today always sends real
+// patientId/patientName — these fields stay optional/nullable as generic
+// infrastructure, not narrowed back, for the same reason Alert.patientId
+// above does.
 export interface SocketAlert {
   id: string
-  patientId: string
-  patientName: string
+  patientId: string | null
+  patientName?: string
+  type?: AlertType
   severity: AlertSeverity
   message: string
-  riskScore: number
+  riskScore?: number
   createdAt: string
 }
 
@@ -480,7 +692,7 @@ export interface SocketPatientUpdate {
 // room, no subscribe_patient needed) for Dashboard Calendar — deliberately
 // NOT a timeline event: no eventType, no patientName, no risk data. Receivers
 // must always do a canonical GET /api/dashboard/calendar refetch, never
-// build/insert a CLINICAL_RECORD/PREDICTION/RISK_CHANGE/ALERT from this.
+// build/insert a CLINICAL_RECORD/PREDICTION/RISK_CHANGE from this.
 export interface SocketDashboardActivity {
   patientId: string
   eventDate: string
@@ -522,6 +734,53 @@ export interface SocketPredictionFailed {
 // GET /patients refetch, never this payload.
 export interface SocketPatientCreated {
   patientId: string
+}
+
+// Y4-FIX2 — alerts_changed, same user:{userId} room as new_alert, but
+// deliberately NEVER gated by NotificationPreference (unlike new_alert —
+// see SocketAlert above). Pure invalidation signal for the canonical Alerts
+// collection/total, same minimal style as SocketPatientCreated/
+// SocketDashboardActivity: no severity/message/patientName/riskScore.
+// Consumers must always refetch via alertService, never fabricate an Alert
+// from this payload, and must never use it to drive toast/popup
+// presentation (that remains new_alert/SocketAlert's job exclusively).
+export interface SocketAlertsChanged {
+  alertId: string
+  patientId: string
+}
+
+// ─── Sessions (Y5.3) ───────────────────────────────────────────────────────────
+// Mirrors GET /users/me/sessions' response EXACTLY, one field at a time,
+// after direct inspection of backend/src/modules/users/user.routes.ts
+// (`res.json(sessions.map(s => ({ id, current, userAgent, createdAt,
+// lastUsedAt, expiresAt })))`) — a flat array, no wrapper object. `id` is
+// the RefreshToken row's stable `sid` (Y5.2), used only as the DELETE
+// path parameter to revoke this specific session — never displayed
+// prominently in the UI. Deliberately excludes anything the backend does
+// not and must not return: tokenHash, the raw refresh JWT/cookie value, the
+// access token, or any password/passwordHash — this type is the frontend's
+// own safety net against ever widening the session contract to carry one of
+// those, even if a future backend change accidentally did.
+export interface Session {
+  id: string
+  // Authoritative from the backend's own resolveCurrentSession (derived
+  // from the caller's actual refresh cookie/sid) — never re-derived on the
+  // frontend from userAgent equality, list order, or createdAt.
+  current: boolean
+  userAgent: string | null
+  createdAt: string
+  lastUsedAt: string
+  expiresAt: string
+}
+
+// DELETE /users/me/sessions/:sessionId's response shape — `currentRevoked`
+// tells the frontend whether the session just deleted was the caller's own
+// current one (the backend already cleared the refresh cookie server-side
+// in that case), so the frontend knows to run its local logout
+// finalization instead of just refetching the list.
+export interface RevokeSessionResponse {
+  success: true
+  currentRevoked: boolean
 }
 
 // ─── API ─────────────────────────────────────────────────────────────────────

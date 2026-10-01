@@ -2,9 +2,16 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/heart.svg" />
+    <!-- Z1 — official CardioSense chromatic icon (canonical source:
+         public/brand/cardiosense-icon.png), replacing the previously
+         broken /heart.svg reference. No manifest is introduced alongside
+         this — the app remains a plain SPA, not a PWA. -->
+    <link rel="icon" href="/brand/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/brand/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/brand/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CardioSense — Predicción Cardiovascular</title>
+    <title>CardioSense</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -13,6 +20,78 @@
     />
   </head>
   <body>
+    <!--
+      Y6.1 — synchronous FOUC-prevention script. Runs before the module
+      graph loads and before first paint, so login/register pages (and any
+      other page) never flash the wrong theme while React/AppearanceContext
+      have not mounted yet. It ONLY reads the 'cardiosense_theme' cache key
+      AppearanceContext.tsx also reads/writes (kept in sync by hand — this
+      literal cannot `import` that constant) and toggles the 'dark' class /
+      color-scheme accordingly; it never talks to the backend, never writes
+      anything, and is never treated as authoritative — AppearanceContext
+      reconciles it to the real server value once an authenticated user is
+      known. Every browser API call is wrapped: a throw here (storage
+      disabled, matchMedia unsupported) must never block the page from
+      rendering — falling through to the light-theme default (no class) is
+      the safe failure mode, since :root's un-classed variables ARE the
+      light theme.
+
+      PRE-Y8 (Interface Size Preference), FIX1 — extended, same precedent,
+      same file, same wrapping discipline: also reads the independent
+      'cardiosense_interface_size' cache key (never the removed
+      'cardiosense_interface_preset' key) and sets the SEMANTIC
+      'data-ui-size' attribute on the root element before first paint, so a
+      returning device never flashes an un-scaled layout before
+      AppearanceContext mounts. This script does NOT map the preference to
+      a number (no 'medium -> 1.10' table here or anywhere else in
+      TypeScript) — index.css's `:root[data-ui-size="..."]` rules are the
+      ONE place that numeric mapping exists; this script only validates the
+      cached string is one of the three known values and mirrors it onto
+      the attribute unchanged. Falls through to 'medium' (Z4 — the new
+      default for a device/user with no valid cached choice; was 'original')
+      on any failure or invalid/missing cache value — never an unvalidated
+      string, so CSS can never end up matching against attacker- or
+      corruption-supplied text, and `--ui-zoom` can never resolve to
+      NaN/invalid. A VALID cached value (including an explicitly-chosen
+      'original') is still returned verbatim above and is never touched by
+      this fallback — kept in sync by hand with
+      AppearanceContext.tsx's readCachedInterfaceSize(), which has the exact
+      same 'medium' fallback for the exact same reason (that function
+      cannot import this script's literal, or vice versa).
+    -->
+    <script>
+      (function () {
+        try {
+          var KEY = 'cardiosense_theme';
+          var stored = null;
+          try { stored = window.localStorage.getItem(KEY); } catch (e) {}
+          var pref = (stored === 'light' || stored === 'dark' || stored === 'system') ? stored : 'system';
+          var isDark = false;
+          if (pref === 'dark') {
+            isDark = true;
+          } else if (pref === 'system') {
+            try { isDark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {}
+          }
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.colorScheme = 'dark';
+          } else {
+            document.documentElement.style.colorScheme = 'light';
+          }
+        } catch (e) {
+          // Never let theme pre-resolution break page load.
+        }
+        try {
+          var SIZE_KEY = 'cardiosense_interface_size';
+          var sizeStored = null;
+          try { sizeStored = window.localStorage.getItem(SIZE_KEY); } catch (e) {}
+          var sizePref = (sizeStored === 'original' || sizeStored === 'medium' || sizeStored === 'large') ? sizeStored : 'medium';
+          document.documentElement.setAttribute('data-ui-size', sizePref);
+        } catch (e) {
+          // Never let interface-size pre-resolution break page load.
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -1,17 +1,19 @@
 import { api } from './api'
 import type {
   PatientTimelineEvent, ClinicalRecordTimelineEvent, PredictionTimelineEvent,
-  AlertTimelineEvent, RiskChangeTimelineEvent, RiskLevel, AlertSeverity,
+  RiskChangeTimelineEvent, RiskLevel,
 } from '@/types'
 
 // ─── Backend wire shape (patient.timeline.ts) ──────────────────────────────
-// riskLevel/fromLevel/toLevel/severity arrive uppercase from Prisma enums,
-// same as every other prediction/alert endpoint — normalized to lowercase
-// here, exactly like predictionService.ts/alertService.ts already do.
+// riskLevel/fromLevel/toLevel arrive uppercase from Prisma enums, same as
+// every other prediction endpoint — normalized to lowercase here, exactly
+// like predictionService.ts/alertService.ts already do.
+// Z2 — 'ALERT' removed from eventType: no calendar/timeline endpoint
+// produces Alert-model events anymore.
 export interface BackendTimelineEvent {
   id: string
   patientId: string
-  eventType: 'CLINICAL_RECORD' | 'PREDICTION' | 'ALERT' | 'RISK_CHANGE'
+  eventType: 'CLINICAL_RECORD' | 'PREDICTION' | 'RISK_CHANGE'
   eventDate: string
   metadata: Record<string, unknown>
   // W2.2 — derived, top-level (not nested in metadata), optional/nullable.
@@ -49,18 +51,6 @@ export function normalizeEvent(raw: BackendTimelineEvent): PatientTimelineEvent 
           modelVersion: (raw.metadata.modelVersion as string | null) ?? null,
         },
       } satisfies PredictionTimelineEvent
-    case 'ALERT':
-      return {
-        ...base,
-        eventType: 'ALERT',
-        metadata: {
-          alertId: raw.metadata.alertId as string,
-          predictionId: (raw.metadata.predictionId as string | null) ?? null,
-          severity: (raw.metadata.severity as string).toLowerCase() as AlertSeverity,
-          message: raw.metadata.message as string,
-          isRead: Boolean(raw.metadata.isRead),
-        },
-      } satisfies AlertTimelineEvent
     case 'RISK_CHANGE':
       return {
         ...base,

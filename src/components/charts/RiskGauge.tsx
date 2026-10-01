@@ -1,6 +1,14 @@
 import { cn, RISK_CONFIG, formatScore } from '@/lib/utils'
 import type { RiskLevel } from '@/types'
 
+// Y6.3B §37 — RiskGauge used to be one of the components explicitly
+// permitted to call useAppearance() directly, so its SVG label text could
+// scale with the (now-removed) interface density/visibility preset. Y6.4B —
+// that axis is gone; these are simply the gauge's permanent label sizes
+// (the former Comfortable values). GAUGE DIMENSIONS (viewBox, r/cx/cy,
+// strokeWidth, needle radius, the arc geometry) are unchanged.
+const GAUGE_TEXT_SIZES = { centerScore: 22, riesgoLabel: 11, minMax: 10 }
+
 interface RiskGaugeProps {
   score: number
   // V4A — canonical semantic classification, exactly as persisted on
@@ -22,6 +30,7 @@ interface RiskGaugeProps {
 
 export function RiskGauge({ score, level, size = 160, showLabel = true, className }: RiskGaugeProps) {
   const cfg = RISK_CONFIG[level]
+  const textSizes = GAUGE_TEXT_SIZES
 
   // SVG arc math
   const r = 54
@@ -55,10 +64,15 @@ export function RiskGauge({ score, level, size = 160, showLabel = true, classNam
     <div className={cn('flex flex-col items-center', className)}>
       <svg width={size} height={size * 0.8} viewBox="0 0 160 128">
         {/* Track */}
+        {/* Y6.2 — was a hardcoded #E5E7EB (a fixed light-gray track color).
+            SVG presentation attributes resolve CSS custom properties
+            through the cascade, so this now follows the same --border
+            token every other generic border/track already uses — no JS
+            `resolvedTheme` needed for a plain neutral track. */}
         <path
           d={trackPath}
           fill="none"
-          stroke="#E5E7EB"
+          stroke="hsl(var(--border))"
           strokeWidth={10}
           strokeLinecap="round"
         />
@@ -86,7 +100,7 @@ export function RiskGauge({ score, level, size = 160, showLabel = true, classNam
           textAnchor="middle"
           dominantBaseline="middle"
           className="font-mono font-bold"
-          fontSize={20}
+          fontSize={textSizes.centerScore}
           fill={cfg.color}
         >
           {formatScore(score)}
@@ -97,15 +111,16 @@ export function RiskGauge({ score, level, size = 160, showLabel = true, classNam
             y={cy + 22}
             textAnchor="middle"
             dominantBaseline="middle"
-            fontSize={10}
-            fill="#6B7280"
+            fontSize={textSizes.riesgoLabel}
+            fill="hsl(var(--muted-foreground))"
           >
             riesgo {cfg.label.toLowerCase()}
           </text>
         )}
-        {/* Min/Max labels */}
-        <text x={14} y={108} fontSize={9} fill="#9CA3AF">0%</text>
-        <text x={138} y={108} fontSize={9} fill="#9CA3AF" textAnchor="end">100%</text>
+        {/* Min/Max labels — Y6.2: same muted-foreground token, was a
+            hardcoded #9CA3AF. */}
+        <text x={14} y={108} fontSize={textSizes.minMax} fill="hsl(var(--muted-foreground))">0%</text>
+        <text x={138} y={108} fontSize={textSizes.minMax} fill="hsl(var(--muted-foreground))" textAnchor="end">100%</text>
       </svg>
     </div>
   )

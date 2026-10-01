@@ -134,3 +134,38 @@ export function applyNationalInput(country: CountryCode, typedValue: string): Ph
 export function applyCountryChange(newCountry: CountryCode, currentNationalText: string): PhoneInteractionResult {
   return applyNationalInput(newCountry, currentNationalText)
 }
+
+// Z6-FIX1 — relocated here from EditPatientModal.tsx (a feature component)
+// so it is shared, generic phone-input infrastructure rather than something
+// ProfileSettings.tsx had to import from a sibling feature component.
+// Resolves a `PhoneInputState` (this module's own interaction state, as
+// produced by CountryPhoneInput) against the field's current persisted
+// value into the actual value a submit payload should send — the same
+// legacy-compatibility contract V6.4 established for Patient.phone and Z6
+// reused as-is for Medico.phone:
+//   - untouched (`phoneState === null`) → resend `originalPhone` EXACTLY as
+//     persisted (spaces/punctuation and all) — this is what makes an
+//     unrelated field edit safe for a canonical, parseable-legacy, OR
+//     unresolved-legacy phone alike, and is exactly what the backend's
+//     service-layer guard (Patient) / Zod contract (Medico, Z6-FIX1 §1)
+//     expects (identical-value resend is always allowed / a no-op).
+//   - touched + 'empty' → explicit clear → null.
+//   - touched + 'valid' → the emitted canonical string.
+//   - touched + anything else ('invalid', or defensively any future status)
+//     → not resolvable; the caller must block save. `dirty: true` here
+//     specifically means "invalid → form may be dirty, but save must be
+//     blocked".
+// Both EditPatientModal.tsx (Patient.phone) and ProfileSettings.tsx
+// (Medico.phone) import this one definition — neither defines its own copy,
+// and neither imports it from the other.
+export function resolveEditPhone(originalPhone: string | null, phoneState: PhoneInputState | null):
+  | { ok: true; phone: string | null; dirty: boolean }
+  | { ok: false; dirty: true } {
+  if (!phoneState) return { ok: true, phone: originalPhone, dirty: false }
+  if (phoneState.status === 'empty') return { ok: true, phone: null, dirty: originalPhone !== null }
+  if (phoneState.status === 'valid') {
+    const canonical = phoneState.canonical!
+    return { ok: true, phone: canonical, dirty: canonical !== originalPhone }
+  }
+  return { ok: false, dirty: true }
+}

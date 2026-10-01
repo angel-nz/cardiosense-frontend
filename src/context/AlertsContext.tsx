@@ -1,8 +1,14 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { alertService } from '@/services/alertService'
 import type { Alert } from '@/types'
 import { useAuth } from './AuthContext'
 import { useSocket } from './SocketContext'
+
+// Y4-FIX2 — same 400ms coalescing window AlertsPage already uses for its own
+// canonical refetch on realtime events (REALTIME_COALESCE_MS there). Kept as
+// a local constant here rather than shared/exported, to avoid coupling this
+// context to that page's module.
+const ALERTS_CHANGED_COALESCE_MS = 400
 
 interface AlertsContextValue {
   alerts: Alert[]
@@ -22,7 +28,7 @@ const AlertsContext = createContext<AlertsContextValue | null>(null)
 // a new_alert event (INT-18) updates both without a reload.
 export function AlertsProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth()
-  const { lastAlert } = useSocket()
+  const { lastAlert, lastAlertsChanged } = useSocket()
 
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [total, setTotal] = useState(0)
@@ -61,7 +67,17 @@ export function AlertsProvider({ children }: { children: React.ReactNode }) {
       const merged: Alert = {
         id: lastAlert.id,
         patientId: lastAlert.patientId,
-        patientName: lastAlert.patientName,
+        // Z5 — SocketAlert.patientName is optional (a doctor-scoped
+        // payload would omit it entirely, since there is no patient to
+        // name — Z6-R2 removed the doctor-profile information alert, the
+        // one AlertType that ever produced such a payload), but
+        // Alert.patientName stays a required string for every existing
+        // consumer (AlertsPage/AlertToast) that already renders it
+        // unconditionally. '' is the same "nothing to show" fallback those
+        // consumers already treat patientId === null as a signal for —
+        // never a fabricated name.
+        patientName: lastAlert.patientName ?? '',
+        type: lastAlert.type,
         severity: lastAlert.severity,
         message: lastAlert.message,
         isRead: false,
@@ -73,6 +89,45 @@ export function AlertsProvider({ children }: { children: React.ReactNode }) {
     setTotal(t => t + 1)
     setUnreadCount(c => c + 1)
   }, [lastAlert])
+
+  // Y4-FIX2 — alerts_changed: the UNGATED canonical-data-invalidation signal
+  // (see SocketContext.tsx / backend alert.service.ts). Unlike the lastAlert
+  // handler above, this NEVER fabricates an Alert from the socket payload
+  // (the payload is intentionally minimal — {alertId, patientId} only, no
+  // severity/message/patientName/riskScore) — it triggers the existing,
+  // unmodified fetchAlerts() canonical GET instead, so the Alerts
+  // collection/total/unreadCount stay correct even when a category's
+  // realtime toggle is OFF and lastAlert never fires at all.
+  //
+  // Why this can't double-count or duplicate, regardless of whether
+  // lastAlert also fires for the same Alert (preference ON case) and
+  // regardless of Socket.IO arrival order: fetchAlerts() performs a
+  // wholesale setAlerts(result.data)/setTotal/setUnreadCount replacement
+  // from the authoritative backend response, not an incremental merge —
+  // so once it resolves, state is exactly what the database says,
+  // overwriting (never adding to) whatever the optimistic lastAlert effect
+  // above already did. The 400ms coalesce mirrors AlertsPage's own pattern
+  // (scheduleRefresh) so a lastAlert-triggered fetchAlerts() and an
+  // alerts_changed-triggered one arriving within the same window collapse
+  // into a single request rather than firing twice.
+  //
+  // Not cleared here, same reasoning as lastAlert above: AlertsPage is a
+  // second, independent consumer of this same scalar (see its own
+  // lastAlertsChanged effect) — clearing it in either consumer would race
+  // the other's effect.
+  const alertsChangedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!lastAlertsChanged) return
+    if (alertsChangedTimerRef.current) clearTimeout(alertsChangedTimerRef.current)
+    alertsChangedTimerRef.current = setTimeout(() => {
+      alertsChangedTimerRef.current = null
+      fetchAlerts()
+    }, ALERTS_CHANGED_COALESCE_MS)
+  }, [lastAlertsChanged, fetchAlerts])
+
+  useEffect(() => {
+    return () => { if (alertsChangedTimerRef.current) clearTimeout(alertsChangedTimerRef.current) }
+  }, [])
 
   const markAsRead = useCallback(async (id: string) => {
     const target = alerts.find(a => a.id === id)

@@ -5,9 +5,10 @@ import type { AlertSeverity, Alert } from '@/types'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAlerts } from '@/context/AlertsContext'
 import { useSocket } from '@/context/SocketContext'
+import { useActionNotify } from '@/context/ToastContext'
 import { alertService } from '@/services/alertService'
 
-// X2 — defensive one-shot reader for the Dashboard "Notificaciones" stat
+// X2 — defensive one-shot reader for the Dashboard "Alertas" stat
 // card's navigation intent (location.state), mirroring the established
 // readDashboardEventNav precedent (PatientDetailPage.tsx, O3-FIX-4). Never
 // blindly casts location.state — only ever recognizes its OWN relevant
@@ -39,7 +40,8 @@ export default function AlertsPage() {
   // untouched. The VISIBLE, paginated list below is now this page's own
   // independent canonical HTTP state — no longer `useAlerts().alerts`.
   const { unreadCount, markAsRead, markAllRead } = useAlerts()
-  const { connected, lastAlert } = useSocket()
+  const { connected, lastAlert, lastAlertsChanged } = useSocket()
+  const { notifyError } = useActionNotify()
 
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [page, setPage] = useState(1)
@@ -48,7 +50,6 @@ export default function AlertsPage() {
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
 
   const [severityFilter, setSeverityFilter] = useState<AlertSeverity | 'all'>('all')
   const [readFilter, setReadFilter] = useState<'all' | 'unread' | 'read'>('all')
@@ -63,7 +64,7 @@ export default function AlertsPage() {
   // Any filter/search/limit change resets to page 1 (U5/U6 principle).
   useEffect(() => { setPage(1) }, [debouncedSearch, severityFilter, readFilter, limit])
 
-  // X2 — consume the Dashboard "Notificaciones" navigation intent exactly
+  // X2 — consume the Dashboard "Alertas" navigation intent exactly
   // once: applies to the SAME existing `readFilter` state a doctor could
   // set manually (never a second, parallel unread flag), then immediately
   // clears the history entry's state (same one-shot precedent as
@@ -193,6 +194,26 @@ export default function AlertsPage() {
     // a passive second observer of the same signal.
   }, [lastAlert, scheduleRefresh])
 
+  // Y4-FIX2 — alerts_changed is the UNGATED canonical-data-invalidation
+  // signal (backend: alert.service.ts, emitted for every persisted Alert
+  // regardless of NotificationPreference). This is deliberately a SEPARATE
+  // effect from the lastAlert one above, not a merged condition — the two
+  // scalars are independent SocketContext "last event" values that can
+  // arrive in either order (or only one of them, when the relevant
+  // category's realtime toggle is off) for the same underlying Alert. Both
+  // funnel into the exact same existing scheduleRefresh()/load(true)
+  // mechanism, so whichever fires first schedules the coalesced refetch and
+  // a second arrival within the 400ms window just resets the same timer —
+  // no new debounce logic, no duplicate requests, and the canonical GET
+  // result is what ultimately reconciles state regardless of arrival order.
+  // Mirrors lastAlert's own handling: never cleared here — like lastAlert,
+  // lastAlertsChanged has multiple independent consumers (AlertsContext and
+  // this page), so clearing it in either would race the other's effect.
+  useEffect(() => {
+    if (!lastAlertsChanged) return
+    scheduleRefresh()
+  }, [lastAlertsChanged, scheduleRefresh])
+
   const hasConnectedOnceRef = useRef(false)
   useEffect(() => {
     if (!connected) return
@@ -211,22 +232,22 @@ export default function AlertsPage() {
   // the marked Alert(s) may no longer belong to the active filtered
   // collection (e.g. readFilter === 'unread').
   const handleMarkAsRead = async (id: string) => {
-    setActionError(null)
     try {
       await markAsRead(id)
       load(true)
     } catch {
-      setActionError('No se pudo marcar la alerta como leída. Intenta de nuevo.')
+      // Z3 — mutation-failure feedback now goes through the global
+      // action-notification toast instead of an inline page banner.
+      notifyError('No se pudo marcar la alerta como leída. Intenta de nuevo.')
     }
   }
 
   const handleMarkAllRead = async () => {
-    setActionError(null)
     try {
       await markAllRead()
       load(true)
     } catch {
-      setActionError('No se pudieron marcar todas las alertas como leídas. Intenta de nuevo.')
+      notifyError('No se pudieron marcar todas las alertas como leídas. Intenta de nuevo.')
     }
   }
 
@@ -248,7 +269,7 @@ export default function AlertsPage() {
         <p className="font-medium text-foreground">{error}</p>
         <button
           onClick={() => load()}
-          className="mt-4 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+          className="mt-4 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
         >
           Reintentar
         </button>
@@ -257,13 +278,13 @@ export default function AlertsPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="ui-section-stack-tight">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <p className="text-muted-foreground text-sm mt-1">
             {unreadCount > 0
-              ? <><span className="text-red-600 font-semibold">{unreadCount} alertas sin leer</span> · {total}</>
+              ? <><span className="text-red-600 dark:text-red-400 font-semibold">{unreadCount} alertas sin leer</span> · {total}</>
               : `${total} alertas · Todo al día`
             }
           </p>
@@ -271,7 +292,7 @@ export default function AlertsPage() {
         {unreadCount > 0 && (
           <button
             onClick={handleMarkAllRead}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground border border-border rounded-lg hover:bg-accent transition-colors"
+            className="flex items-center gap-2 px-4 ui-compact-control-density text-sm font-medium text-muted-foreground hover:text-foreground border border-border rounded-lg hover:bg-accent transition-colors"
           >
             <CheckCheck className="w-4 h-4" />
             Marcar todas como leídas
@@ -279,12 +300,11 @@ export default function AlertsPage() {
         )}
       </div>
 
-      {actionError && (
-        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
-          <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
-          <p className="text-xs text-red-700">{actionError}</p>
-        </div>
-      )}
+      {/* Z3 — the mark-read/mark-all-read mutation-failure banner
+          previously here now shows as a global action notification instead
+          (see handleMarkAsRead / handleMarkAllRead). The full-page load
+          error above (`error`, with its own Reintentar) is a
+          PERSISTENT_LOAD_ERROR, not an action result — untouched. */}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -317,7 +337,7 @@ export default function AlertsPage() {
           <select
             value={readFilter}
             onChange={e => setReadFilter(e.target.value as typeof readFilter)}
-            className="py-2 px-3 text-xs rounded-lg border border-border bg-card focus:outline-none cursor-pointer"
+            className="ui-compact-control-density px-3 text-xs rounded-lg border border-border bg-card focus:outline-none cursor-pointer"
           >
             <option value="all">Todas</option>
             <option value="unread">Sin leer</option>
@@ -342,11 +362,34 @@ export default function AlertsPage() {
                 <div
                   key={alert.id}
                   className={cn(
-                    'flex items-start gap-4 px-5 py-4 transition-colors',
-                    !alert.isRead && 'bg-blue-50/30',
+                    'flex items-start ui-element-gap px-5 transition-colors',
+                    !alert.isRead && 'hover:bg-blue-50/30 dark:hover:bg-blue-950/40',
                     'hover:bg-accent/50 cursor-pointer',
                   )}
-                  onClick={() => { handleMarkAsRead(alert.id); navigate(`/patients/${alert.patientId}`) }}
+                  // Y6.3B — this row's original `py-4` (16px) is 2px above
+                  // --ui-row-padding-y's Classic value (14px), a genuine
+                  // pre-existing outlier (Y6.3A §36/§21) — preserved exactly
+                  // via a fixed +2px offset from the token rather than
+                  // forced onto the same literal, so Classic is byte-exact
+                  // while Compact/Comfortable/High Visibility still scale
+                  // this row proportionally.
+                  style={{ paddingTop: 'calc(var(--ui-row-padding-y) + 0.125rem)', paddingBottom: 'calc(var(--ui-row-padding-y) + 0.125rem)' }}
+                  // Z5 — a doctor-scoped alert has no patientId at all.
+                  // Marking it read is still valid (every Alert supports
+                  // that regardless of ownership), but there is no patient
+                  // record to navigate to, so the navigate() call is skipped
+                  // entirely rather than sending the doctor to
+                  // `/patients/null`. Z6-R2 — the one event that ever
+                  // produced a doctor-scoped alert (INFO_DOCTOR_PROFILE_
+                  // UPDATED) was removed, so this null-check is currently
+                  // defensive/generic rather than live-exercised — kept as
+                  // the general-purpose `alert.patientId` guard it already
+                  // was (Alert.patientId's type is still nullable), not
+                  // code that existed solely for the removed alert.
+                  onClick={() => {
+                    handleMarkAsRead(alert.id)
+                    if (alert.patientId) navigate(`/patients/${alert.patientId}`)
+                  }}
                 >
                   {/* Severity indicator */}
                   <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5', cfg.bg, `border ${cfg.border}`)}>
@@ -368,7 +411,15 @@ export default function AlertsPage() {
                         </span>
                       )}
                     </div>
-                    <p className="text-sm font-semibold text-foreground mt-0.5">{alert.patientName}</p>
+                    {/* Z5 — same patientless fallback as AlertToast.tsx:
+                        alert.patientName is '' (never undefined/"undefined")
+                        for a doctor-scoped alert — see AlertsContext.tsx's
+                        lastAlert merge and the backend's createInformationAlert,
+                        which never sends patientName when medicoId ownership
+                        is used. */}
+                    <p className="text-sm font-semibold text-foreground mt-0.5">
+                      {alert.patientName || 'Notificación general'}
+                    </p>
                     <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{alert.message}</p>
                     <p className="text-xs text-muted-foreground mt-2">{timeAgo(alert.createdAt)}</p>
                   </div>

@@ -2,7 +2,7 @@ import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { format, formatDistanceToNow, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
-import type { RiskLevel, AlertSeverity } from '@/types'
+import type { RiskLevel, AlertSeverity, User } from '@/types'
 import {
   BUSINESS_TIMEZONE, parseBusinessDateKeyForDisplay,
   getBusinessDateKey, getTodayBusinessDateKey, shiftBusinessDateKey,
@@ -185,6 +185,13 @@ export function calcAge(birthDate: string): number {
 // the exact same official pattern instead of drifting into two regexes.
 export const CURP_REGEX = /^[A-Z]{4}\d{6}[HM][A-Z]{5}\d{2}$/
 
+// Z6 — shared between PatientCreatePage and EditPatientModal, same
+// rationale as CURP_REGEX above: one quick client-side syntax check, not a
+// second validation architecture. The backend (patient.dto.ts's
+// PatientEmailField) remains the sole authority on what is actually
+// accepted/normalized — this only gives immediate inline feedback.
+export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 // ─── Risk helpers ─────────────────────────────────────────────────────────────
 // V4A — getRiskLevel(score) removed. It was a second, independent
 // score→level classifier (thresholds ~0.35/0.65) that disagreed with the
@@ -203,25 +210,38 @@ export const RISK_CONFIG: Record<RiskLevel, {
   low: {
     label: 'Bajo',
     color: '#0D9488',
-    bg: 'bg-teal-50',
-    border: 'border-teal-200',
-    text: 'text-teal-700',
+    bg: 'bg-teal-50 dark:bg-teal-950/40',
+    border: 'border-teal-200 dark:border-teal-800/60',
+    text: 'text-teal-700 dark:text-teal-300',
     icon: '↓',
   },
   moderate: {
     label: 'Moderado',
     color: '#D97706',
-    bg: 'bg-amber-50',
-    border: 'border-amber-200',
-    text: 'text-amber-700',
+    bg: 'bg-amber-50 dark:bg-amber-950/40',
+    border: 'border-amber-200 dark:border-amber-800/60',
+    text: 'text-amber-700 dark:text-amber-300',
     icon: '→',
   },
   high: {
     label: 'Alto',
-    color: '#DC2626',
-    bg: 'bg-red-50',
-    border: 'border-red-200',
-    text: 'text-red-700',
+    // Y6.2-FIX2 — was a static '#DC2626' (theme-invariant). RiskGauge
+    // passes this straight through as an SVG stroke/fill attribute, which
+    // already resolves CSS custom properties through the cascade (same
+    // technique Y6.2 used for --border/--muted-foreground in this same
+    // component) — so referencing the app's own --destructive token here
+    // makes the HIGH-risk gauge automatically pick up a dark-tuned red
+    // under .dark, with no new CSS var and no useTheme(). --destructive's
+    // LIGHT value (hsl(0 72% 51%) ≈ #DC2828) is visually equivalent to the
+    // previous static #DC2626 — not a light-mode change in practice. Only
+    // `high` changes; `low`/`moderate` colors are untouched (out of
+    // Y6.2-FIX2's scope). This is the SAME token used for the Dashboard
+    // "Alto" bar and the Sidebar alert counter in Y6.2-FIX2, so all three
+    // now share one canonical dark critical red.
+    color: 'hsl(var(--destructive))',
+    bg: 'bg-red-50 dark:bg-red-950/40',
+    border: 'border-red-200 dark:border-red-800/60',
+    text: 'text-red-700 dark:text-red-300',
     icon: '↑',
   },
 }
@@ -235,23 +255,23 @@ export const SEVERITY_CONFIG: Record<AlertSeverity, {
 }> = {
   info: {
     label: 'Información',
-    bg: 'bg-blue-50',
-    border: 'border-blue-200',
-    text: 'text-blue-700',
+    bg: 'bg-blue-50 dark:bg-blue-950/40',
+    border: 'border-blue-200 dark:border-blue-800/60',
+    text: 'text-blue-700 dark:text-blue-300',
     dot: 'bg-blue-500',
   },
   warning: {
     label: 'Advertencia',
-    bg: 'bg-amber-50',
-    border: 'border-amber-200',
-    text: 'text-amber-700',
+    bg: 'bg-amber-50 dark:bg-amber-950/40',
+    border: 'border-amber-200 dark:border-amber-800/60',
+    text: 'text-amber-700 dark:text-amber-300',
     dot: 'bg-amber-500',
   },
   critical: {
     label: 'Crítico',
-    bg: 'bg-red-50',
-    border: 'border-red-200',
-    text: 'text-red-700',
+    bg: 'bg-red-50 dark:bg-red-950/40',
+    border: 'border-red-200 dark:border-red-800/60',
+    text: 'text-red-700 dark:text-red-300',
     dot: 'bg-red-500',
   },
 }
@@ -277,4 +297,16 @@ export function fullName(firstName: string, lastName: string): string {
 
 export function initials(firstName: string, lastName: string): string {
   return `${firstName[0] ?? ''}${lastName[0] ?? ''}`.toUpperCase()
+}
+
+// Z6-R1 §18 — small identity-block subtitle shared by Topbar/Sidebar/
+// AvatarUploadSection (all three previously rendered `user.email` directly,
+// which is no longer always present — a phone-only doctor has
+// `email: null`). Never renders a literal "null"/"undefined": falls back
+// to the account's other login identifier (Medico.phone) when email is
+// absent, and to an empty string only if genuinely neither is set (a state
+// the backend invariant should prevent, but this stays defensive rather
+// than ever showing placeholder text as though it were real data).
+export function userIdentifierLabel(user: Pick<User, 'email' | 'medico'>): string {
+  return user.email ?? user.medico?.phone ?? ''
 }

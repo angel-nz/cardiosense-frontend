@@ -38,29 +38,38 @@ export function StatCard({
   onClick,
 }: StatCardProps) {
   const content = (
+    // Y6.3B — `.ui-text-kpi` replaces `text-3xl` (font-size only; the
+    // pre-existing `leading-none` utility still wins line-height in every
+    // preset since Tailwind utilities outrank the `@layer components` rule
+    // `.ui-text-kpi` lives in — Classic renders pixel-identical, spot-check
+    // "StatCard KPI size", Y6.3B §45). Label/subtitle/trend text use
+    // `.ui-text-body`/`.ui-text-meta` so Comfortable/High Visibility can
+    // grow them; the icon well (`w-12 h-12`) stays a fixed invariant (not a
+    // shell dimension, but not listed as preset-sensitive either — only the
+    // inline icon itself scales, via `.ui-icon-density`).
     <div className="flex items-start justify-between">
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-muted-foreground font-medium">{title}</p>
-        <p className="text-3xl font-bold text-foreground mt-1 leading-none">{value}</p>
+        <p className="ui-text-body text-muted-foreground font-medium">{title}</p>
+        <p className="ui-text-kpi font-bold text-foreground mt-1 leading-none">{value}</p>
         {subtitle && (
-          <p className="text-xs text-muted-foreground mt-1.5">{subtitle}</p>
+          <p className="ui-text-meta text-muted-foreground mt-1.5">{subtitle}</p>
         )}
         {trend && (
           <div className="flex items-center gap-1 mt-2">
             <span
               className={cn(
-                'text-xs font-medium',
-                trend.positive ? 'text-teal-600' : 'text-red-600',
+                'ui-text-meta font-medium',
+                trend.positive ? 'text-teal-600 dark:text-teal-400' : 'text-red-600 dark:text-red-400',
               )}
             >
               {trend.positive ? '+' : ''}{trend.value}%
             </span>
-            <span className="text-xs text-muted-foreground">{trend.label}</span>
+            <span className="ui-text-meta text-muted-foreground">{trend.label}</span>
           </div>
         )}
       </div>
       <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0', iconBg)}>
-        <Icon className={cn('w-6 h-6', iconColor)} />
+        <Icon className={iconColor} style={{ width: 'calc(var(--ui-icon-size) * 1.5)', height: 'calc(var(--ui-icon-size) * 1.5)' }} />
       </div>
     </div>
   )
