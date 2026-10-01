@@ -44,6 +44,21 @@
     --sidebar-collapsed: 68px;
 
     /*
+      PRE-R2E — Sticky Navigation / Sticky Toolbars. Topbar.tsx's own
+      `<header>` is `position: fixed; top: 0; height: h-[68px]` (a
+      documented "frozen invariant" per that file's own Y6.3B-FIX1
+      comment), and AppLayout.tsx's `<main>` independently repeats the same
+      68px as `pt-[68px]` to clear it. Neither of those two existing
+      literals is changed by this block (Topbar.tsx/AppLayout.tsx are both
+      untouched) — this variable simply gives the new sticky page toolbars/
+      headers introduced in PRE-R2E a single named reference to that SAME
+      canonical, already-frozen number, instead of a third independent
+      "68px" magic-number copy. If Topbar's own frozen height is ever
+      revisited, this value must be updated alongside it.
+    */
+    --topbar-height: 68px;
+
+    /*
       Y6.1/Y6.3B — CardioSense design-system tokens. Independent axis from
       the color tokens above (this block never sets a color) and from .dark
       below (colors and typography/spacing are orthogonal).
@@ -166,6 +181,49 @@
   */
   html {
     zoom: var(--ui-zoom, 1);
+  }
+
+  /*
+    PRE-R2D-FIX4 — Topbar Alerts popover positioning-wrapper zoom
+    correction. @radix-ui/react-popper (the positioning engine behind
+    `@radix-ui/react-dropdown-menu`'s `Content`, used by Topbar.tsx's
+    Alerts popover) inserts an UNDOCUMENTED extra DOM layer — a `<div
+    data-radix-popper-content-wrapper>` — between its Portal and whatever
+    `Content` renders, and it is THAT wrapper (not `Content` itself) that
+    receives Radix/floating-ui's computed `position: fixed; transform:
+    translate(Xpx, Ypx)` (confirmed by reading the installed package
+    source directly, not documentation — see Topbar.tsx's own FIX4
+    comment for the exact source excerpt and reasoning). That wrapper is a
+    plain descendant of this same zoomed `html`, so its transform suffers
+    the identical double-scaling bug as `CollapsedTooltip` (Sidebar.tsx)
+    and the `vh`/`vw`-under-zoom cases above/below — proven here by two
+    earlier fix attempts that edited `Content` instead and produced zero
+    visible change, since Content was never the positioned node.
+
+    `:has([data-alerts-popover])` scopes this to ONLY the wrapper that
+    contains Topbar.tsx's own Alerts `Content` (marked with that exact
+    data attribute) — never a blind, app-wide rule applied to every
+    Radix Popper-based primitive that might exist today or be added
+    later (today this IS the only `@radix-ui/react-dropdown-menu` usage
+    in the app, but this selector stays correctly scoped even once that
+    changes). `:has()` is a modern CSS relational selector (broad
+    Chromium/Safari/Firefox support since 2023); this app already accepts
+    a narrower Chromium-first caveat for `zoom` itself above, so no new
+    browser-support ceiling is introduced.
+
+    At `--ui-zoom: 1` (Original) this is `zoom: calc(1/1)` — a byte-
+    equivalent no-op, so Original's already-correct geometry is
+    untouched; at Medium/Large it cancels the wrapper's own effective
+    zoom to exactly 1, so the already-true pixel transform Radix computed
+    from real `getBoundingClientRect()` reads is painted once, not
+    re-multiplied. Topbar.tsx's `Content` itself separately re-applies
+    `zoom: var(--ui-zoom, 1)` so its own visual content (text, padding,
+    width) keeps scaling with Interface Size exactly like every other
+    normal UI element — only this ONE wrapper's positioning math is
+    corrected.
+  */
+  [data-radix-popper-content-wrapper]:has([data-alerts-popover]) {
+    zoom: calc(1 / var(--ui-zoom, 1));
   }
 
   /*
@@ -559,5 +617,106 @@
   */
   .ui-toast-viewport-max-width {
     max-width: calc((100vw / var(--ui-zoom, 1)) - 3rem);
+  }
+
+  /*
+    PRE-R2E — Sticky Navigation / Sticky Toolbars, shared positioning
+    utility for the six approved sticky regions (Dashboard's "Nuevo
+    paciente" header, Patients/Predicciones/Alertas search+filters
+    toolbars, Settings → Pacientes' hidden-patient search bar,
+    PatientDetail's full header/action section).
+
+    Scroll container: AppLayout has no internal `overflow-y:auto` wrapper
+    anywhere in its ancestor chain (`.ui-viewport-min-height` only sets
+    `min-height`, never `overflow`) — the real scrolling element is the
+    window/document itself. Topbar is the one `position: fixed` element in
+    that chain (`top: 0`, frozen `h-[68px]`), so a plain `top: 0` sticky
+    region would scroll straight to the very top of the viewport and sit
+    UNDERNEATH Topbar's own opaque/blurred bar (z-20) — invisible, not
+    merely mis-aligned. `top: var(--topbar-height)` instead stops each
+    region exactly at Topbar's own bottom edge.
+
+    Interface Size: unlike PRE-R2D-FIX4's Radix popover bug (a JS-measured
+    *physical*-pixel `transform` re-entering the already-zoomed tree and
+    getting re-multiplied by `--ui-zoom` a second time), both Topbar's own
+    fixed `height`/`top:0` and this `top` offset are ordinary static CSS
+    lengths that only ever exist pre-zoom, evaluated inside the exact same
+    `html { zoom: var(--ui-zoom) }` subtree (index.css) — the browser's
+    zoom engine scales every one of those numbers together, uniformly, by
+    construction. There is no `getBoundingClientRect()`/JS measurement
+    anywhere in this mechanism, so no inverse-zoom correction is needed or
+    applied here, and none of `--topbar-height`/`top`/`z-index` below
+    branches on Interface Size — Original/Medium/Large all resolve from
+    this one same declaration.
+
+    z-index: sits above ordinary page content (unstyled, effectively 0)
+    and below Topbar itself (z-20) — see Topbar.tsx/Dialog.tsx/Sidebar.tsx
+    for the rest of the project's existing z-index contract (z-30 Sidebar/
+    profile-menu backdrop, z-40 Topbar profile dropdown + Dialog overlay,
+    z-50 Topbar Alerts popover + Dialog content + tooltips/toasts) — chosen
+    so a sticky toolbar can never cover the Topbar, and every popover/
+    dialog/tooltip still renders above a sticky toolbar unconditionally.
+
+    This class is positioning-only (sticky/top/z-index) — each call site
+    adds its own `bg-background`/`bg-card` + `border-b border-border` (the
+    project's own existing tokens) so scrolled content never bleeds through
+    the visible surface, per the product spec's visual-sticky-surface
+    requirement.
+
+    PRE-R2E-FIX3 — Unified Sticky Surface Opacity. Audited Topbar.tsx's own
+    `<header>` className directly (not from memory): the authoritative
+    treatment is `bg-background/80 backdrop-blur-md border-b border-border`
+    — i.e. an 80%-opacity background (Tailwind's color-with-alpha modifier,
+    confirmed by inspecting the compiled CSS: `.bg-background\/80{
+    background-color:hsl(var(--background) / .8)}`, which resolves through
+    the exact same `--background`/`--card` HSL custom properties already
+    used everywhere else, so Light/Dark both repaint automatically with no
+    new tokens) plus Tailwind's `backdrop-blur-md`, which compiles to a
+    plain `blur(12px)` backdrop-filter (confirmed the same way against the
+    compiled CSS). No shadow is present on Topbar's own header, so none is
+    added here.
+
+    The BLUR AMOUNT is identical across all six sticky regions and carries
+    no dependency on which color token a given call site uses underneath,
+    so it is centralized here as a literal `blur(12px)` — byte-equivalent
+    to Topbar's own `backdrop-blur-md` — rather than repeating the Tailwind
+    utility class six times. The underlying color token, however, is NOT
+    centralized: four of the six regions sit on `bg-background` (flush,
+    full-bleed bars — Dashboard/Patients/Alerts/PatientDetail) while two sit
+    on `bg-card` (Predicciones' floating filter card and Settings→Pacientes'
+    search bar, both already nested in/matching a card-colored ancestor
+    before this phase). Folding a single hardcoded background color into
+    this shared class would force one of those two groups onto the wrong
+    token — a visible regression, not a simplification — so each call site
+    instead keeps its own existing `bg-background`/`bg-card` utility and
+    simply gains the `/80` alpha suffix at the page level (see
+    Dashboard/Patients/Predictions/Alerts/PatientVisibilitySettings/
+    PatientDetail). This mirrors Topbar's own actual mechanism exactly
+    (alpha on the existing color utility) rather than approximating it with
+    a new, invented rgba/opacity value.
+
+    Stacking context: every one of these six elements already establishes
+    its own stacking context without this change — `position: sticky` plus
+    a non-`auto` `z-index` (this class's own `z-index: 10`) already
+    satisfies that condition on its own. `backdrop-filter` independently
+    triggers a stacking context too, but since each element already forms
+    one, this adds no NEW stacking-context boundary and changes no
+    paint-order relationship with anything outside the element's own
+    subtree. In particular, the Topbar Alerts popover and the Topbar
+    profile dropdown (both rendered via Portal to `document.body`, siblings
+    of `#root` in the root stacking context — see Topbar.tsx) and Dialog's
+    overlay/content are compared against this class's `z-index: 10` in that
+    same shared root stacking context exactly as before; none of them are
+    nested inside a sticky toolbar's own subtree, so there is nothing for
+    this toolbar's (pre-existing or new) stacking context to trap. The
+    z-index contract above (0 < 10 < Topbar's 20 < 30 < 40 < 50) is
+    therefore unchanged by this addition.
+  */
+  .ui-sticky-toolbar {
+    position: sticky;
+    top: var(--topbar-height);
+    z-index: 10;
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
   }
 }

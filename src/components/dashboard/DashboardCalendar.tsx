@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { cn, formatScore, formatLongDate, formatTime, formatRelativeBusinessDate, RISK_CONFIG } from '@/lib/utils'
 import {
-  BUSINESS_TIMEZONE, getBusinessDateKey, getMonthRange,
+  BUSINESS_TIMEZONE, getBusinessDateKey, getVisibleMonthRange,
   buildCalendarDays, groupEventsByBusinessDay,
 } from '@/lib/businessDate'
 import { dashboardService } from '@/services/dashboardService'
@@ -71,7 +71,11 @@ export function DashboardCalendar() {
     const requestId = ++requestIdRef.current
     if (!silent) { setLoading(true); setError('') }
     try {
-      const { from, to } = getMonthRange(viewYear, viewMonth)
+      // PRE-R2C — fetch the FULL VISIBLE GRID range (including any leading/
+      // trailing adjacent-month days buildCalendarDays renders below), not
+      // just the strict calendar month — see getVisibleMonthRange's own
+      // comment in lib/businessDate.ts for the full root-cause explanation.
+      const { from, to } = getVisibleMonthRange(viewYear, viewMonth)
       const result = await dashboardService.getCalendar({ from, to })
       // Ignore stale responses — Sep → Oct navigated quickly must never let
       // a slow Sep response overwrite Oct's already-rendered data.

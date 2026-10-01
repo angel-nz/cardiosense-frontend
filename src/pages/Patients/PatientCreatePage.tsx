@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Save, User } from 'lucide-react'
-import { cn, CURP_REGEX, EMAIL_REGEX } from '@/lib/utils'
-import { getBusinessDateKey } from '@/lib/businessDate'
+import { cn, CURP_REGEX, EMAIL_REGEX, calcAge } from '@/lib/utils'
+import { getBusinessDateKey, getTodayBusinessDateKey } from '@/lib/businessDate'
 import { patientService } from '@/services/patientService'
 import { isAxiosError } from 'axios'
 import { CountryPhoneInput, type PhoneInputState } from '@/components/phone/CountryPhoneInput'
@@ -58,12 +58,50 @@ export function resolveCreatePhone(phoneState: PhoneInputState | null):
   return { ok: false }
 }
 
+// PRE-R2B-FIX3 — root cause of the remaining few-pixel vertical offset
+// between this page's FormField-wrapped fields (e.g. Correo electrónico)
+// and CountryPhoneInput (Teléfono), audited rather than assumed:
+//
+// This label had no explicit `display` utility, so it stayed a plain
+// inline element inside this `<div className="space-y-1.5">`. Its
+// following sibling (the field's own <input>, a UA-default
+// `display: inline-block` element set to `w-full`) is too wide to share
+// the label's line, so it wraps to its own line below — which visually
+// LOOKS like "label on top, control below" and is why this pattern has
+// read correctly everywhere else in the app. But the label's own line box
+// is still an INLINE formatting context line, and per CSS a line box is
+// never shorter than the "strut" contributed by its containing block's
+// own font/line-height — and this div has no `text-sm` of its own, so
+// that strut is the page's ambient, inherited body line-height (Tailwind
+// Preflight's `html { line-height: 1.5 }` at the default 16px = 24px),
+// NOT the label's own smaller `text-sm` 20px. The line box (and therefore
+// the label's rendered row) is forced to the taller 24px, adding ~4px of
+// invisible slack above every field's control that a block-level label
+// would never incur.
+//
+// CountryPhoneInput's own label uses `block mb-1.5` (not this div's
+// implicit space-y approach) — being `display: block`, it is never part
+// of an inline formatting context and is never inflated by that strut, so
+// its row is exactly its own `text-sm` 20px. That 4px difference is
+// exactly Angel's reported symptom (Correo a few pixels lower than
+// Teléfono).
+//
+// Fix: make this label `block` too, the same explicit treatment
+// CountryPhoneInput already uses — it opts out of the inline formatting
+// context (and its strut) entirely, so the label's row becomes its own
+// `text-sm` 20px here as well, matching CountryPhoneInput exactly. This is
+// a page-local component (FormField exists only in this file — grep-
+// confirmed, not imported anywhere else), so this only tightens this
+// page's own fields uniformly (all of them lose the same ~4px of
+// accidental slack together, preserving every existing pair's relative
+// alignment) and cannot regress ProfileSettings.tsx, EditPatientModal.tsx,
+// or any other CountryPhoneInput consumer.
 function FormField({ label, required, error, children }: {
   label: string; required?: boolean; error?: string; children: React.ReactNode
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-sm font-medium text-foreground">
+      <label className="text-sm font-medium text-foreground block">
         {label}
         {required && <span className="text-red-500 dark:text-red-400 ml-1">*</span>}
       </label>
@@ -91,6 +129,17 @@ export default function PatientCreatePage() {
   // doctor actually interacts with it (V6.3 §12/§18).
   const [phoneState, setPhoneState] = useState<PhoneInputState | null>(null)
   const [phoneError, setPhoneError] = useState<string | null>(null)
+
+  // PRE-R2B §3/§5/§6 — real-time, derived age preview. `isValidBirthDateFormat`
+  // guards the brief window while the native date input holds an
+  // incomplete/empty value (same defensive regex EditPatientModal's own
+  // previewAge already uses); `isFutureBirthDate` additionally blocks an
+  // actively future date from ever reaching calcAge() — compared as plain
+  // "YYYY-MM-DD" strings against the business-timezone "today" key, which
+  // sorts correctly lexicographically and needs no Date parsing of its own.
+  const isValidBirthDateFormat = /^\d{4}-\d{2}-\d{2}$/.test(form.birthDate)
+  const isFutureBirthDate = isValidBirthDateFormat && form.birthDate > getTodayBusinessDateKey()
+  const previewAge = isValidBirthDateFormat && !isFutureBirthDate ? calcAge(form.birthDate) : null
 
   const set = (field: keyof FormData) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -229,6 +278,47 @@ export default function PatientCreatePage() {
             />
           </FormField>
 
+          {/* PRE-R2B §3/§5/§6 — Edad: read-only, DERIVED presentation, live
+              preview from the draft birthDate; never an input the user can
+              edit, never sent to the backend (birthDate alone remains the
+              source of truth — patientService.create() below still never
+              includes an `age` field). Age math is UNCHANGED by
+              PRE-R2B-FIX1 (still the shared, canonical calcAge(), still the
+              same future-birthDate guard) — only this field's element type
+              changed.
+              PRE-R2B-FIX1 §5 — root cause of the reported misalignment: this
+              was a plain <div> dressed up with the same Tailwind classes as
+              a real <input>. A <div> and an <input type="date"> (its row
+              sibling, Fecha de nacimiento, right above) are NOT guaranteed
+              to render at the same height even with identical padding/
+              font-size classes — a native date input carries its own
+              browser-chrome (calendar icon) that inflates its effective box
+              beyond what pure CSS padding alone produces on a <div>. The
+              project's own established pattern for "read-only, derived
+              field" is a real <input readOnly> — switching to that real
+              form control here gives Edad the same box-model category as
+              every sibling field in this grid, fixing the alignment at its
+              actual source.
+              PRE-R2B-FIX2 §7 — the `bg-muted/40` tone FIX1 added on top of
+              that (to visually mark the field as non-editable) is REMOVED:
+              Angel's explicit feedback is that it reads as disabled/
+              unavailable rather than simply read-only. `inputClass` already
+              supplies `bg-card`, the same background every other active
+              field in this form uses — removing the override is enough to
+              make Edad look like a normal field. `cursor-default` (no
+              text-edit cursor, since there's nothing to type) and the
+              suppressed focus ring stay: those communicate "read-only", not
+              "disabled", and aren't part of Angel's reported defect. */}
+          <FormField label="Edad">
+            <input
+              readOnly
+              value={previewAge !== null ? `${previewAge} años` : '—'}
+              tabIndex={-1}
+              aria-readonly="true"
+              className={cn(inputClass, 'cursor-default focus:ring-0 focus:border-border')}
+            />
+          </FormField>
+
           <FormField label="Sexo biológico" required error={errors.sex}>
             <select
               value={form.sex}
@@ -263,7 +353,36 @@ export default function PatientCreatePage() {
           {/* V6.4 — a brand-new patient has no persisted phone to preserve
               (unlike EditPatientModal), so this is a plain controlled-by-
               CountryPhoneInput field: `value={null}` (always blank on
-              mount) and every onChange result is stored verbatim. */}
+              mount) and every onChange result is stored verbatim.
+              PRE-R2B-FIX1 §6 gave this field `sm:col-span-2` (a standalone
+              full-width row) to avoid pairing a compound control against a
+              single input. PRE-R2B-FIX2 §8/§9 explicitly rejects that as
+              the approved layout: Correo electrónico (left) and Teléfono
+              (right) must share one desktop row instead, like every other
+              pair in this grid.
+              Audited rather than assumed: CountryPhoneInput's own markup
+              already reproduces FormField's exact vertical rhythm — its
+              label uses the identical `text-sm font-medium text-foreground`
+              classes (with an explicit `block mb-1.5` in place of
+              FormField's parent `space-y-1.5`, the same 6px gap either
+              way), and both its country-selector button and its national-
+              number input share `baseFieldClass`'s `px-3 py-2.5 text-sm
+              border`, which is byte-for-byte `inputClass`'s own sizing —
+              so a CountryPhoneInput cell and a FormField cell already
+              resolve to the same label height, same 6px label/control gap,
+              same 42px control height, and the same `mt-1.5`/error-slot
+              spacing when an error is shown. CountryPhoneInput's `<div
+              className={className}>` root has no explicit width, so it
+              fills its grid cell exactly like Correo's `w-full` input does.
+              With `sm:col-span-2` removed, this becomes the grid's 8th
+              (even) item, auto-placing it into column 2 of Correo
+              electrónico's row (item 7, column 1) — no reordering needed.
+              CountryPhoneInput itself is untouched (same selector, same
+              canonicalization, same error handling); only this page-level
+              span is removed. Mobile is unaffected either way — `sm:` only
+              applies at the `sm:grid-cols-2` breakpoint and up, so the
+              default `grid-cols-1` stacking (and the selector/number-field
+              behavior within it) is exactly as before. */}
           <CountryPhoneInput
             value={null}
             onChange={state => { setPhoneState(state); if (phoneError) setPhoneError(null) }}

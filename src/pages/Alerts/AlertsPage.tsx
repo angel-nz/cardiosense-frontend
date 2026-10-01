@@ -306,8 +306,23 @@ export default function AlertsPage() {
           error above (`error`, with its own Reintentar) is a
           PERSISTENT_LOAD_ERROR, not an action result — untouched. */}
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      {/* Filters — PRE-R2E §9 — sticky. Scope is the search+severity+read/
+          unread toolbar specifically (matching the Patients/Predicciones
+          "search+filters" pattern) — the "Marcar todas como leídas" header
+          above is a separate, non-sticky block (PRE-R2E §18: smallest
+          coherent functional region), its own behavior untouched either
+          way. z-index 10 (.ui-sticky-toolbar) sits well below the Topbar
+          Alerts popover's z-50, so it can never collide with/cover it
+          (PRE-R2E §9/§22).
+          PRE-R2E-FIX3 — `bg-background` → `bg-background/80`, matching
+          Topbar's translucent treatment; blur centralized in
+          `.ui-sticky-toolbar`. This toolbar's own z-index/stacking is
+          unchanged by that addition (see index.css comment) — the Alerts
+          popover above still renders unconditionally above it. */}
+      <div
+        className="ui-sticky-toolbar flex flex-col sm:flex-row gap-3 bg-background/80 border-b border-border"
+        style={{ paddingTop: 'var(--ui-secondary-control-padding-y)', paddingBottom: 'var(--ui-secondary-control-padding-y)' }}
+      >
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input

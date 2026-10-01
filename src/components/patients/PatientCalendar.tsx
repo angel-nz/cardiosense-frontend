@@ -6,7 +6,7 @@ import {
   Calendar,
 } from 'lucide-react'
 import { cn, formatScore, formatLongDate, formatTime, formatRelativeBusinessDate, RISK_CONFIG } from '@/lib/utils'
-import { BUSINESS_TIMEZONE, getBusinessDateKey, getMonthRange, buildCalendarDays, groupEventsByBusinessDay } from '@/lib/businessDate'
+import { BUSINESS_TIMEZONE, getBusinessDateKey, getVisibleMonthRange, buildCalendarDays, groupEventsByBusinessDay } from '@/lib/businessDate'
 import { timelineService } from '@/services/timelineService'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import { useSocket } from '@/context/SocketContext'
@@ -163,7 +163,11 @@ export function PatientCalendar({
     const requestId = ++requestIdRef.current
     if (!silent) { setLoading(true); setError('') }
     try {
-      const { from, to } = getMonthRange(viewYear, viewMonth)
+      // PRE-R2C — fetch the FULL VISIBLE GRID range (including any leading/
+      // trailing adjacent-month days buildCalendarDays renders below), not
+      // just the strict calendar month — see getVisibleMonthRange's own
+      // comment in lib/businessDate.ts for the full root-cause explanation.
+      const { from, to } = getVisibleMonthRange(viewYear, viewMonth)
       const result = await timelineService.getPatientTimeline(patientId, { from, to })
       // Ignore stale responses — e.g. Sep → Oct → Nov navigated quickly;
       // a slow Sep response must never overwrite Nov's already-rendered data.

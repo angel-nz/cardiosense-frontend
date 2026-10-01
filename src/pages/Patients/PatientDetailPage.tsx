@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, Activity, Heart, Phone, Calendar,
   User, FileText, AlertTriangle, Plus, Edit, Loader2, X,
-  PowerOff, RotateCcw, EyeOff,
+  PowerOff, RotateCcw, EyeOff, Mail,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -742,8 +742,26 @@ export default function PatientDetailPage() {
 
   return (
     <div className="ui-section-stack-tight">
-      {/* Header */}
-      <div className="flex items-center gap-3">
+      {/* Header — PRE-R2E §11-§13 — sticky, the strongest sticky behavior
+          this spec requires: the COMPLETE existing header/action section
+          (Volver, name, risk badge, inactive pill, age/sex/last-update
+          meta, and the active/inactive-specific action buttons) as ONE
+          coherent region — nothing below this div (the inactive-patient
+          explanation banner, dialogs, the model-ineligibility notice, the
+          two-column content) is part of it, per §13/§18. The ACTIVE vs.
+          INACTIVE_VISIBLE action sets below are completely unmodified —
+          whichever the current patient state already renders is what
+          sticks; no guard is bypassed, no action added or removed. See
+          .ui-sticky-toolbar (index.css) for the offset/z-index rationale
+          shared with every other PRE-R2E region.
+          PRE-R2E-FIX3 — `bg-background` → `bg-background/80`, matching
+          Topbar's translucent treatment; blur centralized in
+          `.ui-sticky-toolbar`. Visual-only — none of the patient-state
+          action-button logic above is touched. */}
+      <div
+        className="ui-sticky-toolbar flex items-center gap-3 bg-background/80 border-b border-border"
+        style={{ paddingTop: 'var(--ui-secondary-control-padding-y)', paddingBottom: 'var(--ui-secondary-control-padding-y)' }}
+      >
         <button
           onClick={() => navigate('/patients')}
           className="p-2 rounded-lg hover:bg-accent transition-colors"
@@ -1006,8 +1024,27 @@ export default function PatientDetailPage() {
               <InfoRow label="Fecha de nacimiento" value={formatDate(patient.birthDate)} />
               <InfoRow label="Edad" value={age} unit="años" />
               <InfoRow label="Sexo" value={sexLabel(patient.sex)} />
+              {/* PRE-R2B §7/§8 — email now interactive, matching the exact
+                  visual language the phone block immediately below already
+                  uses (same row shell, same label treatment, same
+                  text-sm font-semibold text-primary + icon link style) —
+                  a plain semantic <a href="mailto:...">, no custom JS,
+                  since a native anchor already gets click AND keyboard
+                  (Enter) activation for free. Missing email (patient.email
+                  falsy) renders nothing at all — the exact same neutral,
+                  non-clickable omission this row already used before, and
+                  the same convention CURP/phone already follow just below. */}
               {patient.email && (
-                <InfoRow label="Email" value={patient.email} />
+                <div className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
+                  <span className="text-sm text-muted-foreground">Email</span>
+                  <a
+                    href={`mailto:${patient.email}`}
+                    className="text-sm font-semibold text-primary flex items-center gap-1"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    {patient.email}
+                  </a>
+                </div>
               )}
               {patient.phone && (() => {
                 const { text, telHref } = getPhoneDisplay(patient.phone)

@@ -13,6 +13,19 @@ interface SettingsSectionProps {
   // `justify-between` on a single child (no `headerAction`) lays out
   // exactly as before.
   headerAction?: ReactNode
+  // PRE-R2E — `overflow-hidden` below (needed to clip a section's content
+  // to its own `rounded-xl` corners) is, by the CSS positioning spec, also
+  // a scroll container: it would silently defeat `position: sticky` on any
+  // descendant, confining it to this card's own intrinsic height instead
+  // of the page's real (window-level) scroll — the element would never
+  // visibly "stick" at all. PatientVisibilitySettings' hidden-patient
+  // search bar is the one section body that needs a sticky descendant
+  // (PRE-R2E §10), so this prop lets ONLY that call site opt out of the
+  // clip; every other section keeps the exact same `overflow-hidden` as
+  // before (default false — zero behavior change anywhere else). Nothing
+  // in this component's own content touches the card's edge, so dropping
+  // the clip here has no visible effect beyond re-enabling sticky.
+  allowOverflow?: boolean
 }
 
 // Y2 — shared card wrapper for a Settings section's content. Purely
@@ -33,9 +46,9 @@ interface SettingsSectionProps {
 // title (Classic 1rem/16px — the same size this un-sized `<h2>` already
 // rendered at via inheritance, so Classic is unaffected; Comfortable/High
 // Visibility can now grow it).
-export function SettingsSection({ title, children, className, headerAction }: SettingsSectionProps) {
+export function SettingsSection({ title, children, className, headerAction, allowOverflow = false }: SettingsSectionProps) {
   return (
-    <div className={cn('bg-card rounded-xl border border-border overflow-hidden', className)}>
+    <div className={cn('bg-card rounded-xl border border-border', !allowOverflow && 'overflow-hidden', className)}>
       <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3">
         <h2 className="ui-heading-section font-semibold text-foreground">{title}</h2>
         {headerAction}

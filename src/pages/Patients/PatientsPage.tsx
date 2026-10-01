@@ -183,8 +183,20 @@ export default function PatientsPage() {
         ))}
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      {/* Filters — PRE-R2E §7 — sticky. Search/status/risk filters and
+          "Nuevo paciente" all currently live in this ONE flex container, so
+          the whole row sticks together rather than splitting related
+          controls across layers (PRE-R2E §7/§16). See .ui-sticky-toolbar
+          (index.css) for the offset/z-index rationale; background/border/
+          padding added here for the same "stays readable while content
+          scrolls behind it" reason as Dashboard's header.
+          PRE-R2E-FIX3 — `bg-background` → `bg-background/80`, matching
+          Topbar's translucent treatment exactly; blur is centralized in
+          `.ui-sticky-toolbar`. Visual-only. */}
+      <div
+        className="ui-sticky-toolbar flex flex-col sm:flex-row gap-3 bg-background/80 border-b border-border"
+        style={{ paddingTop: 'var(--ui-secondary-control-padding-y)', paddingBottom: 'var(--ui-secondary-control-padding-y)' }}
+      >
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input

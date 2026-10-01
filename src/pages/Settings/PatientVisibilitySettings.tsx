@@ -149,7 +149,14 @@ export default function PatientVisibilitySettings() {
   }
 
   return (
-    <SettingsSection title="Pacientes">
+    // PRE-R2E §10 — `allowOverflow` opts this one SettingsSection out of
+    // its normal `overflow-hidden` wrapper, which would otherwise silently
+    // defeat `position: sticky` on the search bar below by making THIS
+    // card (not the window) its sticky containing block — see
+    // SettingsSection.tsx's own comment on the prop for the full
+    // reasoning. Nothing in this page's content touches the card's edge,
+    // so this has no visible effect beyond re-enabling sticky.
+    <SettingsSection title="Pacientes" allowOverflow>
       <div className="ui-content-stack">
         {/* ── Counts + bulk actions ──────────────────────────────────────── */}
         {summaryLoadState === 'loading' ? (
@@ -209,7 +216,25 @@ export default function PatientVisibilitySettings() {
         <div className="pt-2 border-t border-border">
           <p className="text-sm font-medium text-foreground mb-2">Pacientes ocultos</p>
 
-          <div className="relative mb-3">
+          {/* PRE-R2E §10 — sticky. bg-card matches this SettingsSection's
+              own card background (not the page's bg-background) so nothing
+              mismatches once this detaches from normal flow while stuck;
+              see the allowOverflow note above for why sticky works here at
+              all.
+              PRE-R2E-FIX3 — `bg-card` → `bg-card/80`, matching Topbar's
+              translucent treatment (same card token family, just with the
+              shared alpha); blur centralized in `.ui-sticky-toolbar`. */}
+          {/* Tailwind's `relative` utility (layer: utilities) would
+              silently win the `position` cascade over `.ui-sticky-toolbar`
+              (layer: components) if both were applied to this same
+              element, defeating the sticky entirely — `position: sticky`
+              is itself a "positioned" value, so it already provides the
+              Search icon below a valid containing block on its own; no
+              separate `relative` is needed or used here. */}
+          <div
+            className="ui-sticky-toolbar mb-3 bg-card/80 border-b border-border"
+            style={{ paddingTop: 'var(--ui-secondary-control-padding-y)', paddingBottom: 'var(--ui-secondary-control-padding-y)' }}
+          >
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"

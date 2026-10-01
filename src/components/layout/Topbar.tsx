@@ -1,10 +1,21 @@
-import { Bell, LogOut, User, ChevronDown, Menu, Loader2 } from 'lucide-react'
+import { Bell, LogOut, User, ChevronDown, Menu, Loader2, CheckCheck, AlertTriangle, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { useState } from 'react'
-import { cn, fullName, userIdentifierLabel } from '@/lib/utils'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import * as RadixDropdown from '@radix-ui/react-dropdown-menu'
+import { cn, fullName, userIdentifierLabel, SEVERITY_CONFIG, timeAgo } from '@/lib/utils'
 import { useAuth } from '@/context/AuthContext'
+import { useAlerts } from '@/context/AlertsContext'
+import { alertService } from '@/services/alertService'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { Dialog } from '@/components/ui/Dialog'
+import type { Alert } from '@/types'
+
+// PRE-R2D-FIX1 — same 400ms coalescing window already established by
+// AlertsContext (ALERTS_CHANGED_COALESCE_MS) and AlertsPage
+// (REALTIME_COALESCE_MS) for exactly this kind of realtime-reaction
+// debounce. Kept local rather than shared/exported, same precedent as
+// those two.
+const PREVIEW_COALESCE_MS = 400
 
 interface TopbarProps {
   sidebarCollapsed: boolean
@@ -17,6 +28,171 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [dropdownOpen, setDropdownOpen] = useState(false)
+
+  // PRE-R2D-FIX1 — unreadCount stays the ONE existing canonical total
+  // (AlertsContext's own state, unchanged architecture per §5 of this
+  // FIX) — still what both this popover's header text and the
+  // `alertCount` prop (sourced identically by AppLayout) represent.
+  //
+  // The 5 preview rows are now a SEPARATE, authoritative query
+  // (alertService.list({unread:true, page:1, limit:5})) rather than a
+  // client-side filter/slice of AlertsContext's own general `alerts`
+  // array. FIX1's root cause: that array is fetched with a flat limit:50
+  // of the newest Alerts overall — when 50+ Alerts exist and the unread
+  // ones are older than the 50 newest overall (e.g. a doctor with a long
+  // read history plus some older still-unread rows), the "5 newest
+  // unread" the product requires are not necessarily inside that
+  // client-held 50 at all, silently under- or mis-representing the
+  // preview (badge could show unreadCount=8 while the derived preview
+  // showed 0). The existing GET /alerts endpoint already supports
+  // unread/page/limit (alertService.ts, AlertListParams — audited, no
+  // frontend service change needed), so this reuses that contract
+  // directly instead of growing the general cache or adding a new
+  // endpoint (§2/§3).
+  const { unreadCount, markAsRead, markAllRead } = useAlerts()
+  const [alertsOpen, setAlertsOpen] = useState(false)
+  const [markingAllRead, setMarkingAllRead] = useState(false)
+
+  const [previewAlerts, setPreviewAlerts] = useState<Alert[]>([])
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const previewRequestIdRef = useRef(0)
+  const previewCoalesceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Latest-request-wins (same pattern as AlertsPage's own requestIdRef):
+  // only the response whose id still matches the ref when it resolves is
+  // committed. This is what makes the mark-all race below safe — an
+  // earlier, pre-confirmation fetch can never clobber a later,
+  // post-confirmation one, regardless of which network response actually
+  // arrives first.
+  const fetchPreview = useCallback(async () => {
+    const requestId = ++previewRequestIdRef.current
+    setPreviewLoading(true)
+    setPreviewError(null)
+    try {
+      const result = await alertService.list({ unread: true, page: 1, limit: 5 })
+      if (requestId !== previewRequestIdRef.current) return
+      setPreviewAlerts(result.data)
+      setPreviewLoading(false)
+    } catch {
+      if (requestId !== previewRequestIdRef.current) return
+      setPreviewError('No se pudieron cargar las alertas')
+      setPreviewLoading(false)
+    }
+  }, [])
+
+  // Authoritative refresh triggers, both gated on the popover actually
+  // being open (never polls/fetches in the background):
+  //  - `alertsOpen` flipping true — the popover was just opened.
+  //  - `unreadCount` changing while already open — a new persisted Alert
+  //    arrived via realtime (new_alert/alerts_changed, both already
+  //    reconciled upstream by AlertsContext before unreadCount changes,
+  //    so the underlying row genuinely exists server-side by then — no
+  //    race on that path).
+  // Debounced by the same 400ms window AlertsContext/AlertsPage already
+  // use for realtime reconciliation, so a burst of arrivals collapses
+  // into one request rather than one per event. The loading flag is set
+  // synchronously (outside the debounce) so the popover shows a spinner
+  // instead of briefly rendering stale rows while a refresh is pending.
+  useEffect(() => {
+    if (!alertsOpen) return
+    setPreviewLoading(true)
+    setPreviewError(null)
+    if (previewCoalesceRef.current) clearTimeout(previewCoalesceRef.current)
+    previewCoalesceRef.current = setTimeout(() => {
+      previewCoalesceRef.current = null
+      fetchPreview()
+    }, PREVIEW_COALESCE_MS)
+    return () => {
+      if (previewCoalesceRef.current) {
+        clearTimeout(previewCoalesceRef.current)
+        previewCoalesceRef.current = null
+      }
+    }
+  }, [alertsOpen, unreadCount, fetchPreview])
+
+  const handleMarkAllRead = async () => {
+    if (markingAllRead) return
+    setMarkingAllRead(true)
+    try {
+      // §8 — reuses the existing canonical bulk operation (AlertsContext's
+      // markAllRead → PATCH /alerts/read-all); no client-side per-Alert
+      // loop. On success, AlertsContext's own state refreshes
+      // unreadCount — this popover and AlertsPage both re-render from
+      // that same source, no reload needed anywhere.
+      await markAllRead()
+    } catch {
+      // §8 — "do not show success if backend operation failed": on
+      // failure, AlertsContext has already rolled back its optimistic
+      // unreadCount update, so the explicit fetchPreview() below simply
+      // reconfirms the real (unchanged) server state rather than
+      // pretending success. AlertsPage's own handleMarkAllRead already
+      // surfaces this same failure via the global action-notification
+      // toast when the doctor is on that page; Topbar doesn't duplicate
+      // that toast call here to avoid coupling this shared layout chrome
+      // to ToastContext for a single edge case.
+    } finally {
+      setMarkingAllRead(false)
+      // FIX1 — explicit, deterministic re-fetch AFTER the mutation's own
+      // promise has settled (success or failure), rather than relying
+      // solely on the `unreadCount`-reactive effect above. That effect's
+      // optimistic `unreadCount` update fires the instant AlertsContext
+      // sets it — before this `await markAllRead()` necessarily reaches
+      // the server — so a fetch triggered by it alone could race ahead of
+      // the real PATCH /alerts/read-all and read stale still-unread rows,
+      // with nothing left to correct it afterward (unreadCount doesn't
+      // change again). This call's requestId is always issued after that
+      // reactive one's, so the latest-wins guard in fetchPreview()
+      // guarantees THIS authoritative, post-confirmation result is what
+      // ends up committed.
+      if (alertsOpen) fetchPreview()
+    }
+  }
+
+  // §7 — replicates AlertsPage's own exact row-click contract verbatim
+  // (AlertsPage.tsx: `handleMarkAsRead(alert.id); if (alert.patientId)
+  // navigate(...)`) rather than inventing new interaction semantics. This
+  // always closes the popover and (when patientId is present) navigates
+  // away, so there is no visible preview left to reconcile in place — the
+  // next time the popover opens, the `alertsOpen`-triggered effect above
+  // re-fetches the authoritative five, which is what FIX1 §9's
+  // "sixth fills the fifth position" property actually requires.
+  const handleAlertRowClick = (alert: Alert) => {
+    markAsRead(alert.id).catch(() => {
+      // Same non-blocking-failure posture as above — the context has
+      // already rolled back optimistic state on failure.
+    })
+    setAlertsOpen(false)
+    if (alert.patientId) navigate(`/patients/${alert.patientId}`)
+  }
+
+  // §10 — reuses the EXACT existing DashboardStatNavigationIntent
+  // convention (types/index.ts; consumed by AlertsPage.tsx's own
+  // readAlertsStatNav/location.state effect) — confirmed by audit to be
+  // the ONLY existing mechanism for "open Alerts pre-filtered to unread"
+  // (AlertsPage has no URL-query-based filter at all). Not a new
+  // `?status=unread` convention.
+  const handleViewAllUnread = () => {
+    setAlertsOpen(false)
+    navigate('/alerts', { state: { dashboardStatNav: { kind: 'ALERTS_UNREAD' } } })
+  }
+
+  // PRE-R2D-FIX2 — settings shortcut. Confirmed from source
+  // (SettingsLayout.tsx's SETTINGS_NAV array): the "Alertas" section inside
+  // Configuración is a real, directly-addressable nested route,
+  // `/settings/notifications` (the route segment is still `notifications`
+  // from before this Alerts-popover work; `label: 'Alertas'` is what's
+  // actually shown in the Settings nav — confirmed, not assumed, since
+  // `/settings/alerts` does not exist anywhere in router.tsx). The active
+  // section is derived purely from the URL via NavLink (SettingsLayout's
+  // own comment: "no local activeTab state anywhere... the active section
+  // is derived entirely from the current URL"), so navigating straight to
+  // this path is the complete, correct contract — no extra state/query
+  // needed. Never touches unread state — this is pure navigation.
+  const handleOpenAlertSettings = () => {
+    setAlertsOpen(false)
+    navigate('/settings/notifications')
+  }
 
   // PRE-Y8 (Settings Interaction Policy Refinement §21/§22) — closing the
   // CURRENT session is a CONFIRMED account action: clicking "Cerrar sesión"
@@ -83,21 +259,238 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
       )}
 
       <div className="ml-auto flex items-center gap-2">
-        {/* Alert bell — Y6.3B-FIX1 §8: p-2.5 (10px, all sides) matches
-            --ui-control-padding-y's Classic value exactly, so this is a
-            direct, non-outlier reuse, again via inline style for uniform
-            4-side padding. */}
-        <button
-          onClick={() => navigate('/alerts')}
-          className="relative rounded-lg hover:bg-accent transition-colors"
-          style={{ padding: 'var(--ui-control-padding-y)' }}
-          aria-label="Ver alertas"
-        >
-          <Bell className="w-5 h-5 text-muted-foreground" />
-          {alertCount > 0 && (
-            <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-background animate-pulse-ring" />
-          )}
-        </button>
+        {/* PRE-R2D — Topbar persisted-alerts popover. Built on
+            @radix-ui/react-dropdown-menu's Root/Trigger/Portal/Content
+            (already installed, previously unused anywhere — avoids adding
+            the not-installed @radix-ui/react-popover as a new dependency)
+            purely for its accessible open/close mechanics (keyboard
+            Enter/Space open, Escape close, outside-click/focus-trap,
+            aria-expanded on the trigger) — mirrors how Dialog.tsx already
+            wraps a Radix primitive in this codebase. Content below is
+            fully custom (plain buttons, not DropdownMenu.Item), so each
+            action controls close-on-click explicitly via `alertsOpen`
+            rather than Radix's default "any selection closes the menu"
+            Item behavior — e.g. "Marcar todas como leídas" deliberately
+            does NOT close the popover (§8 — the doctor should see the
+            list/badge update in place), while a row click or the footer
+            link does (§7/§10 — both navigate away). */}
+        <RadixDropdown.Root open={alertsOpen} onOpenChange={setAlertsOpen}>
+          <RadixDropdown.Trigger asChild>
+            {/* Y6.3B-FIX1 §8: p-2.5 (10px, all sides) matches
+                --ui-control-padding-y's Classic value exactly, so this is a
+                direct, non-outlier reuse, again via inline style for
+                uniform 4-side padding. */}
+            <button
+              className="relative rounded-lg hover:bg-accent transition-colors"
+              style={{ padding: 'var(--ui-control-padding-y)' }}
+              aria-label="Ver alertas"
+            >
+              <Bell className="w-5 h-5 text-muted-foreground" />
+              {alertCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-background animate-pulse-ring" />
+              )}
+            </button>
+          </RadixDropdown.Trigger>
+          <RadixDropdown.Portal>
+            {/* PRE-R2D-FIX4 — correcting the ACTUAL positioned node.
+                FIX2/FIX3 both targeted `RadixDropdown.Content` itself and
+                were runtime-DISPROVEN (Angel: FIX3 produced "no visible
+                improvement" at all over FIX2 — the geometry was unchanged).
+                That result only makes sense if Content was never the node
+                responsible for the drift — confirmed by reading the
+                INSTALLED @radix-ui/react-popper source directly (not
+                documentation): `PopperContent` (node_modules/@radix-ui/
+                react-popper/dist/index.mjs) renders an UNDOCUMENTED extra
+                DOM layer around whatever `DropdownMenu.Content` renders:
+
+                  div[data-radix-popper-content-wrapper]
+                    style = ...floatingStyles, transform, minWidth: "max-content"
+                    -> Primitive.div (this is our actual Content, nested one level in)
+
+                `floatingStyles` comes from `useFloating({ strategy: "fixed" })`
+                (@floating-ui/react-dom) and resolves to `position: fixed;
+                top: 0; left: 0; transform: translate(Xpx, Ypx)` — X/Y
+                computed from real `getBoundingClientRect()` reads (already-
+                correct physical pixels), THEN WRITTEN ONTO THIS WRAPPER, not
+                onto the `Primitive.div` our own `className`/`style` props
+                land on. The wrapper is a plain descendant of the zoomed
+                `html` (index.css: zoom at the root deliberately includes
+                "anything portaled to document.body"), so ITS transform is
+                what gets re-multiplied by `--ui-zoom` a second time at
+                paint — identical in kind to the `vh`-under-zoom bug
+                (index.css) and to Sidebar.tsx's CollapsedTooltip (same
+                getBoundingClientRect-under-zoom bug on its own
+                document.body portal, fixed there by dividing the
+                measured value by the current zoom factor before
+                assigning it). Every previous attempt edited the INNER
+                `Primitive.div` two layers below the actual transform —
+                explaining, precisely, why none of it ever visibly moved
+                the popover: the wrapper's own double-scaled transform was
+                never touched.
+
+                Fix: cancel zoom on the WRAPPER, not Content. Radix gives
+                no prop/ref onto that generated wrapper, so it's targeted
+                with a plain CSS rule in index.css, scoped via `:has()` to
+                a marker THIS Content alone carries (`data-alerts-popover`,
+                added below) — never a blind, app-wide
+                `[data-radix-popper-content-wrapper]` rule (§9): see
+                index.css for
+                  [data-radix-popper-content-wrapper]:has([data-alerts-popover])
+                  { zoom: calc(1 / var(--ui-zoom, 1)); }
+                This cancels the wrapper's effective zoom to exactly 1 (at
+                Original, --ui-zoom:1, this is `1/1` — a byte-equivalent
+                no-op, so Original is untouched), so its own `transform`
+                is no longer re-scaled — fixing BOTH X and Y with the same
+                one declaration (§12), since translate's two components are
+                subject to the identical rule.
+
+                Because the wrapper's effective zoom is now 1, Content
+                (its plain child, no zoom of its own previously) would
+                inherit that 1 and stop scaling with Interface Size — so
+                Content now explicitly re-applies `zoom: var(--ui-zoom, 1)`
+                itself (restoring exactly the ambient density every other
+                normal UI element already has, §14). This also means
+                Content is back to being the ONE single visual node again
+                (FIX2/FIX3's extra "inner presentation wrapper" div is
+                removed — no longer needed once the correction lives on
+                the real positioned node instead of being faked via nested
+                opposing zoom here).
+
+                Width: with Content's own effective zoom restored to
+                `--ui-zoom`, a PLAIN rem-based `max-width` (24rem) now
+                scales correctly and automatically with Interface Size —
+                no special treatment needed, exactly like Dialog's own
+                `max-w-lg`. Only the VIEWPORT-relative mobile clamp needs
+                the established `vw`-under-zoom correction already proven
+                in this file (Sidebar's own FIX4: dividing just the `vw`
+                term by `--ui-zoom`, leaving the plain rem margin alone) —
+                reused verbatim here, not re-derived: `calc((100vw /
+                var(--ui-zoom, 1)) - 2rem)`, capped by `max-width: 24rem`,
+                reproducing the original `w-[calc(100vw-2rem)] max-w-sm`
+                pair exactly (and making the redundant `sm:w-96` — already
+                provably a no-op against that same `max-width`, see FIX3 —
+                unnecessary). `align`/`sideOffset`/`collisionPadding` stay
+                unchanged (§10) — still never an alignment-configuration
+                problem, and floating-ui's collision math compares against
+                the real, zoom-unaffected viewport either way (§15). */}
+            <RadixDropdown.Content
+              align="end"
+              sideOffset={8}
+              collisionPadding={12}
+              data-alerts-popover=""
+              className={cn(
+                'z-50 bg-popover rounded-xl border border-border shadow-lg',
+                'overflow-hidden animate-fade-in',
+              )}
+              style={{
+                zoom: 'var(--ui-zoom, 1)',
+                width: 'calc((100vw / var(--ui-zoom, 1)) - 2rem)',
+                maxWidth: '24rem',
+              }}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">Alertas</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {unreadCount > 0 ? `${unreadCount} sin leer` : 'Todo al día'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      disabled={markingAllRead}
+                      className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {markingAllRead ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <CheckCheck className="w-3.5 h-3.5" />
+                      )}
+                      Marcar todas como leídas
+                    </button>
+                  )}
+                  {/* PRE-R2D-FIX2 §3/§4/§5 — settings shortcut. Pure
+                      navigation: never marks anything read, never changes
+                      unread state. Visually subordinate to the primary
+                      mark-all action (icon-only, muted color), with its
+                      own accessible name since it renders no visible
+                      text. */}
+                  <button
+                    onClick={handleOpenAlertSettings}
+                    className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+                    aria-label="Configurar alertas"
+                    title="Configurar alertas"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body — up to 5 most recent unread Alerts, from the
+                  authoritative unread=true&limit=5 query (§4/§5/§6) */}
+              <div className="max-h-80 overflow-y-auto">
+                {previewLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                  </div>
+                ) : previewError ? (
+                  // §14 — a failed request is never shown as "zero unread".
+                  <div className="px-4 py-6 text-center">
+                    <p className="text-sm text-muted-foreground">{previewError}</p>
+                  </div>
+                ) : previewAlerts.length === 0 ? (
+                  <div className="px-4 py-8 text-center">
+                    <Bell className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">No tienes alertas sin leer.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {previewAlerts.map(alert => {
+                      const cfg = SEVERITY_CONFIG[alert.severity]
+                      return (
+                        <button
+                          key={alert.id}
+                          onClick={() => handleAlertRowClick(alert)}
+                          className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-accent/50 transition-colors"
+                        >
+                          <span className={cn('w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0', cfg.bg, cfg.border)}>
+                            <AlertTriangle className={cn('w-3.5 h-3.5', cfg.text)} />
+                          </span>
+                          <span className="flex-1 min-w-0">
+                            <span className={cn('block text-xs font-bold uppercase tracking-wide', cfg.text)}>
+                              {cfg.label}
+                            </span>
+                            <span className="block text-sm font-medium text-foreground mt-0.5 truncate">
+                              {alert.patientName || 'Notificación general'}
+                            </span>
+                            <span className="block text-sm text-muted-foreground mt-0.5 line-clamp-2">
+                              {alert.message}
+                            </span>
+                            <span className="block text-xs text-muted-foreground mt-1">
+                              {timeAgo(alert.createdAt)}
+                            </span>
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer — §10 */}
+              <div className="border-t border-border">
+                <button
+                  onClick={handleViewAllUnread}
+                  className="w-full px-4 py-3 text-sm font-medium text-primary hover:bg-accent transition-colors text-center"
+                >
+                  Ver todas las alertas no leídas
+                </button>
+              </div>
+            </RadixDropdown.Content>
+          </RadixDropdown.Portal>
+        </RadixDropdown.Root>
 
         {/* Divider */}
         <div className="w-px h-6 bg-border mx-1" />

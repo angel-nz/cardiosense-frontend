@@ -216,25 +216,27 @@ export default function AppearanceSettings() {
                 />
 
                 {/* Pre-Y8 visual polish — decorative preview swatch
-                    standing in for the actual page in each theme. */}
+                    standing in for the actual page in each theme.
+                    PRE-R2A §C — LIGHT/DARK now render as exactly ONE solid
+                    representative color each (the old inner w-1/3 strip,
+                    which made every tile show two colors at once, is
+                    removed); SYSTEM is a gradient built from those same two
+                    representative colors (bg-white / bg-slate-900) — not a
+                    third, separately-chosen pair. Still purely decorative
+                    (aria-hidden) and, with the extra inner element gone,
+                    strictly less markup than before — no new
+                    screen-reader-visible content. Nothing here touches
+                    ThemePreference/AppearanceContext/persistence/Interface
+                    Size — this is only the swatch's own markup. */}
                 <div
                   aria-hidden="true"
                   className={cn(
-                    'h-16 w-full rounded-lg border border-border overflow-hidden flex',
+                    'h-16 w-full rounded-lg border border-border overflow-hidden',
                     opt.value === 'light' && 'bg-white',
                     opt.value === 'dark' && 'bg-slate-900',
                     opt.value === 'system' && 'bg-gradient-to-r from-white to-slate-900',
                   )}
-                >
-                  <div
-                    className={cn(
-                      'h-full w-1/3 border-r',
-                      opt.value === 'dark'
-                        ? 'border-slate-700 bg-slate-800'
-                        : 'border-slate-200 bg-slate-100',
-                    )}
-                  />
-                </div>
+                />
 
                 <div className="flex items-center gap-2">
                   <Icon className="w-4 h-4 text-foreground flex-shrink-0" />

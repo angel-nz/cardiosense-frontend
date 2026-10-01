@@ -109,6 +109,37 @@ export function buildCalendarDays(year: number, month: number, todayKey: string)
   return days
 }
 
+// PRE-R2C — the actual event-fetch range for a monthly calendar view.
+// `buildCalendarDays` renders COMPLETE WEEKS, so the visible grid routinely
+// includes trailing days of the previous month and leading days of the next
+// month (e.g. October's grid can show Sep 27-30 and Nov 1-7, depending on
+// which weekday the 1st falls on). `getMonthRange` above only ever covered
+// the strict calendar month ([month-01, nextMonth-01)) — any real event on
+// a visible-but-adjacent-month date was silently never fetched: the cell
+// still rendered and was clickable (buildCalendarDays never hid/disabled
+// it — same as today), but its event bucket was always empty, so selecting
+// it looked exactly like "no events" even when real ones existed.
+//
+// Computed from the EXACT same day list buildCalendarDays itself renders
+// (first visible day → last visible day) — a single source of truth, not a
+// second, independently-maintained leading/trailing calculation that could
+// drift out of sync with what's actually on screen. `todayKey` doesn't
+// affect any dateKey this reads, so an empty string is passed — this never
+// depends on what day "today" is.
+//
+// `to` is the LAST visible calendar date, passed LITERALLY — not "the day
+// after" — matching the existing boundaryField contract (backend/src/lib/
+// timezone.ts::parseBoundary, shared verbatim by both the Patient Timeline
+// and Dashboard Calendar endpoints via TimelineQueryDto): a `to` value is
+// the last calendar day to fully include, and the backend itself resolves
+// it to the correct exclusive instant boundary (start of the following
+// business day) — no off-by-one adjustment belongs on this side, and no
+// backend change is needed to support this wider range.
+export function getVisibleMonthRange(year: number, month: number): { from: string; to: string } {
+  const days = buildCalendarDays(year, month, '')
+  return { from: days[0].dateKey, to: days[days.length - 1].dateKey }
+}
+
 // Groups events by their business-timezone calendar day, preserving the
 // order they arrived in within each day (the backend already returns a
 // globally deterministic order — eventDate ASC with a CLINICAL_RECORD <

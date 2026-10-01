@@ -8,7 +8,25 @@ import { useAuth } from '@/context/AuthContext'
 import { useAvatar } from '@/context/AvatarContext'
 import { useActionNotify } from '@/context/ToastContext'
 import { avatarService } from '@/services/avatarService'
-import { fullName, userIdentifierLabel } from '@/lib/utils'
+import { fullName } from '@/lib/utils'
+import { formatInternationalDisplay } from '@/lib/phone'
+
+// PRE-R2A §A — neutral empty-state label for the presentation card's
+// Especialidad/Correo/Teléfono rows, matching the exact string this
+// codebase already uses elsewhere for "no value set" (ProfileSettings'
+// email placeholder, RegisterPage's placeholders) — not a new convention.
+//
+// PRE-R2B-FIX1 §2/§3 — root cause of the Presentation Card regression: this
+// constant had been changed to '' (empty string), so a missing
+// Especialidad/Correo/Teléfono rendered as a blank line instead of the
+// PRE-R2A-approved neutral text. Restored to the approved, non-empty
+// "No registrado" — the authoritative contract this FIX block restates
+// verbatim. Every other PRE-R2A-approved detail in this card (order:
+// Especialidad, Nombre completo, Correo, Teléfono completo; one complete
+// formatted phone value via formatInternationalDisplay; no collapsing
+// email/phone into a single fallback identifier) was already correct and
+// is left untouched.
+const NOT_REGISTERED = 'No registrado'
 
 // Y3.1B §31 — real avatar section for Profile, replacing nothing (Y3.1A's
 // header comment explicitly excluded avatar upload; that exclusion is
@@ -272,16 +290,6 @@ export function AvatarUploadSection() {
           )}
 
           <div className="flex items-center ui-element-gap flex-wrap">
-            {/* PRE-Y8 (§1/§3/§10) — the ONE way to reach avatar management
-                now: a real <button>, not a clickable div, wrapping the
-                existing UserAvatar visual unchanged (same 'lg' size/shape/
-                cropping/fallback/dark-mode support as before — §4). No
-                `alt` is passed here (UserAvatar defaults to ''), so its
-                inner <img>/initials render as decorative and the button's
-                own aria-label is the only thing a screen reader announces
-                — no redundant double-naming (§28). The optional hover/
-                focus camera overlay (§30) is decorative and aria-hidden
-                for the same reason. */}
             <button
               type="button"
               onClick={handleOpenManagement}
@@ -297,18 +305,19 @@ export function AvatarUploadSection() {
               </span>
             </button>
 
-            {/* Pre-Y8 visual polish — identity block (name + email) beside
-                the avatar, matching the reference layout. Sourced from the
-                real authenticated user already held by AuthContext.
-                Untouched by this block (§2 — "do not redesign the rest of
-                the card"). */}
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground truncate">
-                {fullName(authUser.firstName, authUser.lastName)}
+            <div className="min-w-0 flex-1">
+              <p className="ui-text-meta text-muted-foreground truncate">
+                {authUser.medico?.especialidad || NOT_REGISTERED}
               </p>
-              {/* Z6-R1 — a phone-only doctor has no email; falls back to
-                  phone rather than rendering nothing/"null". */}
-              <p className="ui-text-meta text-muted-foreground truncate">{userIdentifierLabel(authUser)}</p>
+              <p className="text-sm font-semibold text-foreground truncate">
+                Dr. {fullName(authUser.firstName, authUser.lastName)}
+              </p>
+              <p className="ui-text-meta text-muted-foreground truncate">
+                {authUser.email || NOT_REGISTERED}
+              </p>
+              <p className="ui-text-meta text-muted-foreground truncate">
+                {authUser.medico?.phone ? formatInternationalDisplay(authUser.medico.phone) : NOT_REGISTERED}
+              </p>
             </div>
           </div>
         </div>

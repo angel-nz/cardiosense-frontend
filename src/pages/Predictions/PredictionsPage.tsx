@@ -267,8 +267,23 @@ function GlobalPredictionHistory() {
         </p>
       </div>
 
-      {/* U6.2 — filter controls */}
-      <div className="bg-card rounded-xl border border-border p-4 space-y-3">
+      {/* U6.2 — filter controls. PRE-R2E §8 — sticky: this is the Predicciones
+          search+filters toolbar the spec refers to (search/from/to/risk
+          level/"Limpiar filtros"), rendered only in this no-:patientId
+          global history view — the separate per-patient /predictions/:id
+          view below (own form + tabs, no search/filter toolbar) is
+          untouched. Already has its own bg-card/border/padding, so only
+          the sticky offset/z-index (.ui-sticky-toolbar) is added — its
+          existing full `border` + `bg-card` already satisfy the "stays
+          readable while scrolling" rule (PRE-R2E §14) with no further
+          visual change needed.
+          PRE-R2E-FIX3 — `bg-card` → `bg-card/80`, matching Topbar's
+          translucent treatment (same alpha, same token family as this
+          card's own existing color); blur centralized in
+          `.ui-sticky-toolbar`. This remains the one floating-card-styled
+          region among the six (full `border`, not just `border-b`) — that
+          pre-existing shape is untouched, only its opacity changes. */}
+      <div className="ui-sticky-toolbar bg-card/80 rounded-xl border border-border p-4 space-y-3">
         <div className="relative">
           <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
           <input

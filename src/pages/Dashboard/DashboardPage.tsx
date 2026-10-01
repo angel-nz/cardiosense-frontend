@@ -217,10 +217,58 @@ export default function DashboardPage() {
     // Y6.3B — `ui-section-stack` replaces `space-y-6` (Classic 1.5rem/24px,
     // exact match via the same sibling-margin mechanism Tailwind's own
     // `space-y-*` uses, §45).
-    <div className="ui-section-stack">
+    //
+    // PRE-R2E-FIX2 — `marginTop` here is this page's OWN root div, never a
+    // shared AppLayout/Outlet-wrapper value: AppLayout's Outlet wrapper
+    // (`<div className="max-w-[1600px] ... style={{padding: 'var(--ui-
+    // section-gap)'}}">`) applies the SAME `--ui-section-gap` as top
+    // padding to every route, which is correct/wanted everywhere else but
+    // reads as an oversized gap specifically below the Topbar on Dashboard,
+    // now that the sticky header sits immediately under it. Canceling it
+    // with the exact same token, negated, lands this page's content flush
+    // with the Outlet wrapper's padding box (i.e. flush with Topbar's own
+    // bottom edge) with mathematical precision — not an eyeballed pixel
+    // guess — and does so only for THIS page's own root div, leaving
+    // AppLayout.tsx and every other route's spacing byte-identical to
+    // before. This div is a plain, non-positioned block (not itself
+    // `position: sticky`), so this margin only ever affects where the page
+    // starts in NORMAL flow — it has no interaction with the sticky
+    // header's own `top: var(--topbar-height)` stuck offset below, which
+    // is computed against the viewport, not against this ancestor's
+    // position (verified: once truly stuck, the header always settles at
+    // exactly `--topbar-height`, regardless of where this div sits).
+    <div className="ui-section-stack" style={{ marginTop: 'calc(-1 * var(--ui-section-gap))' }}>
 
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between">
+      {/* ── Header (sticky) ───────────────────────────────────────────────
+          PRE-R2E-FIX2 — supersedes PRE-R2E-FIX1/FIX1A: Angel's final
+          product decision restores the ORIGINAL PRE-R2E design, where the
+          greeting and "Nuevo paciente" stick TOGETHER as one coherent row
+          (greeting left, action right) — FIX1's split-them-apart structure
+          (bare `<h1>` in normal flow + a separate button-only sticky row)
+          is fully reverted; this is byte-identical to PRE-R2E's own
+          original header markup/classes. See .ui-sticky-toolbar (index.css)
+          for the offset/z-index rationale (`top: var(--topbar-height)`,
+          `z-index: 10`, scroll container = the window itself, Interface-
+          Size-safe with no per-size branching) — all unchanged.
+          Background/border/padding give it a readable surface over
+          scrolling content, same as PRE-R2E's other five regions; the
+          vertical padding reuses the existing `--ui-secondary-control-
+          padding-y` token rather than a new magic number, and is the ONLY
+          remaining visible gap between Topbar and this header's own text
+          once stuck (the root-div margin above only ever affects the
+          AT-REST/page-top gap, never this one).
+
+          PRE-R2E-FIX3 — `bg-background` → `bg-background/80`, matching
+          Topbar's own exact translucent treatment byte-for-byte (`bg-
+          background/80 backdrop-blur-md`); the blur itself is centralized
+          in `.ui-sticky-toolbar` (index.css) rather than repeated here.
+          Purely visual — no change to this header's structure, the
+          PRE-R2E-FIX2 combined-row layout, or the FIX2 Topbar-gap fix
+          above. */}
+      <div
+        className="ui-sticky-toolbar flex items-start justify-between bg-background/80 border-b border-border"
+        style={{ paddingTop: 'var(--ui-secondary-control-padding-y)', paddingBottom: 'var(--ui-secondary-control-padding-y)' }}
+      >
         <div>
           <h1 className="text-2xl font-bold text-foreground">
             {greeting}, Dr. {user?.firstName ?? 'Doctor'}

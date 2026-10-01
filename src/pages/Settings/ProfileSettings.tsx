@@ -21,6 +21,13 @@ import type { ProfileMyUpdateRequest, User } from '@/types'
 // component should import implementation helpers from the other).
 import { CountryPhoneInput, type PhoneInputState } from '@/components/phone/CountryPhoneInput'
 import { resolveEditPhone } from '@/lib/phoneInputState'
+// PRE-R2A §B — read-mode display helper: a single, complete, human-readable
+// phone string (e.g. "+52 33 1234 5678"), never a fabricated reformat of an
+// unparseable legacy value (returns the raw stored string unchanged in that
+// case — see lib/phone.ts). Used ONLY for the non-editing presentation
+// below; edit mode keeps using CountryPhoneInput's own country-selector +
+// national-number architecture untouched.
+import { formatInternationalDisplay } from '@/lib/phone'
 
 // Bloque Y3 — real, end-to-end Profile section. Replaces the Y2 structural
 // placeholder. Editable: firstName/lastName (all roles), cedulaProfesional/
@@ -581,6 +588,7 @@ export default function ProfileSettings() {
                   <input
                     value={draft.especialidad}
                     onChange={set('especialidad')}
+                  placeholder="No registrada"
                     readOnly={!isEditing}
                     className={inputClass(undefined, !isEditing)}
                   />
@@ -590,6 +598,7 @@ export default function ProfileSettings() {
                   <input
                     value={draft.cedulaProfesional}
                     onChange={set('cedulaProfesional')}
+                  placeholder="No registrada"
                     readOnly={!isEditing}
                     className={inputClass(!!fieldErrors.cedulaProfesional, !isEditing)}
                   />
@@ -601,10 +610,11 @@ export default function ProfileSettings() {
 
               {/* Row 3 (medico-only): Hospital — full width. */}
               <div>
-                <FieldLabel icon={Building2}>Hospital</FieldLabel>
+                <FieldLabel icon={Building2}>Hospital/Institución</FieldLabel>
                 <input
                   value={draft.hospital}
                   onChange={set('hospital')}
+                  placeholder="No registrado"
                   readOnly={!isEditing}
                   className={inputClass(undefined, !isEditing)}
                 />
@@ -627,14 +637,22 @@ export default function ProfileSettings() {
 
               <div>
                 <FieldLabel icon={Phone}>Teléfono</FieldLabel>
-                <CountryPhoneInput
-                  key={phoneResetNonce}
-                  value={phoneValueForInput}
-                  onChange={state => { setPhoneState(state); if (phoneError) setPhoneError(null); setIdentifierError(null) }}
-                  label=""
-                  disabled={!isEditing}
-                  error={phoneError ?? undefined}
-                />
+                {isEditing ? (
+                  <CountryPhoneInput
+                    key={phoneResetNonce}
+                    value={phoneValueForInput}
+                    onChange={state => { setPhoneState(state); if (phoneError) setPhoneError(null); setIdentifierError(null) }}
+                    label=""
+                    error={phoneError ?? undefined}
+                  />
+                ) : (
+                  <input
+                    value={originalPhone ? formatInternationalDisplay(originalPhone) : ''}
+                    placeholder="No registrado"
+                    readOnly
+                    className={inputClass(undefined, true)}
+                  />
+                )}
                 {identifierError && (
                   <p className="text-xs text-red-600 dark:text-red-400 mt-1">{identifierError}</p>
                 )}
