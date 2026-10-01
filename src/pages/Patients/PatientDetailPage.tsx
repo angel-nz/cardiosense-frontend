@@ -758,11 +758,6 @@ export default function PatientDetailPage() {
             {patient.latestRisk && (
               <RiskBadge level={patient.latestRisk} score={patient.latestScore} showScore size="md" />
             )}
-            {/* Z8 §25 — clear "Inactivo" state/badge for INACTIVE_VISIBLE.
-                This page is only ever reachable at all for ACTIVE or
-                INACTIVE_VISIBLE (a hidden patient 404s at the fetch above —
-                see §25/§26), so !patient.isActive here always means
-                INACTIVE_VISIBLE, never INACTIVE_HIDDEN. */}
             {!patient.isActive && (
               <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium bg-muted text-muted-foreground border border-border">
                 <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
@@ -775,34 +770,6 @@ export default function PatientDetailPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
-          {/* U3.2 — action order: Nuevo registro, Nueva predicción, Editar
-              información (repositioned only — its inline-edit behavior is
-              unchanged; U4 will replace it with the full personal-info
-              modal). flex-wrap keeps this from overflowing horizontally on
-              narrow viewports.
-              Z8 §25/§34 — Nuevo registro/Nueva predicción are ONLY rendered
-              for an ACTIVE patient: an INACTIVE_VISIBLE patient may not
-              receive new clinical activity, and the backend enforces this
-              authoritatively regardless (PatientInactiveError) — this is
-              the frontend half, hiding the actions rather than merely
-              disabling them, with the explanatory banner below replacing
-              any inline disabled-state tooltip. */}
-          {/* Z8-FIX2 §8/§9/§10/§11 — top-right is now split strictly by
-              lifecycle state instead of always showing Edit and branching
-              only the lifecycle button(s):
-              ACTIVE   → Nuevo registro, Nueva predicción, Editar información
-                         personal. Desactivar REMOVED from here — it now
-                         lives only in the dedicated lifecycle section below
-                         (§9/§14).
-              INACTIVE_VISIBLE → Reactivar, Ocultar only. Editar información
-                         personal is deliberately NOT shown here (§10) — see
-                         the matching change to the Información personal
-                         card's own secondary edit entry point further down,
-                         which is hidden for the same reason (one action,
-                         consistently unavailable while inactive, not merely
-                         relocated).
-              Terminology stays exactly Desactivar/Reactivar/Ocultar/Mostrar
-              (§17) — never Eliminar/Borrar. */}
           {patient.isActive ? (
             <>
               <button
@@ -831,17 +798,17 @@ export default function PatientDetailPage() {
               <button
                 onClick={handleReactivate}
                 disabled={statusBusy}
-                className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-border hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-teal-700 dark:border-teal-800/60 text-teal-700 dark:text-teal-300 bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/15 dark:hover:bg-teal-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <RotateCcw className="w-4 h-4 text-muted-foreground" />
+                <RotateCcw className="w-4 h-4 text-teal-700 dark:text-teal-300" />
                 Reactivar
               </button>
               <button
                 onClick={() => setConfirmHideOpen(true)}
                 disabled={statusBusy}
-                className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-border hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-amber-700 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/15 dark:hover:bg-amber-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <EyeOff className="w-4 h-4 text-muted-foreground" />
+                <EyeOff className="w-4 h-4 text-amber-700 dark:text-amber-300" />
                 Ocultar
               </button>
             </>
@@ -1019,24 +986,6 @@ export default function PatientDetailPage() {
                 <User className="w-4 h-4 text-muted-foreground" />
                 Información personal
               </h3>
-              {/* W6 — second entry point into the SAME edit workflow as the
-                  action-bar's "Editar información" button above (identical
-                  onClick: setEditPatientModalOpen(true), the one and only
-                  EditPatientModal-open state — no new state, no new handler,
-                  no second modal instance). Visually secondary (smaller,
-                  borderless, muted) so it doesn't compete with the action
-                  bar's control; icon-only with an aria-label/title so it
-                  stays a fixed-size, usable hit target at narrow widths
-                  without ever wrapping the header.
-                  Z8-FIX2 §10 — gated behind patient.isActive for the same
-                  reason the action-bar's own Edit button is now hidden
-                  while inactive: this is the identical edit action through
-                  a second door, and the brief's requirement is that
-                  PatientDetail "no longer expose[s] the Edit personal
-                  information action while inactive" — not merely that its
-                  primary button move. Leaving this secondary entry point
-                  visible would silently reopen the same action the
-                  top-right change just closed. */}
               {patient.isActive && (
                 <button
                   type="button"
@@ -1050,11 +999,6 @@ export default function PatientDetailPage() {
               )}
             </div>
 
-            {/* U4.2A — editing now happens exclusively via EditPatientModal
-                (opened from the header action bar) — the old inline
-                editing branch (editing/editForm/editSaving/editError/
-                saveEdit) was removed entirely, not just hidden. This is
-                always the read-only display. */}
             <div>
               {patient.curp && (
                 <InfoRow label="CURP" value={patient.curp} />
@@ -1062,15 +1006,10 @@ export default function PatientDetailPage() {
               <InfoRow label="Fecha de nacimiento" value={formatDate(patient.birthDate)} />
               <InfoRow label="Edad" value={age} unit="años" />
               <InfoRow label="Sexo" value={sexLabel(patient.sex)} />
+              {patient.email && (
+                <InfoRow label="Email" value={patient.email} />
+              )}
               {patient.phone && (() => {
-                // V6.5 — display is intentionally more permissive than the
-                // write contract (§5): a parseable value (canonical OR
-                // legacy-but-safely-parseable) gets human-readable
-                // formatting AND a real tel: link; an ambiguous/unparseable
-                // legacy value is shown verbatim as plain, non-actionable
-                // text — never given a fabricated tel: target (§3/§8). No
-                // parsing logic here — getPhoneDisplay (lib/phone.ts,
-                // reused from V6.2) is the single source of that decision.
                 const { text, telHref } = getPhoneDisplay(patient.phone)
                 return (
                   <div className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
@@ -1089,21 +1028,6 @@ export default function PatientDetailPage() {
                   </div>
                 )
               })()}
-              {/* Z6 — same pattern as CURP/phone immediately above: the row
-                  is only rendered when a value exists (nothing to show as
-                  a fabricated "No registrado" row — this codebase's
-                  existing convention for these optional contact fields is
-                  to omit the row entirely, never render undefined/null/
-                  blank). */}
-              {patient.email && (
-                <InfoRow label="Correo electrónico" value={patient.email} />
-              )}
-              {/* W7 — "Registrado" is a date-only label/value row (no "el"/
-                  "del" preposition to get wrong), so the relative result's
-                  `label` alone ("Hoy"/"Ayer"/absolute) is exactly what this
-                  row already displayed before W7. birthDate above and the
-                  Risk Evolution X-axis below intentionally stay absolute
-                  (§4 — date of birth, chart axis). */}
               <InfoRow label="Registrado" value={formatRelativeBusinessDate(patient.createdAt).label} />
             </div>
           </div>
@@ -1488,9 +1412,9 @@ export default function PatientDetailPage() {
                 <button
                   onClick={() => setConfirmDeactivateOpen(true)}
                   disabled={statusBusy}
-                  className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-border hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-red-700 dark:border-red-800/60 text-red-700 dark:text-red-300 bg-red-50 hover:bg-red-100 dark:bg-red-950/15 dark:hover:bg-red-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <PowerOff className="w-4 h-4 text-muted-foreground" />
+                  <PowerOff className="w-4 h-4 text-muted-foreground text-red-700 dark:text-red-300" />
                   Desactivar
                 </button>
               </>
@@ -1499,24 +1423,24 @@ export default function PatientDetailPage() {
                 <p className="text-sm text-muted-foreground mb-4">
                   Este paciente está inactivo: su información y su historial clínico se conservan, pero no puede
                   recibir nueva actividad clínica. Reactívalo para que vuelva a estar disponible, u ocúltalo para
-                  retirarlo de las vistas normales de CardioSense — podrás volver a mostrarlo desde
+                  retirarlo de las vistas normales de CardioSense. Podrás volver a mostrarlo desde
                   Configuración → Pacientes.
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={handleReactivate}
                     disabled={statusBusy}
-                    className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-border hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-teal-700 dark:border-teal-800/60 text-teal-700 dark:text-teal-300 bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/15 dark:hover:bg-teal-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    <RotateCcw className="w-4 h-4 text-muted-foreground" />
+                    <RotateCcw className="w-4 h-4 text-muted-foreground text-teal-700 dark:text-teal-300" />
                     Reactivar
                   </button>
                   <button
                     onClick={() => setConfirmHideOpen(true)}
                     disabled={statusBusy}
-                    className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-border hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-amber-700 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/15 dark:hover:bg-amber-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    <EyeOff className="w-4 h-4 text-muted-foreground" />
+                    <EyeOff className="w-4 h-4 text-muted-foreground text-amber-700 dark:text-amber-300" />
                     Ocultar
                   </button>
                 </div>

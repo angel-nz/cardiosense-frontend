@@ -58,11 +58,18 @@ export interface UpdateUserRequest {
 
 // GET/PATCH /api/users/me/profile (Y3) — the Settings self-service Profile
 // contract. `null` on any professional field clears it; a field omitted
-// from a PATCH payload is left unchanged server-side. email/role/id are
-// never writable through this contract (read-only/backend-authoritative).
+// from a PATCH payload is left unchanged server-side. role/id are never
+// writable through this contract (backend-authoritative).
+// PRE-R — `email` is new: previously read-only (Y3 §2/§36), it is now
+// editable/clearable through this same contract for every role, subject to
+// the backend's final-state "email != null OR phone != null" invariant
+// (user.routes.ts's PATCH /me/profile) — omitted leaves it unchanged, null
+// clears it, a string must be a normalized, valid email
+// (NullableCanonicalEmailField, backend-enforced).
 export interface ProfileMyUpdateRequest {
   firstName?: string
   lastName?: string
+  email?: string | null
   cedulaProfesional?: string | null
   especialidad?: string | null
   hospital?: string | null

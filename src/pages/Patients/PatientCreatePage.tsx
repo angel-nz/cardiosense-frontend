@@ -256,7 +256,6 @@ export default function PatientCreatePage() {
               type="email"
               value={form.email}
               onChange={set('email')}
-              placeholder="paciente@ejemplo.com"
               className={cn(inputClass, errors.email && 'border-red-400 dark:border-red-500/70 focus:border-red-400 dark:focus:border-red-500/70')}
             />
           </FormField>

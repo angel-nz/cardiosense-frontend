@@ -24,21 +24,27 @@ import { resolveEditPhone } from '@/lib/phoneInputState'
 
 // Bloque Y3 — real, end-to-end Profile section. Replaces the Y2 structural
 // placeholder. Editable: firstName/lastName (all roles), cedulaProfesional/
-// especialidad/hospital (MEDICO only). Read-only: email (Y3 §2/§36 — email
-// editing is explicitly out of scope), role, id. No phone field, no
-// password confirmation for profile changes (still explicitly excluded by
-// the Y3 contract). Avatar upload — excluded by Y3's original contract — is
-// implemented in Y3.1B as its own independent section
-// (AvatarUploadSection, rendered below) with its own immediate-action
-// lifecycle, deliberately kept OUT of this component's draft/snapshot/
-// dirty/useBlocker machinery (Y3.1B §32).
+// especialidad/hospital/phone (MEDICO only). No password confirmation for
+// profile changes (still explicitly excluded by the Y3 contract). Avatar
+// upload — excluded by Y3's original contract — is implemented in Y3.1B as
+// its own independent section (AvatarUploadSection, rendered below) with
+// its own immediate-action lifecycle, deliberately kept OUT of this
+// component's draft/snapshot/dirty/useBlocker machinery (Y3.1B §32).
+//
+// PRE-R — email is no longer read-only (Y3 §2/§36 is superseded): it is now
+// part of the editable draft, for every role, subject to the backend's
+// final-state "email != null OR phone != null" invariant. See `validate`/
+// `handleSubmit` below for the client-side mirror of that rule (defense in
+// depth only — the backend remains authoritative, PRE-R §M).
 
-// The editable draft shape. `email` is deliberately not part of it — it is
-// rendered straight from the authenticated user and never enters the
-// PATCH payload.
+// The editable draft shape. `email` joins it here (PRE-R) — a plain string,
+// same convention as cedulaProfesional/especialidad/hospital below: '' on
+// the wire means "no value", trimmed-and-nulled on save, never a separate
+// stateful input machinery the way `phone` needs (CountryPhoneInput).
 interface ProfileDraft {
   firstName: string
   lastName: string
+  email: string
   cedulaProfesional: string
   especialidad: string
   hospital: string
@@ -46,10 +52,18 @@ interface ProfileDraft {
 
 type FieldErrors = Partial<Record<keyof ProfileDraft, string>>
 
-function toDraft(profile: Pick<ProfileFields, 'firstName' | 'lastName' | 'medico'>): ProfileDraft {
+// PRE-R — same inline format check RegisterPage.tsx already uses for this
+// same field (client-side-only convenience; the backend's
+// NullableCanonicalEmailField remains the real authority) — duplicated per
+// this codebase's existing convention of a small per-page email regex
+// rather than a shared import (see RegisterPage.tsx's own copy).
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function toDraft(profile: Pick<ProfileFields, 'firstName' | 'lastName' | 'email' | 'medico'>): ProfileDraft {
   return {
     firstName: profile.firstName,
     lastName: profile.lastName,
+    email: profile.email ?? '',
     cedulaProfesional: profile.medico?.cedulaProfesional ?? '',
     especialidad: profile.medico?.especialidad ?? '',
     hospital: profile.medico?.hospital ?? '',
@@ -59,6 +73,7 @@ function toDraft(profile: Pick<ProfileFields, 'firstName' | 'lastName' | 'medico
 function draftsEqual(a: ProfileDraft, b: ProfileDraft): boolean {
   return a.firstName === b.firstName
     && a.lastName === b.lastName
+    && a.email === b.email
     && a.cedulaProfesional === b.cedulaProfesional
     && a.especialidad === b.especialidad
     && a.hospital === b.hospital
@@ -108,15 +123,15 @@ export default function ProfileSettings() {
   // professional fields only render/save for MEDICO — tracked separately.
   const [role, setRole] = useState<User['role'] | null>(null)
 
-  // Y3-FIX1 — email is part of the authoritative loaded Profile snapshot,
-  // sourced from GET/PATCH /users/me/profile, NOT from AuthContext. The old
-  // Y3 code rendered `authUser?.email` here, which violated the "GET
-  // /me/profile is authoritative for this form" contract. AuthContext may
-  // still hold app-wide identity for the rest of the app, but it is no
-  // longer read anywhere in this component. `null` (not '') distinguishes
-  // "not loaded yet" from "loaded and genuinely empty" — though the latter
-  // never actually happens for email.
-  const [email, setEmail] = useState<string | null>(null)
+  // PRE-R — email no longer needs its own separate "authoritative original"
+  // state (unlike `phone` below, which genuinely does — CountryPhoneInput
+  // owns a stateful country/national-input machine that must be told the
+  // persisted value independently of the plain draft). Email is a plain
+  // string field, exactly like firstName/lastName: `snapshot.email`/
+  // `draft.email` (below) already ARE its authoritative-value and
+  // editable-value tracking — Y3-FIX1's old separate `email` state (sourced
+  // from GET/PATCH /users/me/profile, never AuthContext) is superseded by
+  // that, not replaced by an equivalent.
 
   const [snapshot, setSnapshot] = useState<ProfileDraft | null>(null)
   const [draft, setDraft] = useState<ProfileDraft | null>(null)
@@ -134,6 +149,11 @@ export default function ProfileSettings() {
   const [phoneValueForInput, setPhoneValueForInput] = useState<string | null>(null)
   const [phoneState, setPhoneState] = useState<PhoneInputState | null>(null)
   const [phoneError, setPhoneError] = useState<string | null>(null)
+  // PRE-R §G/§M — the "at least one of email/phone" GROUP requirement,
+  // shown separately from each field's own format error (fieldErrors.email/
+  // phoneError), same split RegisterPage.tsx already uses for its own
+  // identical group rule.
+  const [identifierError, setIdentifierError] = useState<string | null>(null)
   // Forces a fresh CountryPhoneInput mount whenever the authoritative phone
   // value changes underneath it (load, cancel-edit, successful save) — same
   // "explicit reset identity" strategy EditPatientModal uses (V6.4 §12).
@@ -178,14 +198,12 @@ export default function ProfileSettings() {
         setSnapshot(d)
         setDraft(d)
         setRole(profile.role)
-        // Authoritative: this is the ONLY place `email` is ever set from a
-        // successful load. On failure (below), it is deliberately left
-        // untouched (still `null` on first mount) — a cached AuthContext
-        // value never substitutes for a real, successful GET response
-        // (Y3-FIX1 §1/§FIX1-F04).
-        setEmail(profile.email)
+        // PRE-R — email's authoritative load value is `d.email` (via
+        // `toDraft`/`setSnapshot`/`setDraft` above), same as every other
+        // plain-string field — no separate state to set here any more (see
+        // this component's own top-of-state comment on why).
         // Z6 — authoritative phone snapshot, same "only ever set from a
-        // successful load" rule as `email` immediately above.
+        // successful load" rule email itself used to need separately.
         const loadedPhone = profile.medico?.phone ?? null
         setOriginalPhone(loadedPhone)
         setPhoneValueForInput(loadedPhone)
@@ -205,12 +223,23 @@ export default function ProfileSettings() {
     const value = e.target.value
     setDraft(d => (d ? { ...d, [field]: value } : d))
     setFieldErrors(prev => ({ ...prev, [field]: undefined }))
+    // PRE-R — any edit to the draft (email included) can change whether the
+    // group "at least one identifier" rule would still fail, so the stale
+    // message is cleared here exactly like every other field-level error.
+    setIdentifierError(null)
   }
 
   const validate = (d: ProfileDraft): FieldErrors => {
     const errs: FieldErrors = {}
     if (!d.firstName.trim()) errs.firstName = 'Requerido'
     if (!d.lastName.trim()) errs.lastName = 'Requerido'
+    // PRE-R — format-only check, mirrors RegisterPage.tsx's own inline
+    // email validation. An empty value is fine on its own (clearing email
+    // is allowed, provided phone covers the account) — that group rule is
+    // checked separately in handleSubmit, after this format check passes.
+    if (d.email.trim() && !EMAIL_REGEX.test(d.email.trim())) {
+      errs.email = 'Correo electrónico no válido'
+    }
     return errs
   }
 
@@ -249,6 +278,12 @@ export default function ProfileSettings() {
     const errs = validate(draft)
     setFieldErrors(errs)
     if (Object.keys(errs).length > 0) return
+    setIdentifierError(null)
+
+    // PRE-R §G — the prospective (post-save) email, same resolution rule
+    // every other plain-string field here already uses: blank → null,
+    // non-blank → the trimmed value.
+    const prospectiveEmail = draft.email.trim() || null
 
     // Z6 — an actively invalid/incomplete phone blocks save entirely,
     // before the confirmation dialog ever opens — mirrors PatientCreatePage/
@@ -259,16 +294,26 @@ export default function ProfileSettings() {
         setPhoneError('Número de teléfono incompleto o no válido para el país seleccionado.')
         return
       }
-      // Z6-R1 §2/§17 — lockout protection, frontend-side defense in depth:
-      // the backend (PATCH /me/profile) is authoritative and rejects this
-      // exact case regardless (PhoneLastIdentifierError, caught below), but
-      // blocking it here too avoids a round-trip and a confirmation dialog
-      // over a save that can never succeed. `email === null` means phone is
-      // this account's ONLY login identifier right now.
-      if (email === null && resolution.phone === null) {
-        setPhoneError('No puedes eliminar tu teléfono: es tu único método de inicio de sesión. Agrega un correo electrónico primero.')
+      // PRE-R §G — final-state identity invariant, frontend-side defense in
+      // depth (mirrors the backend's LastLoginIdentifierError check
+      // exactly): block only when BOTH the prospective email AND the
+      // prospective phone would be null after this save — never when only
+      // one is empty, and never by disabling either field ahead of time
+      // (PRE-R §M — "do not disable a field merely because it is currently
+      // the only identifier if the user is simultaneously providing the
+      // other identifier in the same save").
+      if (prospectiveEmail === null && resolution.phone === null) {
+        setIdentifierError('Debes conservar al menos un correo electrónico o un número de teléfono para acceder a tu cuenta.')
         return
       }
+    } else if (prospectiveEmail === null) {
+      // A non-MEDICO account has no phone fallback at all (no Medico row),
+      // so for that role email can never be cleared — same pre-existing
+      // contract RegisterDto already enforces at registration for non-
+      // MEDICO accounts (auth.dto.ts), just now reachable from this route
+      // too since email only became editable here under PRE-R.
+      setIdentifierError('Debes conservar al menos un correo electrónico para acceder a tu cuenta.')
+      return
     }
 
     setConfirmOpen(true)
@@ -285,6 +330,10 @@ export default function ProfileSettings() {
       const payload: ProfileMyUpdateRequest = {
         firstName: draft.firstName.trim(),
         lastName: draft.lastName.trim(),
+        // PRE-R — always resent, whether touched or not, same "always
+        // resend" convention this form already uses for cedulaProfesional/
+        // especialidad/hospital below (not an omit-if-unchanged field).
+        email: draft.email.trim() || null,
       }
       // especialidad/hospital/cedulaProfesional only apply to MEDICO
       // accounts server-side — sending them for a non-MEDICO role would be
@@ -309,16 +358,16 @@ export default function ProfileSettings() {
       setSnapshot(savedDraft)
       setDraft(savedDraft)
       setFieldErrors({})
+      setIdentifierError(null)
       // Z3 — operation-result feedback ("Cambios guardados.") now goes
       // through the global action-notification toast instead of an inline
       // page banner.
       notifySuccess('Cambios guardados.')
       // Y3-FIX1 — the PATCH response is authoritative for this component's
-      // own loaded state too, same as the initial GET. Email is read-only
-      // and this contract never changes it, but re-deriving it from the
-      // response (rather than leaving the old value alone) keeps this
-      // component's state honest about where it came from.
-      setEmail(updated.email)
+      // own loaded state too, same as the initial GET. PRE-R — email's
+      // canonical, server-returned value (never assumed from the request —
+      // PRE-R §K) is already captured above via `savedDraft` (`toDraft(updated)`
+      // → `setSnapshot`/`setDraft`), same as firstName/lastName.
       // Z6 — same authoritative-response reconciliation for phone: the
       // PATCH response becomes the new snapshot, CountryPhoneInput is
       // forced to remount from it (phoneResetNonce), and phoneState resets
@@ -360,14 +409,23 @@ export default function ProfileSettings() {
       setConfirmOpen(false)
       if (isAxiosError(err) && err.response?.data?.code === 'DUPLICATE_CEDULA') {
         setFieldErrors(prev => ({ ...prev, cedulaProfesional: err.response!.data.error as string }))
-      } else if (isAxiosError(err) && err.response?.data?.code === 'PHONE_REQUIRED_FOR_LOGIN') {
-        // Z6-R1 §2/§17 — the backend's authoritative lockout rejection
-        // (PhoneLastIdentifierError). The frontend guard in handleSubmit
-        // above should normally catch this first, but the backend remains
-        // the real authority — e.g. if `email` became stale between load
-        // and save. Routed to phoneError, same as every other phone-field
-        // business error.
-        setPhoneError(err.response!.data.error as string)
+      } else if (isAxiosError(err) && err.response?.data?.code === 'DUPLICATE_EMAIL') {
+        // PRE-R §J — another account already owns this email
+        // (DuplicateEmailError, 409). Same field-specific routing as
+        // DUPLICATE_CEDULA above — reads next to the field that actually
+        // caused it. Never identifies the other account; the backend
+        // message itself doesn't either.
+        setFieldErrors(prev => ({ ...prev, email: err.response!.data.error as string }))
+      } else if (isAxiosError(err) && err.response?.data?.code === 'LAST_LOGIN_IDENTIFIER_REQUIRED') {
+        // PRE-R §G — the backend's authoritative final-state-identity
+        // rejection (LastLoginIdentifierError, replacing the old Z6-R1
+        // PhoneLastIdentifierError/PHONE_REQUIRED_FOR_LOGIN). The frontend
+        // guard in handleSubmit above should normally catch this first, but
+        // the backend remains the real authority — e.g. if email/phone
+        // became stale between load and save. Routed to the shared
+        // identifierError, not a single field, since the rule is about the
+        // combination of both.
+        setIdentifierError(err.response!.data.error as string)
       } else if (isAxiosError(err) && err.response?.data?.code === 'DUPLICATE_PHONE') {
         // Z6-R1-FIX1 §4/§5 — another Medico already owns this canonical
         // phone (DuplicatePhoneError, 409). Same field-specific routing as
@@ -406,6 +464,7 @@ export default function ProfileSettings() {
   const handleCancelEdit = () => {
     if (snapshot) setDraft(snapshot)
     setFieldErrors({})
+    setIdentifierError(null)
     // Z6 — revert any in-progress phone edit back to the authoritative
     // persisted value, same discard semantics as every other field here.
     setPhoneValueForInput(originalPhone)
@@ -462,9 +521,6 @@ export default function ProfileSettings() {
         title="Información personal"
         className="mt-6"
         headerAction={
-          // PRE-Y8 (Profile Edit Mode §5/§15/§20) — single header action,
-          // swapping between "Editar" (view mode) and "Cancelar edición"
-          // (edit mode, the section's one exit-without-save control).
           isEditing ? (
             <button
               type="button"
@@ -487,30 +543,6 @@ export default function ProfileSettings() {
         }
       >
         <form onSubmit={handleSubmit} className="ui-content-stack" noValidate>
-          {/* Z3 — the save-result banner (success "Cambios guardados." /
-              failure) previously here now shows as a global action
-              notification instead (see handleConfirmSave). */}
-
-          {/* Y3 §2/§36 — email is read-only always (never gated behind
-              `isEditing`): editing it is explicitly out of scope, unlike the
-              fields below which only become editable in edit mode. Sourced
-              from this component's own authoritative GET /me/profile load
-              (`email` state), never from AuthContext (see that state's own
-              comment above).
-              Z6-R1 §24 — a phone-only doctor has `email === null`; shows a
-              neutral "No registrado" state rather than a blank field (never
-              a literal "null"). */}
-          <div>
-            <FieldLabel icon={Mail}>Correo electrónico</FieldLabel>
-            <input
-              value={email ?? 'No registrado'}
-              readOnly
-              disabled
-              autoComplete="email"
-              className={inputClass(undefined, true)}
-            />
-          </div>
-
           {/* Pre-Y8 visual polish — Row 1: Nombre(s) / Apellidos. */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -578,37 +610,33 @@ export default function ProfileSettings() {
                 />
               </div>
 
-              {/* Z6 — doctor phone, same reusable CountryPhoneInput the
-                  patient forms use. `disabled={!isEditing}` is this
-                  component's own gating mechanism (it has no `readOnly`
-                  prop), matching every other field in this section only
-                  becoming interactive in edit mode. `value` is the stable
-                  per-load/per-edit-session snapshot (`phoneValueForInput`),
-                  never re-driven from every emitted onChange state (V6.3
-                  §11/§12); `key` ties to `phoneResetNonce` so the control
-                  always fully remounts and re-derives its display whenever
-                  the authoritative value changes underneath it (load,
-                  cancel, save). */}
+              
+              <div>
+                <FieldLabel icon={Mail}>Correo electrónico</FieldLabel>
+                <input
+                  type="email"
+                  value={draft.email}
+                  onChange={set('email')}
+                  placeholder="No registrado"
+                  autoComplete="email"
+                  readOnly={!isEditing}
+                  className={inputClass(!!fieldErrors.email, !isEditing)}
+                />
+                {fieldErrors.email && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.email}</p>}
+              </div>
+
               <div>
                 <FieldLabel icon={Phone}>Teléfono</FieldLabel>
                 <CountryPhoneInput
                   key={phoneResetNonce}
                   value={phoneValueForInput}
-                  onChange={state => { setPhoneState(state); if (phoneError) setPhoneError(null) }}
+                  onChange={state => { setPhoneState(state); if (phoneError) setPhoneError(null); setIdentifierError(null) }}
                   label=""
                   disabled={!isEditing}
                   error={phoneError ?? undefined}
                 />
-                {/* Z6-R1 §17 — makes the lockout rule understandable BEFORE
-                    the doctor tries to clear the field and gets blocked,
-                    rather than only reacting after a rejected save. Shown
-                    only while editing (view mode never needs it) and only
-                    when there's no other error already occupying this
-                    space. */}
-                {isEditing && email === null && !phoneError && (
-                  <p className="text-xs text-muted-foreground mt-1.5">
-                    Este es tu único método de inicio de sesión (no tienes un correo electrónico registrado); no puede quedar vacío.
-                  </p>
+                {identifierError && (
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1">{identifierError}</p>
                 )}
               </div>
             </>

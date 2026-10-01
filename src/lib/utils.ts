@@ -225,22 +225,9 @@ export const RISK_CONFIG: Record<RiskLevel, {
   },
   high: {
     label: 'Alto',
-    // Y6.2-FIX2 — was a static '#DC2626' (theme-invariant). RiskGauge
-    // passes this straight through as an SVG stroke/fill attribute, which
-    // already resolves CSS custom properties through the cascade (same
-    // technique Y6.2 used for --border/--muted-foreground in this same
-    // component) — so referencing the app's own --destructive token here
-    // makes the HIGH-risk gauge automatically pick up a dark-tuned red
-    // under .dark, with no new CSS var and no useTheme(). --destructive's
-    // LIGHT value (hsl(0 72% 51%) ≈ #DC2828) is visually equivalent to the
-    // previous static #DC2626 — not a light-mode change in practice. Only
-    // `high` changes; `low`/`moderate` colors are untouched (out of
-    // Y6.2-FIX2's scope). This is the SAME token used for the Dashboard
-    // "Alto" bar and the Sidebar alert counter in Y6.2-FIX2, so all three
-    // now share one canonical dark critical red.
-    color: 'hsl(var(--destructive))',
-    bg: 'bg-red-50 dark:bg-red-950/40',
-    border: 'border-red-200 dark:border-red-800/60',
+    color: '#EA4C4C',
+    bg: 'bg-red-50 dark:bg-red-950/15',
+    border: 'border-red-700 dark:border-red-800/60',
     text: 'text-red-700 dark:text-red-300',
     icon: '↑',
   },

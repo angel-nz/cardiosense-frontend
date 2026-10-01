@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Activity, ChevronLeft, ChevronRight, FileText,
-  ArrowRight, AlertTriangle, Loader2, CalendarDays,
+  ArrowRight, AlertTriangle, Loader2,
 } from 'lucide-react'
 import { cn, formatScore, formatLongDate, formatTime, formatRelativeBusinessDate, RISK_CONFIG } from '@/lib/utils'
 import {
@@ -204,7 +204,6 @@ export function DashboardCalendar() {
       <div className="bg-card rounded-xl border border-border ui-card-density lg:sticky lg:top-[76px]">
         <div className="mb-4">
           <h3 className="font-semibold text-foreground flex items-center gap-2">
-            <CalendarDays className="w-4 h-4 text-muted-foreground" />
             Actividad cardiovascular
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">

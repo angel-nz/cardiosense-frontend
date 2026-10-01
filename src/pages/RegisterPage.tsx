@@ -1,6 +1,6 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Eye, EyeOff, Loader2, Activity, Shield, Zap } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Activity, Shield, Zap, ChevronDown, ChevronUp } from 'lucide-react'
 import { isAxiosError } from 'axios'
 import { cn } from '@/lib/utils'
 import { authService } from '@/services/authService'
@@ -97,6 +97,15 @@ export default function RegisterPage() {
   const [identifierError, setIdentifierError] = useState<string | null>(null)
   const [showPwd, setShowPwd] = useState(false)
   const [loading, setLoading] = useState(false)
+  // PRE-R §C — "Información profesional" collapsible subsection. Default
+  // collapsed (Cédula profesional/Especialidad/Hospital are optional and
+  // least often needed at signup); values live on `form` (above), not on
+  // any state local to the collapsible section, so collapsing/expanding
+  // never loses whatever was typed — these inputs are controlled from
+  // `form.cedulaProfesional`/`especialidad`/`hospital` and are simply not
+  // mounted while collapsed, exactly like ClinicalSourceDisclosure.tsx's
+  // existing collapsible-disclosure pattern elsewhere in this app.
+  const [professionalOpen, setProfessionalOpen] = useState(false)
 
   const set = (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [field]: e.target.value }))
@@ -133,6 +142,17 @@ export default function RegisterPage() {
       setIdentifierError('Ingresa al menos un correo electrónico o un teléfono.')
     } else {
       setIdentifierError(null)
+    }
+
+    // PRE-R §C — auto-expand the "Información profesional" subsection if
+    // submit validation fails on one of ITS fields (none of the three
+    // currently has any format rule — see UpdateMyProfileDto/RegisterDto's
+    // own comments on why no bound is invented here — but this keeps the
+    // subsection's contract correct/structural rather than silently
+    // relying on that absence; a future validation rule on any of these
+    // three fields is covered automatically).
+    if (errs.cedulaProfesional || errs.especialidad || errs.hospital) {
+      setProfessionalOpen(true)
     }
 
     setErrors(errs)
@@ -214,6 +234,13 @@ export default function RegisterPage() {
         const { phone: phoneDetail, ...rest } = details
         setErrors(prev => ({ ...prev, ...(rest as FormErrors) }))
         if (phoneDetail) setPhoneError(phoneDetail)
+        // PRE-R §C — same auto-expand rule as validate() above, for a
+        // validation failure that only surfaces from the backend (a
+        // cedulaProfesional/especialidad/hospital rule this DTO doesn't
+        // have today, but the subsection's contract must hold regardless).
+        if (rest.cedulaProfesional || rest.especialidad || rest.hospital) {
+          setProfessionalOpen(true)
+        }
       } else if (isAxiosError(err) && err.response?.data?.error) {
         notifyError(err.response.data.error)
       } else {
@@ -329,21 +356,12 @@ export default function RegisterPage() {
                   </div>
                 </div>
 
-                {/* Z6-R1 §21 — neither email nor phone is individually
-                    marked mandatory anymore (no RequiredMark on either);
-                    the group requirement is communicated here once,
-                    directly above both fields. */}
-                <p className="text-xs text-muted-foreground">
-                  Ingresa al menos un correo electrónico o un teléfono.
-                </p>
-
                 <div>
                   <label className="text-sm font-medium text-foreground block mb-1.5">Correo electrónico</label>
                   <input
                     type="email"
                     value={form.email}
                     onChange={set('email')}
-                    placeholder="dr.medico@hospital.mx"
                     autoComplete="email"
                     className={inputClass(!!errors.email || !!identifierError)}
                   />
@@ -363,6 +381,40 @@ export default function RegisterPage() {
                 {identifierError && (
                   <p className="text-xs text-red-600 dark:text-red-400 -mt-1">{identifierError}</p>
                 )}
+
+                <div className="rounded-lg border border-border overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setProfessionalOpen(o => !o)}
+                    aria-expanded={professionalOpen}
+                    aria-controls="register-professional-info-panel"
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-sm font-medium text-foreground hover:bg-accent transition-colors"
+                  >
+                    <span>Información profesional</span>
+                    {professionalOpen
+                      ? <ChevronUp className="w-4 h-4 text-muted-foreground flex-shrink-0" aria-hidden="true" />
+                      : <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" aria-hidden="true" />}
+                  </button>
+                  {professionalOpen && (
+                    <div id="register-professional-info-panel" className="px-3 pb-3 pt-1 space-y-3">
+                      <div>
+                        <label className="text-sm font-medium text-foreground block mb-1.5">Cédula profesional</label>
+                        <input value={form.cedulaProfesional} onChange={set('cedulaProfesional')} className={inputClass(!!errors.cedulaProfesional)} />
+                        {errors.cedulaProfesional && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.cedulaProfesional}</p>}
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-foreground block mb-1.5">Especialidad</label>
+                        <input value={form.especialidad} onChange={set('especialidad')} className={inputClass(!!errors.especialidad)} />
+                        {errors.especialidad && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.especialidad}</p>}
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-foreground block mb-1.5">Hospital/Institución</label>
+                        <input value={form.hospital} onChange={set('hospital')} className={inputClass(!!errors.hospital)} />
+                        {errors.hospital && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.hospital}</p>}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 <div>
                   <label className="text-sm font-medium text-foreground block mb-1.5">Contraseña<RequiredMark /></label>
@@ -403,29 +455,6 @@ export default function RegisterPage() {
                     className={inputClass(!!errors.confirmPassword)}
                   />
                   {errors.confirmPassword && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.confirmPassword}</p>}
-                </div>
-
-                {/* V2 — professional fields moved into the same main form
-                    hierarchy as the required fields above (no more
-                    <details>/collapsed section): same label typography,
-                    input height, border/focus/error treatment via the
-                    shared `inputClass`. Still optional — backend Medico
-                    model allows all three as optional (schema.prisma) —
-                    communicated ONLY by the absence of the red asterisk,
-                    with no `required`/`aria-required` and no "(opcional)"
-                    suffix (no existing convention in this codebase uses
-                    that suffix elsewhere). */}
-                <div>
-                  <label className="text-sm font-medium text-foreground block mb-1.5">Cédula profesional</label>
-                  <input value={form.cedulaProfesional} onChange={set('cedulaProfesional')} className={inputClass()} />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-foreground block mb-1.5">Especialidad</label>
-                  <input value={form.especialidad} onChange={set('especialidad')} className={inputClass()} />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-foreground block mb-1.5">Hospital</label>
-                  <input value={form.hospital} onChange={set('hospital')} className={inputClass()} />
                 </div>
 
                 <button

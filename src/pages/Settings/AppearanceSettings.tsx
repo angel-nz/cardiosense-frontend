@@ -193,9 +193,6 @@ export default function AppearanceSettings() {
           </div>
         )}
 
-        {/* Z3 — the theme save-failure banner previously here now shows as
-            a global action notification instead (see handleSelectTheme). */}
-
         <div role="radiogroup" aria-label="Tema de apariencia" className="grid gap-3 sm:grid-cols-3">
           {THEME_OPTIONS.map(opt => {
             const Icon = opt.icon
@@ -253,13 +250,6 @@ export default function AppearanceSettings() {
           })}
         </div>
 
-        {/* PRE-Y8 (Interface Size Preference) — second, independent tile
-            grid, same nested header+subtitle+error+radiogroup structure as
-            the theme section above. A plain sibling inside the same
-            ui-content-stack (not a separate SettingsSection) — Appearance
-            is deliberately one settings card that owns however many
-            appearance axes exist (Y6.4A §8/§19 of the original Y6.1 block),
-            today exactly two. */}
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-foreground">Tamaño</h3>
@@ -274,10 +264,6 @@ export default function AppearanceSettings() {
             </span>
           )}
         </div>
-
-        {/* Z3 — the interface-size save-failure banner previously here now
-            shows as a global action notification instead (see
-            handleSelectInterfaceSize). */}
 
         <div role="radiogroup" aria-label="Tamaño de la interfaz" className="grid gap-3 sm:grid-cols-3">
           {INTERFACE_SIZE_OPTIONS.map(opt => {
@@ -300,14 +286,6 @@ export default function AppearanceSettings() {
                   className="peer sr-only"
                 />
 
-                {/* Decorative preview — a small/medium/large "Aa" swatch
-                    standing in for the actual scale change, matching the
-                    theme grid's own decorative-swatch pattern. FIX1
-                    static-search note: 1rem/1.25rem/1.5rem below are
-                    arbitrary decorative preview sizes chosen for visual
-                    distinction only — NOT the real 1/1.10/1.25 --ui-zoom
-                    factors (which live solely in index.css), and not
-                    derived from them. */}
                 <div
                   aria-hidden="true"
                   className="h-16 w-full rounded-lg border border-border overflow-hidden flex items-center justify-center bg-muted/40"

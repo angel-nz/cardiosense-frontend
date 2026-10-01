@@ -151,11 +151,6 @@ export default function PatientVisibilitySettings() {
   return (
     <SettingsSection title="Pacientes">
       <div className="ui-content-stack">
-        <p className="text-sm text-muted-foreground">
-          Visibilidad de pacientes inactivos. Ocultar un paciente no elimina su información: su
-          historial clínico se conserva y puede volver a mostrarse en cualquier momento desde aquí.
-        </p>
-
         {/* ── Counts + bulk actions ──────────────────────────────────────── */}
         {summaryLoadState === 'loading' ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
@@ -192,18 +187,18 @@ export default function PatientVisibilitySettings() {
                 type="button"
                 onClick={() => setConfirmBulkHideOpen(true)}
                 disabled={bulkBusy}
-                className="flex-1 flex items-center justify-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-border hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex-1 flex items-center justify-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-amber-700 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/15 dark:hover:bg-amber-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <EyeOff className="w-4 h-4 text-muted-foreground" />
+                <EyeOff className="w-4 h-4 text-amber-700 dark:text-amber-300" />
                 Ocultar todos los pacientes inactivos
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmBulkShowOpen(true)}
                 disabled={bulkBusy}
-                className="flex-1 flex items-center justify-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-border hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex-1 flex items-center justify-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-teal-700 dark:border-teal-800/60 text-teal-700 dark:text-teal-300 bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/15 dark:hover:bg-teal-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <Eye className="w-4 h-4 text-muted-foreground" />
+                <Eye className="w-4 h-4 text-teal-700 dark:text-teal-300" />
                 Mostrar todos los pacientes ocultos
               </button>
             </div>

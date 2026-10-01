@@ -593,7 +593,7 @@ export default function SecuritySettings() {
                         onClick={() => setConfirmTarget(session)}
                         disabled={anyMutationInFlight}
                         aria-label={`Cerrar sesión: ${label}${session.current ? ' (esta sesión)' : ''}`}
-                        className="flex items-center justify-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0 self-start sm:self-center"
+                        className="flex items-center justify-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-red-700 dark:border-red-800/60 text-red-700 dark:text-red-300 bg-red-50 hover:bg-red-100 dark:bg-red-950/15 dark:hover:bg-red-950/60 transition-colors flex-shrink-0 self-start sm:self-center"
                       >
                         {isMutatingThis && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                         Cerrar sesión

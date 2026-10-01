@@ -196,7 +196,6 @@ export default function LoginPage() {
                   type="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder="dr.medico@hospital.mx"
                   autoComplete="email"
                   required
                   aria-required="true"

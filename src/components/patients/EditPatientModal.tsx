@@ -306,13 +306,6 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
       preventClose={saving}
     >
       <form onSubmit={submit} className="ui-content-stack">
-        {/* Z3 — the generic update-failure banner previously here now shows
-            as a global action notification instead (see submit's catch).
-            Field-level errors (CURP, phone) remain inline below their own
-            inputs. No success notice is migrated here — none existed
-            before (the modal simply closes on success), so none is
-            introduced now. */}
-
         <fieldset disabled={saving} className="ui-content-stack">
           <div className="ui-field-grid">
             <div className="space-y-1">
@@ -335,14 +328,6 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
               value={form.curp}
               onChange={e => { setForm(f => ({ ...f, curp: e.target.value.toUpperCase() })); setCurpError(null) }} />
             {curpError && <p className="text-[11px] text-red-600 dark:text-red-400">{curpError}</p>}
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Correo electrónico</label>
-            <input type="email" className={inputClass}
-              value={form.email}
-              onChange={e => { setForm(f => ({ ...f, email: e.target.value })); setEmailError(null) }} />
-            {emailError && <p className="text-[11px] text-red-600 dark:text-red-400">{emailError}</p>}
           </div>
 
           <div className="ui-field-grid">
@@ -375,16 +360,14 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
             </span>
           </div>
 
-          {/* V6.4 §4/§12 — `value` is the stable per-open snapshot
-              (`phoneValueForInput`), never re-driven from every emitted
-              onChange state (V6.3 §11/§12: that would fight the component's
-              own local editing state and risk cursor jumps). `key` is tied
-              to `resetNonce` (bumped on every open, including a same-patient
-              reopen) so CountryPhoneInput always fully remounts — and
-              therefore always re-derives its initial display from the fresh
-              `phoneValueForInput` — rather than relying on an unverified
-              assumption about whether the surrounding Dialog unmounts its
-              content on close. */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Correo electrónico</label>
+            <input type="email" className={inputClass}
+              value={form.email}
+              onChange={e => { setForm(f => ({ ...f, email: e.target.value })); setEmailError(null) }} />
+            {emailError && <p className="text-[11px] text-red-600 dark:text-red-400">{emailError}</p>}
+          </div>
+          
           <CountryPhoneInput
             key={`${patient.id}-${resetNonce}`}
             value={phoneValueForInput}
