@@ -39,7 +39,7 @@ export default function AlertsPage() {
   // markAllRead mutations) stay sourced from the shared AlertsContext,
   // untouched. The VISIBLE, paginated list below is now this page's own
   // independent canonical HTTP state — no longer `useAlerts().alerts`.
-  const { unreadCount, markAsRead, markAllRead } = useAlerts()
+  const { unreadCount, markAsRead, markAllRead, alertReadSeq } = useAlerts()
   const { connected, lastAlert, lastAlertsChanged } = useSocket()
   const { notifyError } = useActionNotify()
 
@@ -213,6 +213,18 @@ export default function AlertsPage() {
     if (!lastAlertsChanged) return
     scheduleRefresh()
   }, [lastAlertsChanged, scheduleRefresh])
+
+  // An Alert marked read individually from the Topbar popover may be on
+  // this page's current (filtered/paginated) collection — reconcile through
+  // the same coalesced canonical refetch realtime events use. The ref makes
+  // it fire only for a NEW sequence value, never on mount or when
+  // scheduleRefresh's identity changes with a filter/page change.
+  const handledReadSeqRef = useRef(alertReadSeq)
+  useEffect(() => {
+    if (alertReadSeq === handledReadSeqRef.current) return
+    handledReadSeqRef.current = alertReadSeq
+    scheduleRefresh()
+  }, [alertReadSeq, scheduleRefresh])
 
   const hasConnectedOnceRef = useRef(false)
   useEffect(() => {

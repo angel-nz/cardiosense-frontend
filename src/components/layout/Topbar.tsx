@@ -1,10 +1,11 @@
 import { Bell, LogOut, User, ChevronDown, Menu, Loader2, CheckCheck, AlertTriangle, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, type KeyboardEvent } from 'react'
 import * as RadixDropdown from '@radix-ui/react-dropdown-menu'
 import { cn, fullName, userIdentifierLabel, SEVERITY_CONFIG, timeAgo } from '@/lib/utils'
 import { useAuth } from '@/context/AuthContext'
 import { useAlerts } from '@/context/AlertsContext'
+import { useActionNotify } from '@/context/ToastContext'
 import { alertService } from '@/services/alertService'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { Dialog } from '@/components/ui/Dialog'
@@ -49,9 +50,32 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
   // frontend service change needed), so this reuses that contract
   // directly instead of growing the general cache or adding a new
   // endpoint (§2/§3).
-  const { unreadCount, markAsRead, markAllRead } = useAlerts()
+  const { unreadCount, markAsRead, markAllRead, applyAlertRead } = useAlerts()
+  const { notifyError } = useActionNotify()
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [markingAllRead, setMarkingAllRead] = useState(false)
+
+  // INDIVIDUAL MARK-AS-READ — per-row control state.
+  //  - pendingIds (state) drives ONLY that row's control (disabled/spinner).
+  //  - pendingRef (ref) is the synchronous duplicate-request guard: a rapid
+  //    second click lands before React re-renders `disabled`, so state alone
+  //    could not stop it.
+  //  - selfAppliedReads offsets the unreadCount-reactive refresh below: a
+  //    read this popover itself confirmed is already reflected in its list
+  //    (row removed + silent refill), so it must not also trigger the
+  //    spinner-and-refetch path that exists for EXTERNAL changes (a new
+  //    realtime Alert, mark-all, a canonical refetch).
+  const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(() => new Set())
+  const pendingRef = useRef<Set<string>>(new Set())
+  const [selfAppliedReads, setSelfAppliedReads] = useState(0)
+  const alertsOpenRef = useRef(false)
+  alertsOpenRef.current = alertsOpen
+  const contentRef = useRef<HTMLDivElement | null>(null)
+  // Index (among the row controls) to re-focus after the activated row has
+  // left the list, so keyboard users keep their place — null = do nothing.
+  const restoreFocusIndexRef = useRef<number | null>(null)
+  const rowControls = () =>
+    Array.from(contentRef.current?.querySelectorAll<HTMLButtonElement>('button[data-mark-read]') ?? [])
 
   const [previewAlerts, setPreviewAlerts] = useState<Alert[]>([])
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -65,17 +89,29 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
   // earlier, pre-confirmation fetch can never clobber a later,
   // post-confirmation one, regardless of which network response actually
   // arrives first.
-  const fetchPreview = useCallback(async () => {
+  //
+  // `silent` (individual mark-as-read only): refresh the list IN PLACE —
+  // no spinner, and a failure keeps the rows already on screen instead of
+  // replacing them with an error (they are still valid; only the refill of
+  // the freed slot is missed, and the next open/realtime refresh recovers
+  // it). Same latest-request-wins guard, so a silent result can never
+  // overwrite a newer one nor be committed after a newer request began.
+  const fetchPreview = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true
     const requestId = ++previewRequestIdRef.current
-    setPreviewLoading(true)
-    setPreviewError(null)
+    if (!silent) {
+      setPreviewLoading(true)
+      setPreviewError(null)
+    }
     try {
       const result = await alertService.list({ unread: true, page: 1, limit: 5 })
       if (requestId !== previewRequestIdRef.current) return
       setPreviewAlerts(result.data)
+      setPreviewError(null)
       setPreviewLoading(false)
     } catch {
       if (requestId !== previewRequestIdRef.current) return
+      if (silent) return
       setPreviewError('No se pudieron cargar las alertas')
       setPreviewLoading(false)
     }
@@ -84,7 +120,9 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
   // Authoritative refresh triggers, both gated on the popover actually
   // being open (never polls/fetches in the background):
   //  - `alertsOpen` flipping true — the popover was just opened.
-  //  - `unreadCount` changing while already open — a new persisted Alert
+  //  - `externalUnreadCount` changing while already open (unreadCount minus
+  //    this popover's own confirmed individual reads, see selfAppliedReads)
+  //    — a new persisted Alert
   //    arrived via realtime (new_alert/alerts_changed, both already
   //    reconciled upstream by AlertsContext before unreadCount changes,
   //    so the underlying row genuinely exists server-side by then — no
@@ -94,6 +132,7 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
   // into one request rather than one per event. The loading flag is set
   // synchronously (outside the debounce) so the popover shows a spinner
   // instead of briefly rendering stale rows while a refresh is pending.
+  const externalUnreadCount = unreadCount + selfAppliedReads
   useEffect(() => {
     if (!alertsOpen) return
     setPreviewLoading(true)
@@ -109,10 +148,19 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
         previewCoalesceRef.current = null
       }
     }
-  }, [alertsOpen, unreadCount, fetchPreview])
+  }, [alertsOpen, externalUnreadCount, fetchPreview])
+
+  useEffect(() => {
+    const idx = restoreFocusIndexRef.current
+    if (idx === null) return
+    restoreFocusIndexRef.current = null
+    const controls = rowControls()
+    const target = controls[Math.min(idx, controls.length - 1)] ?? contentRef.current
+    target?.focus()
+  }, [previewAlerts])
 
   const handleMarkAllRead = async () => {
-    if (markingAllRead) return
+    if (markingAllRead || pendingRef.current.size > 0) return
     setMarkingAllRead(true)
     try {
       // §8 — reuses the existing canonical bulk operation (AlertsContext's
@@ -158,12 +206,93 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
   // re-fetches the authoritative five, which is what FIX1 §9's
   // "sixth fills the fifth position" property actually requires.
   const handleAlertRowClick = (alert: Alert) => {
-    markAsRead(alert.id).catch(() => {
-      // Same non-blocking-failure posture as above — the context has
-      // already rolled back optimistic state on failure.
-    })
+    // If this Alert's own control request is still in flight, that request
+    // is already marking it — firing the optimistic path as well would
+    // decrement the shared counter twice.
+    if (!pendingRef.current.has(alert.id)) {
+      markAsRead(alert.id).catch(() => {
+        // Same non-blocking-failure posture as above — the context has
+        // already rolled back optimistic state on failure.
+      })
+    }
     setAlertsOpen(false)
     if (alert.patientId) navigate(`/patients/${alert.patientId}`)
+  }
+
+  // INDIVIDUAL MARK-AS-READ — the row's own icon control. Marks ONLY this
+  // Alert as read through the existing PATCH /alerts/:id/read
+  // (alertService.markRead), REQUEST-FIRST: nothing local changes until the
+  // backend has confirmed read=true, so a failure needs no rollback and can
+  // never leave a fake "read" state behind.
+  //
+  // On success, in ONE synchronous block (so React commits it together):
+  //  1. the shared counter/cache is updated (applyAlertRead),
+  //  2. the row leaves the preview list,
+  //  3. the offset below absorbs the counter change so the unreadCount-
+  //     reactive effect does NOT flash the spinner for it,
+  //  4. a silent refetch is issued — it refills the freed slot with the
+  //     next-oldest unread Alert (the list is "the 5 most recent unread",
+  //     so an older unread one legitimately enters the window) and, being
+  //     the newest request, supersedes any older in-flight preview fetch.
+  // The popover stays open; nothing navigates.
+  const handleMarkOneRead = async (alert: Alert, control: HTMLElement) => {
+    const id = alert.id
+    if (markingAllRead || pendingRef.current.has(id)) return
+    pendingRef.current.add(id)
+    setPendingIds(new Set(pendingRef.current))
+    try {
+      await alertService.markRead(id)
+      // Keyboard continuity: the activated row is about to leave the list.
+      // Only if focus is still on its control (the user did not move on
+      // while the request was in flight) remember its position so focus can
+      // land on the row that takes its place instead of being dropped to
+      // <body>.
+      if (alertsOpenRef.current && document.activeElement === control) {
+        const idx = rowControls().indexOf(control as HTMLButtonElement)
+        restoreFocusIndexRef.current = idx >= 0 ? idx : null
+      }
+      const decremented = applyAlertRead(id)
+      if (decremented) setSelfAppliedReads(n => n + 1)
+      setPreviewAlerts(prev => prev.filter(a => a.id !== id))
+      if (alertsOpenRef.current) fetchPreview({ silent: true })
+    } catch {
+      // The Alert stays unread and visible; counter untouched. Same global
+      // action-notification convention AlertsPage uses for this failure.
+      notifyError('No se pudo marcar la alerta como leída. Intenta de nuevo.')
+      // Reconcile in place in case the failure reflects server truth (e.g.
+      // the Alert was removed/hidden meanwhile). A failed refetch changes
+      // nothing on screen.
+      if (alertsOpenRef.current) fetchPreview({ silent: true })
+    } finally {
+      pendingRef.current.delete(id)
+      setPendingIds(new Set(pendingRef.current))
+    }
+  }
+
+  // KEYBOARD — Radix's DropdownMenu content swallows Tab
+  // (event.preventDefault() in its own keydown handler, because it expects
+  // its children to be roving-focus menu items), and this popover's
+  // controls are plain buttons, not menu items — so before this, NO control
+  // inside it (rows, mark-all, settings, footer, the new per-row control)
+  // could be reached with the keyboard at all. Handling Tab here, and
+  // calling preventDefault ourselves, both moves focus across the real
+  // buttons in DOM order (wrapping, Shift+Tab reverses — the same loop the
+  // modal focus trap implies) and, because Radix composes its handler
+  // after ours with checkForDefaultPrevented, makes it skip its own Tab
+  // branch. Controls that are only aria-disabled (the pending per-row
+  // control) stay in the sequence on purpose so focus is never dropped.
+  // Every other key (Escape, Enter/Space on a focused button, arrows,
+  // typeahead) is left entirely to the browser/Radix as before.
+  const handlePopoverKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return
+    const focusable = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled)'))
+    if (focusable.length === 0) return
+    e.preventDefault()
+    const i = focusable.indexOf(document.activeElement as HTMLElement)
+    const next = e.shiftKey
+      ? (i <= 0 ? focusable.length - 1 : i - 1)
+      : (i < 0 || i === focusable.length - 1 ? 0 : i + 1)
+    focusable[next].focus()
   }
 
   // §10 — reuses the EXACT existing DashboardStatNavigationIntent
@@ -374,6 +503,8 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
                 problem, and floating-ui's collision math compares against
                 the real, zoom-unaffected viewport either way (§15). */}
             <RadixDropdown.Content
+              ref={contentRef}
+              onKeyDown={handlePopoverKeyDown}
               align="end"
               sideOffset={8}
               collisionPadding={12}
@@ -400,7 +531,7 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
                   {unreadCount > 0 && (
                     <button
                       onClick={handleMarkAllRead}
-                      disabled={markingAllRead}
+                      disabled={markingAllRead || pendingIds.size > 0}
                       className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       {markingAllRead ? (
@@ -449,30 +580,70 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
                   <div className="divide-y divide-border">
                     {previewAlerts.map(alert => {
                       const cfg = SEVERITY_CONFIG[alert.severity]
+                      const pending = pendingIds.has(alert.id)
                       return (
-                        <button
-                          key={alert.id}
-                          onClick={() => handleAlertRowClick(alert)}
-                          className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-accent/50 transition-colors"
-                        >
-                          <span className={cn('w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0', cfg.bg, cfg.border)}>
-                            <AlertTriangle className={cn('w-3.5 h-3.5', cfg.text)} />
-                          </span>
-                          <span className="flex-1 min-w-0">
-                            <span className={cn('block text-xs font-bold uppercase tracking-wide', cfg.text)}>
-                              {cfg.label}
+                        // INDIVIDUAL MARK-AS-READ — the control is a SIBLING of
+                        // the row button, absolutely positioned over its
+                        // reserved right gutter (pr-12), never nested inside
+                        // it (a <button> in a <button> is invalid HTML and
+                        // would make the click/keyboard target ambiguous).
+                        // Being a sibling, its click can never reach the row's
+                        // onClick; the row button still spans the full width,
+                        // so a click anywhere else on the row behaves exactly
+                        // as before. Fixed size + absolute position: the
+                        // pending spinner swaps the glyph only — no layout
+                        // jump, and the popover width is unchanged.
+                        <div key={alert.id} className="relative hover:bg-accent/50 transition-colors">
+                          <button
+                            type="button"
+                            onClick={() => handleAlertRowClick(alert)}
+                            className="w-full flex items-start gap-3 pl-4 pr-12 py-3 text-left"
+                          >
+                            <span className={cn('w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0', cfg.bg, cfg.border)}>
+                              <AlertTriangle className={cn('w-3.5 h-3.5', cfg.text)} />
                             </span>
-                            <span className="block text-sm font-medium text-foreground mt-0.5 truncate">
-                              {alert.patientName || 'Notificación general'}
+                            <span className="flex-1 min-w-0">
+                              <span className={cn('block text-xs font-bold uppercase tracking-wide', cfg.text)}>
+                                {cfg.label}
+                              </span>
+                              <span className="block text-sm font-medium text-foreground mt-0.5 truncate">
+                                {alert.patientName || 'Notificación general'}
+                              </span>
+                              <span className="block text-sm text-muted-foreground mt-0.5 line-clamp-2">
+                                {alert.message}
+                              </span>
+                              <span className="block text-xs text-muted-foreground mt-1">
+                                {timeAgo(alert.createdAt)}
+                              </span>
                             </span>
-                            <span className="block text-sm text-muted-foreground mt-0.5 line-clamp-2">
-                              {alert.message}
-                            </span>
-                            <span className="block text-xs text-muted-foreground mt-1">
-                              {timeAgo(alert.createdAt)}
-                            </span>
-                          </span>
-                        </button>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); handleMarkOneRead(alert, e.currentTarget) }}
+                            // aria-disabled, NOT the disabled attribute: a
+                            // focused <button> that becomes disabled loses
+                            // focus (to <body>), which would strand a
+                            // keyboard user mid-popover. The handler itself
+                            // ignores activation while pending.
+                            aria-disabled={pending || markingAllRead || undefined}
+                            data-mark-read=""
+                            aria-label="Marcar alerta como leída"
+                            aria-busy={pending || undefined}
+                            title="Marcar como leída"
+                            className={cn(
+                              'absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-lg',
+                              'text-muted-foreground hover:text-foreground hover:bg-accent transition-colors',
+                              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                              'aria-disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted-foreground',
+                            )}
+                          >
+                            {pending ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <CheckCheck className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
                       )
                     })}
                   </div>

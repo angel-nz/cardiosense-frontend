@@ -19,6 +19,22 @@ interface AlertsContextValue {
   refetch: () => void
   markAsRead: (id: string) => Promise<void>
   markAllRead: () => Promise<void>
+  // Individual mark-as-read, REQUEST-FIRST (Topbar preview's per-row
+  // control). Unlike markAsRead above (optimistic, rolled back on failure),
+  // the caller first awaits the real PATCH /alerts/:id/read and only then
+  // calls this — so there is no local "read" state that could ever need a
+  // rollback. Synchronous on purpose: the caller applies its own local
+  // state (preview list) in the SAME synchronous block, which is what lets
+  // React commit both together. Returns whether unreadCount was actually
+  // decremented (false when the shared cache already knew the alert was
+  // read, or the counter was already 0 — never goes negative).
+  applyAlertRead: (id: string) => boolean
+  // Increments every time an individual read confirmed elsewhere (the Topbar
+  // preview) has been applied. AlertsPage owns its own paginated/filtered
+  // list (U7.2) that this context cannot patch, so it watches this scalar
+  // to reconcile with a canonical refetch — the same "invalidate, then
+  // GET" pattern it already uses for realtime events.
+  alertReadSeq: number
 }
 
 const AlertsContext = createContext<AlertsContextValue | null>(null)
@@ -35,6 +51,15 @@ export function AlertsProvider({ children }: { children: React.ReactNode }) {
   const [unreadCount, setUnreadCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [alertReadSeq, setAlertReadSeq] = useState(0)
+
+  // Latest committed values for applyAlertRead's synchronous "was it unread?"
+  // decision (a plain closure over state would be stale for a handler that
+  // captured an earlier render, e.g. a PATCH that resolves after a rerender).
+  const alertsRef = useRef<Alert[]>(alerts)
+  const unreadCountRef = useRef(unreadCount)
+  alertsRef.current = alerts
+  unreadCountRef.current = unreadCount
 
   const fetchAlerts = useCallback(async () => {
     setLoading(true)
@@ -148,6 +173,26 @@ export function AlertsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [alerts])
 
+  const applyAlertRead = useCallback((id: string): boolean => {
+    const cached = alertsRef.current.find(a => a.id === id)
+    // The backend has already confirmed read=true. The shared cache holds
+    // only the newest 50 Alerts, so an Alert the Topbar preview surfaced
+    // from further back is simply absent here — that is not "already read";
+    // the preview only lists Alerts the server reported as unread.
+    const wasUnread = cached ? !cached.isRead : true
+    const decrement = wasUnread && unreadCountRef.current > 0
+    setAlertReadSeq(n => n + 1)
+    if (cached && !cached.isRead) {
+      setAlerts(prev => prev.map(a => a.id === id ? { ...a, isRead: true } : a))
+    }
+    if (decrement) {
+      // Mirror the ref immediately so a second apply in the same tick sees it.
+      unreadCountRef.current -= 1
+      setUnreadCount(c => Math.max(0, c - 1))
+    }
+    return decrement
+  }, [])
+
   const markAllRead = useCallback(async () => {
     const snapshot = alerts
     const snapshotUnread = unreadCount
@@ -165,7 +210,7 @@ export function AlertsProvider({ children }: { children: React.ReactNode }) {
   return (
     <AlertsContext.Provider value={{
       alerts, total, unreadCount, loading, error,
-      refetch: fetchAlerts, markAsRead, markAllRead,
+      refetch: fetchAlerts, markAsRead, markAllRead, applyAlertRead, alertReadSeq,
     }}>
       {children}
     </AlertsContext.Provider>
