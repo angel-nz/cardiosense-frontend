@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, FileText } from 'lucide-react'
-import { cn, formatRelativeBusinessDateTime } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { clinicalTimeLabel } from '@/lib/clinicalTime'
 import type { HealthRecord } from '@/types'
 
 // V7 — additive clinical-context panel for a historical Prediction: "the
@@ -97,7 +98,8 @@ export function ClinicalSourceDisclosure({ healthRecord, className }: ClinicalSo
               12-hour formatter; never a raw ISO timestamp. */}
           <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground mb-2.5">
             <FileText className="w-3 h-3 flex-shrink-0" />
-            Registro clínico: {formatRelativeBusinessDateTime(healthRecord.recordedAt)}
+            {/* NEW S2E — explicit measured time; legacy rows labelled as entry time. */}
+            Registro clínico · {clinicalTimeLabel(healthRecord)}
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5 text-xs">
             {FIELDS.map(field => (

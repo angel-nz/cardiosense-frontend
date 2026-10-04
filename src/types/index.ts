@@ -206,11 +206,57 @@ export interface Patient {
   // Pacientes hidden-list/summary surface (see patientService.ts).
   isHidden: boolean
   createdAt: string
+  // TECHNICAL audit timestamp only (personal-info edits). NEW S3 — never shown
+  // as "Última actualización" and never used for ordering.
   updatedAt: string
-  // Computed
+  // NEW S3 — clinical-time-first read model (backend clinicalLatest.ts):
+  // effective clinical time of the patient's clinically latest HealthRecord
+  // (measuredAt, or recordedAt for legacy rows); null = no clinical records.
+  latestClinicalAt: string | null
+  latestClinicalTimeSource: ClinicalTimeSource | null
+  // NEW S3-FIX1 — identity of that exact clinically latest HealthRecord
+  // (backend source of truth; never recomputed from a partial history page).
+  latestClinicalRecordId: string | null
+  // NEW S3-FIX2 — CANONICAL current observed risk (backend currentPrediction):
+  //   object = the Prediction of the EXACT clinically latest record
+  //            (predictedAt DESC, id DESC within that record);
+  //   null   = no current observed risk (no records, or that record has no
+  //            Prediction). Never reconstructed from Prediction history.
+  currentPrediction: CurrentPredictionSummary | null
+  // NEW S4 — PUBLIC state of the durable automatic-Prediction task of that
+  // exact latest record, present only while it has no Prediction yet
+  // (PENDING / PROCESSING / RETRY_WAIT) or TERMINALLY MODEL_INELIGIBLE (S4-FIX2: the
+  // record's recorded age is outside the model's range — no prediction will
+  // ever be generated for it, no retry). null = no such task. Never an
+  // error body or infrastructure detail.
+  currentPredictionTask: CurrentPredictionTaskView | null
+  // Computed from currentPrediction — current observed risk = Prediction of the EXACT clinically
+  // latest record (S3-FIX1 strict rule). undefined = no current observed
+  // risk (no records, or the latest record has no Prediction) — never an
+  // older record's Prediction.
   age?: number
   latestRisk?: RiskLevel
   latestScore?: number
+}
+
+// NEW S3-FIX2 — public fields of the canonical current Prediction (only what
+// the current-risk UI displays). featureImportance is never sent (not
+// persisted); kept optional so the existing hidden panel stays type-safe.
+export interface CurrentPredictionTaskView {
+  status: 'PENDING' | 'PROCESSING' | 'RETRY_WAIT' | 'MODEL_INELIGIBLE'
+  attemptCount: number
+  lastAttemptAt: string | null
+}
+
+export interface CurrentPredictionSummary {
+  id: string
+  healthRecordId: string
+  riskLevel: RiskLevel
+  riskScore: number
+  isAnomaly: boolean
+  predictedAt: string
+  modelVersion: string | null
+  featureImportance?: Record<string, number>
 }
 
 export interface CreatePatientRequest {
@@ -304,10 +350,20 @@ export interface BulkVisibilityResponse {
 // NOTE: the backend's HealthRecord model has no `sex` field (sex belongs to
 // Patient, not to each clinical record) — omitted here to match the real
 // contract; it was unused across the app.
+// NEW S2E — server-assigned clinical-time source (S2A). Legacy rows keep
+// LEGACY_ENTRY_TIME and have no measuredAt.
+export type ClinicalTimeSource = 'CLINICIAN_ENTERED' | 'LEGACY_ENTRY_TIME'
+
 export interface HealthRecord {
   id: string
   patientId: string
+  // Entry time (server `now()` at creation) — NOT the clinical measurement
+  // time for CLINICIAN_ENTERED records; see lib/clinicalTime.ts.
   recordedAt: string
+  // NEW S2E — explicit REAL measurement instant (UTC ISO) for
+  // CLINICIAN_ENTERED records; null for legacy rows.
+  measuredAt: string | null
+  clinicalTimeSource: ClinicalTimeSource
   age: number
   currentSmoker: boolean
   cigsPerDay: number
@@ -325,11 +381,12 @@ export interface HealthRecord {
 
 export interface CreateHealthRecordRequest {
   patientId: string
-  // U3.2 — optional (was required): backend now derives+overwrites age
-  // authoritatively from Paciente.birthDate (record.service.ts). Kept
-  // optional rather than removed for backward compatibility with any
-  // existing caller — NewRecordModal simply omits it.
-  age?: number
+  // NEW S2E — REQUIRED exact UTC instant "YYYY-MM-DDTHH:mm:ss.SSSZ" of the
+  // REAL measurement (Guadalajara wall time converted by
+  // lib/clinicalTime.ts). `age`, `recordedAt` and `clinicalTimeSource` are
+  // backend-authoritative and are deliberately NOT part of this type (the
+  // former optional `age` was removed: no caller sent it since U3.2).
+  measuredAt: string
   currentSmoker: boolean
   cigsPerDay: number
   bpMeds: boolean
@@ -362,7 +419,9 @@ export interface PatientHistoryResponse {
   targetResolved?: boolean
 }
 
-export type HistorySortBy = 'recordedAt' | 'sysBP' | 'diaBP' | 'totChol' | 'glucose' | 'bmi'
+// NEW S2E-FIX2 — 'clinicalTime' = effective clinical time (measuredAt, or
+// recordedAt for legacy rows), sorted server-side; it is the default.
+export type HistorySortBy = 'clinicalTime' | 'recordedAt' | 'sysBP' | 'diaBP' | 'totChol' | 'glucose' | 'bmi'
 export type HistorySortOrder = 'asc' | 'desc'
 
 export interface HistoryQueryParams {
@@ -388,10 +447,30 @@ export type RiskLevel = 'low' | 'moderate' | 'high'
 // type below is untouched).
 export type TimelineEventType = 'CLINICAL_RECORD' | 'PREDICTION' | 'RISK_CHANGE'
 
+// NEW S2E-FIX3 — why a Prediction exists (server-assigned; never sent by the client).
+// NEW S2E-FIX4 — automatic-only workflow: no MANUAL origin exists any more.
+export type PredictionOrigin = 'AUTOMATIC_HEALTH_RECORD' | 'LEGACY_UNKNOWN'
+
+// NEW S2E-FIX4 — historical (LEGACY_UNKNOWN, origin not provable) predictions
+// of a record: listed inside the record's calendar detail, never own events,
+// never labelled automatic.
+export interface CalendarHistoricalPrediction {
+  predictionId: string
+  origin: 'LEGACY_UNKNOWN'
+  predictedAt: string        // calculation time
+  riskScore: number
+  riskLevel: RiskLevel
+  modelVersion: string | null
+}
+
 export interface ClinicalRecordEventMetadata {
   healthRecordId: string
   sysBP: number
   diaBP: number
+  // NEW S2E-FIX3 — event placed at the record's effective clinical time.
+  clinicalTimeSource: ClinicalTimeSource
+  recordedAt: string | null
+  historicalPredictions: CalendarHistoricalPrediction[]
 }
 
 export interface PredictionEventMetadata {
@@ -402,6 +481,11 @@ export interface PredictionEventMetadata {
   isAnomaly: boolean
   anomalyScore: number | null
   modelVersion: string | null
+  // NEW S2E-FIX3 — calendar PREDICTION events are AUTOMATIC only, placed at
+  // the source record's clinical time; predictedAt = calculation time.
+  origin: PredictionOrigin
+  predictedAt: string | null
+  clinicalTimeSource: ClinicalTimeSource | null
 }
 
 export interface RiskChangeEventMetadata {
@@ -409,6 +493,14 @@ export interface RiskChangeEventMetadata {
   toLevel: RiskLevel
   previousPredictionId: string
   currentPredictionId: string
+  // NEW S3 — eventDate is the GENERATED time; clinicalAt is the source
+  // record's clinical time (context only).
+  clinicalAt: string | null
+  generatedAt: string | null
+  // NEW S2E-FIX4 — the event is dated at the CURRENT automatic Prediction's
+  // source-record clinical time; these only disclose that provenance.
+  clinicalTimeSource: ClinicalTimeSource | null
+  currentPredictedAt: string | null
 }
 
 interface TimelineEventBase {
@@ -501,11 +593,6 @@ export interface DashboardStatNavigationState {
   dashboardStatNav: DashboardStatNavigationIntent
 }
 
-export interface CreatePredictionRequest {
-  patientId: string
-  healthRecordId?: string
-}
-
 export interface Prediction {
   id: string
   patientId: string
@@ -519,7 +606,7 @@ export interface Prediction {
   featureImportance?: Record<string, number>
   // Only present on GET /api/predictions (global, medico-scoped history) —
   // the backend embeds patient.firstName/lastName there. Absent on
-  // patient-scoped responses (predict()/getHistory()), which don't need it
+  // patient-scoped responses (getHistory()), which don't need it
   // since the patient is already known from the route.
   patientName?: string
   // V7 — the EXACT HealthRecord this Prediction actually used (Prediction ↔
@@ -533,6 +620,9 @@ export interface Prediction {
   // sex used for an old Prediction is not recoverable from persisted data
   // and must not be presented here (see V7 report, provenance limitation).
   healthRecord: HealthRecord | null
+  // NEW S2E-FIX3/FIX4 — AUTOMATIC_HEALTH_RECORD | LEGACY_UNKNOWN (rows that
+  // predate origin persistence, never guessed).
+  origin: PredictionOrigin
 }
 
 // U6.2 — GET /api/predictions (global history) query contract. riskLevel is
@@ -811,4 +901,107 @@ export interface ApiError {
   error: string
   statusCode: number
   details?: Record<string, string>
+}
+
+// ─── NEW S2E — Risk projections (S2D read API) ─────────────────────────────
+// GET /api/risk-forecasts/patient/:patientId/current. Mirrors the S2D
+// allowlist serializer (forecast.serializer.ts) — bridge internals
+// (appliedLogit, sexUsed, bridge ids), the input fingerprint and R
+// provenance are never on the wire and are deliberately not typed here.
+// A PROJECTION is never an observed event, a HealthRecord, a Prediction or
+// an Alert.
+export type ForecastLifecycle = 'ACTIVE' | 'PATIENT_INACTIVE'
+export type ForecastEligibilityStatus =
+  | 'HISTORY_ABSENT' | 'HISTORY_INVALID' | 'CLINICAL_HISTORY_INSUFFICIENT'
+  | 'FREQUENCY_UNRELIABLE' | 'FORECAST_ELIGIBLE'
+export type ForecastGenerationStatus =
+  | 'NOT_APPLICABLE' | 'GENERATED_FULL' | 'GENERATED_PARTIAL' | 'NONE_ADMISSIBLE' | 'FAILED'
+export type ForecastRiskInterpretation = 'GLOBAL' | 'INDIVIDUALIZED_BRIDGE'
+// Forecast risk level is LOW/MODERATE/HIGH only — CRITICAL is an Alert
+// severity, never a projection level.
+export type ForecastRiskLevel = 'LOW' | 'MODERATE' | 'HIGH'
+export type ForecastBridgeReason =
+  | 'BRIDGE_MISSING' | 'BRIDGE_ANCHOR_MISMATCH' | 'BRIDGE_STATE_INVALID'
+  | 'BRIDGE_MODEL_VERSION_MISMATCH' | 'BRIDGE_PERSONALIZATION_VERSION_MISMATCH'
+  | 'BRIDGE_VERSION_MISMATCH' | 'BRIDGE_SEX_MISMATCH' | 'BRIDGE_AGE_MISMATCH'
+  | 'R_TIME_AXIS_MISMATCH'
+
+export interface ForecastAssumptionFlags {
+  cigsForcedZero: boolean
+  ageChangedFromAnchor: boolean
+}
+
+export interface RiskProjection {
+  horizonIndex: number
+  targetDate: string            // "YYYY-MM-DD" — a DATE, not an appointment time
+  targetAge: number
+  simulatedState: Record<string, number>
+  featureProvenance: Record<string, string>
+  assumptionFlags: ForecastAssumptionFlags
+  // NEW S4 — S-FEAT-SEQUENTIAL-ROBUST-1 per-horizon context (null on pre-S4 sets):
+  // which earlier simulated horizons of the same run fed this horizon's trend.
+  sequentialContext?: {
+    realRecordCount: number | null
+    simulatedContext: string[]
+    weights: { ordinaryReal: number; latestReal: number; simulated: number } | null
+    features: Record<string, { rawSlope: number; trendConsistency: number; effectiveSlope: number }> | null
+  } | null
+  globalRiskScore: number       // 0–1
+  finalRiskScore: number        // 0–1 — primary displayed value
+  riskLevel: ForecastRiskLevel  // authoritative; never re-derived client-side
+}
+
+export interface RiskProjectionSet {
+  kind: 'RISK_PROJECTION_SET'
+  id: string
+  isCurrent: boolean
+  trigger: string
+  createdAt: string
+  eligibility: { status: ForecastEligibilityStatus; reason: string | null; counts: unknown }
+  generation: { status: ForecastGenerationStatus; reason: string | null }
+  anchor: {
+    healthRecordId: string
+    knowledgeCutoff: string | null
+    cutoffLocalDay: string | null   // "YYYY-MM-DD" — last REAL record's clinical day
+    clinicalTimeSource: ClinicalTimeSource | null
+  } | null
+  cadence: {
+    deltaDaysRaw: number | null
+    deltaDays: number | null
+    method: string | null
+    reason: string | null
+    evidence: unknown
+    // NEW S4 — S-CAD-3: exact horizon intervals (cumulative target dates);
+    // multimodal = two-mode cadence (no single cadence value).
+    intervalsDays?: number[]
+    multimodal?: { modes: Array<{ label: string; valueDays: number }>; latestMode: string | null; sequence: string[] } | null
+  }
+  riskInterpretation: ForecastRiskInterpretation | null
+  rBridgeReason: ForecastBridgeReason | string | null
+  versions: {
+    sVersion: string
+    featurePolicyVersion: string
+    clinicalTimePolicyVersion: string
+    cadencePolicyVersion: string
+    modelVersion: string
+  }
+  versionStale: boolean
+  modelContractVerified: boolean
+  uncertainty: 'NOT_QUANTIFIED'
+  projections: RiskProjection[]
+}
+
+export interface CurrentRiskProjectionResponse {
+  patientId: string
+  lifecycle: ForecastLifecycle | string
+  data: RiskProjectionSet | null
+}
+
+// risk_forecasts_changed → patient:{patientId} room. Invalidation-only:
+// receivers refetch CURRENT, never build state from this payload. Not an
+// Alert, not a notification, no unread effect.
+export interface SocketRiskForecastsChanged {
+  patientId: string
+  currentSetId: string | null
+  cause: string
 }

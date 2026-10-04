@@ -1,7 +1,7 @@
 import { api } from './api'
 import { normalizeHealthRecord } from './recordService'
 import type {
-  Patient, RiskLevel, PaginatedResponse,
+  Patient, RiskLevel, PaginatedResponse, CurrentPredictionSummary,
   CreatePatientRequest, UpdatePatientRequest, PatientHistoryResponse, HistoryQueryParams,
   PatientLifecycleFilter, HiddenPatientSummary, HiddenPatientQueryParams,
   PatientVisibilitySummary, BulkVisibilityResponse,
@@ -15,6 +15,19 @@ import type {
 interface BackendPrediction {
   riskLevel: string
   riskScore: string | number
+  healthRecordId?: string | null
+}
+
+// NEW S3-FIX2 — canonical current Prediction (backend clinicalLatest.ts):
+// the Prediction of the EXACT clinically latest record, or null.
+interface BackendCurrentPrediction {
+  id: string
+  healthRecordId: string | null
+  riskLevel: string
+  riskScore: string | number
+  isAnomaly: boolean
+  predictedAt: string
+  modelVersion: string | null
 }
 
 interface BackendPatient {
@@ -35,7 +48,13 @@ interface BackendPatient {
   isHidden: boolean
   createdAt: string
   updatedAt: string
-  predictions?: BackendPrediction[]
+  // NEW S3 — clinical-time read model (absent only on legacy/hidden payloads).
+  latestClinicalAt?: string | null
+  latestClinicalTimeSource?: 'CLINICIAN_ENTERED' | 'LEGACY_ENTRY_TIME' | null
+  latestClinicalRecordId?: string | null
+  currentPrediction?: BackendCurrentPrediction | null
+  currentPredictionTask?: { status: string; attemptCount: number; lastAttemptAt: string | null } | null
+  predictions?: BackendPrediction[]   // backward-compat only — NEVER read as current risk
 }
 
 interface BackendPaginated<T> {
@@ -63,8 +82,35 @@ function toDateOnly(value: string): string {
   return value.slice(0, 10)
 }
 
+// NEW S3-FIX1 — current observed risk = the embedded Prediction ONLY when it
+// belongs to the exact clinically latest record (backend invariant, re-checked
+// here). Decorated payloads (with latestClinicalRecordId in the body) and no
+// matching Prediction ⇒ no current risk. Never an older record's Prediction.
+// NEW S3-FIX2 — FAIL CLOSED. Current observed risk comes ONLY from the
+// canonical `currentPrediction` field, and only when it provably belongs to
+// the exact latest clinical record (`healthRecordId === latestClinicalRecordId`).
+// A payload without that proof (no currentPrediction, no latestClinicalRecordId,
+// mismatched ids, unlinked Prediction) yields NO current risk. The legacy
+// `predictions[0]` embedding is never consulted (no newest-calculation
+// semantics can come back through a compatibility path). Every production
+// caller (list / getById / create / update / setStatus / setVisibility) hits a
+// backend route decorated by withClinicalLatest().
+function currentPredictionOf(p: BackendPatient): CurrentPredictionSummary | null {
+  const c = p.currentPrediction
+  if (!c || !p.latestClinicalRecordId || !c.healthRecordId || c.healthRecordId !== p.latestClinicalRecordId) return null
+  return {
+    id: c.id,
+    healthRecordId: c.healthRecordId,
+    riskLevel: c.riskLevel.toLowerCase() as RiskLevel,
+    riskScore: Number(c.riskScore),
+    isAnomaly: !!c.isAnomaly,
+    predictedAt: c.predictedAt,
+    modelVersion: c.modelVersion ?? null,
+  }
+}
+
 function normalizePatient(p: BackendPatient): Patient {
-  const latest = p.predictions?.[0]
+  const latest = currentPredictionOf(p)
   return {
     id: p.id,
     medicoId: p.medicoId,
@@ -79,8 +125,19 @@ function normalizePatient(p: BackendPatient): Patient {
     isHidden: p.isHidden,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
-    latestRisk: latest ? (latest.riskLevel.toLowerCase() as RiskLevel) : undefined,
-    latestScore: latest ? Number(latest.riskScore) : undefined,
+    latestClinicalAt: p.latestClinicalAt ?? null,
+    latestClinicalTimeSource: p.latestClinicalTimeSource ?? null,
+    latestClinicalRecordId: p.latestClinicalRecordId ?? null,
+    currentPrediction: latest,
+    // NEW S4 — only meaningful while there is no current Prediction for the
+    // exact latest record; unknown states are dropped (fail closed).
+    currentPredictionTask: !latest && p.latestClinicalRecordId && p.currentPredictionTask &&
+      ['PENDING', 'PROCESSING', 'RETRY_WAIT', 'MODEL_INELIGIBLE'].includes(p.currentPredictionTask.status)
+      ? { status: p.currentPredictionTask.status as 'PENDING' | 'PROCESSING' | 'RETRY_WAIT' | 'MODEL_INELIGIBLE', attemptCount: p.currentPredictionTask.attemptCount, lastAttemptAt: p.currentPredictionTask.lastAttemptAt ?? null }
+      : null,
+    // Derived from currentPrediction only (header badge / list badge / sort).
+    latestRisk: latest ? latest.riskLevel : undefined,
+    latestScore: latest ? latest.riskScore : undefined,
   }
 }
 

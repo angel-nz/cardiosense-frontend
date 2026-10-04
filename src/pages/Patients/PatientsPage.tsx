@@ -143,7 +143,10 @@ export default function PatientsPage() {
           break
         }
         case 'date':
-          cmp = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
+          // NEW S3 — clinical time of the latest HealthRecord; patients
+          // without records sort as the oldest (never by Paciente.updatedAt).
+          cmp = (a.latestClinicalAt ? Date.parse(a.latestClinicalAt) : -Infinity) - (b.latestClinicalAt ? Date.parse(b.latestClinicalAt) : -Infinity)
+          if (Number.isNaN(cmp)) cmp = 0
           break
       }
       return sortDir === 'asc' ? cmp : -cmp
@@ -174,7 +177,7 @@ export default function PatientsPage() {
         {[
           { label: 'Total', value: total, color: 'text-foreground' },
           { label: 'Riesgo alto', value: highRiskCount, color: 'text-red-600 dark:text-red-400' },
-          { label: 'Sin predicción', value: noPredictionCount, color: 'text-muted-foreground' },
+          { label: 'Sin riesgo actual', value: noPredictionCount, color: 'text-muted-foreground' },
         ].map(item => (
           <div key={item.label} className="bg-card rounded-xl border border-border px-4 ui-table-header-density text-center">
             <p className={cn('text-2xl font-bold', item.color)}>{item.value}</p>

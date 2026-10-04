@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 import { io, type Socket } from 'socket.io-client'
-import type { SocketAlert, SocketPrediction, SocketHealthRecord, SocketPatientUpdate, SocketDashboardActivity, SocketPatientCreated, SocketPredictionUnavailable, SocketPredictionFailed, SocketAlertsChanged } from '@/types'
+import type { SocketAlert, SocketPrediction, SocketHealthRecord, SocketPatientUpdate, SocketDashboardActivity, SocketPatientCreated, SocketPredictionUnavailable, SocketPredictionFailed, SocketAlertsChanged, SocketRiskForecastsChanged } from '@/types'
 import { useAuth } from './AuthContext'
 import { getAccessToken, subscribeToAccessToken } from '@/lib/tokenStore'
 import { coordinateRefresh, handleSessionExpired } from '@/lib/refreshCoordinator'
@@ -67,6 +67,11 @@ interface SocketContextValue {
   // fires regardless of NotificationPreference, while lastAlert only fires
   // when the relevant category's realtime toggle is on (see AlertsContext).
   lastAlertsChanged: SocketAlertsChanged | null
+  // NEW S2E — risk_forecasts_changed, patient:{patientId} room (same
+  // subscribe_patient membership as prediction_completed). Invalidation-only
+  // refetch signal for the CURRENT projection set — never an Alert, toast,
+  // sound, unread badge or notification-center item.
+  lastRiskForecastsChanged: SocketRiskForecastsChanged | null
   subscribeToPatient: (patientId: string) => void
   unsubscribeFromPatient: (patientId: string) => void
   clearLastAlert: () => void
@@ -78,6 +83,7 @@ interface SocketContextValue {
   clearLastPredictionUnavailable: () => void
   clearLastPredictionFailed: () => void
   clearLastAlertsChanged: () => void
+  clearLastRiskForecastsChanged: () => void
 }
 
 const SocketContext = createContext<SocketContextValue | null>(null)
@@ -111,6 +117,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [lastPredictionFailed, setLastPredictionFailed] = useState<SocketPredictionFailed | null>(null)
   // Y4-FIX2 — same "last event" scalar pattern as the rest.
   const [lastAlertsChanged, setLastAlertsChanged] = useState<SocketAlertsChanged | null>(null)
+  // NEW S2E — same "last event" scalar pattern; a coalesced burst collapses
+  // into the latest value, which is harmless for a refetch-only signal.
+  const [lastRiskForecastsChanged, setLastRiskForecastsChanged] = useState<SocketRiskForecastsChanged | null>(null)
   const socketRef = useRef<Socket | null>(null)
 
   // ─── INT-16/17 subscription reconciliation ──────────────────────────────
@@ -442,6 +451,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socket.on('prediction_completed', (data: SocketPrediction) => setLastPrediction(data))
     socket.on('health_record_created', (data: SocketHealthRecord) => setLastHealthRecord(data))
     socket.on('patient_updated', (data: SocketPatientUpdate) => setLastPatientUpdate(data))
+    // NEW S2E — S2D projection invalidation (patient room). A fresh object
+    // per event, so consecutive identical payloads still re-trigger.
+    socket.on('risk_forecasts_changed', (data: SocketRiskForecastsChanged) => setLastRiskForecastsChanged({ ...data }))
 
     socketRef.current = socket
 
@@ -531,6 +543,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const clearLastPredictionUnavailable = useCallback(() => setLastPredictionUnavailable(null), [])
   const clearLastPredictionFailed = useCallback(() => setLastPredictionFailed(null), [])
   const clearLastAlertsChanged = useCallback(() => setLastAlertsChanged(null), [])
+  const clearLastRiskForecastsChanged = useCallback(() => setLastRiskForecastsChanged(null), [])
 
   return (
     <SocketContext.Provider value={{
@@ -544,6 +557,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       lastPredictionUnavailable,
       lastPredictionFailed,
       lastAlertsChanged,
+      lastRiskForecastsChanged,
       subscribeToPatient,
       unsubscribeFromPatient,
       clearLastAlert,
@@ -555,6 +569,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       clearLastPredictionUnavailable,
       clearLastPredictionFailed,
       clearLastAlertsChanged,
+      clearLastRiskForecastsChanged,
     }}>
       {children}
     </SocketContext.Provider>

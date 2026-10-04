@@ -14,6 +14,7 @@ import { RiskBadge } from '@/components/ui/RiskBadge'
 import { useSocket } from '@/context/SocketContext'
 import { groupTimelineEventsForRender } from '@/lib/timelineGrouping'
 import { TimelineEventGroup } from '@/components/timeline/TimelineEventGroup'
+import { RecordProvenance, AutomaticPredictionProvenance, RiskChangeProvenance } from '@/components/timeline/CalendarProvenance'
 import type { DashboardCalendarEvent, DashboardEventNavigationState, PatientDetailNavigationTarget } from '@/types'
 
 // O4.2 — same coalescing window already validated for PatientCalendar (P5):
@@ -411,6 +412,7 @@ function DashboardEventRow({
           <p className="text-xs text-muted-foreground">
             Registro clínico · {event.metadata.sysBP}/{event.metadata.diaBP} mmHg
           </p>
+          <RecordProvenance metadata={event.metadata} />
         </div>
         <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
       </>
@@ -431,6 +433,7 @@ function DashboardEventRow({
           {event.metadata.isAnomaly && (
             <p className="text-xs text-amber-600 dark:text-amber-400 font-medium mt-1">⚠ Anomalía detectada</p>
           )}
+          <AutomaticPredictionProvenance metadata={event.metadata} />
         </div>
         <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
       </>
@@ -460,6 +463,7 @@ function DashboardEventRow({
           <ArrowRight className="w-3 h-3 text-muted-foreground" />
           <span className={cn('text-xs font-medium', toCfg.text)}>{toCfg.label}</span>
         </div>
+        <RiskChangeProvenance metadata={event.metadata} />
       </div>
       <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
     </>

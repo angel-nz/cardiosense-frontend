@@ -1,22 +1,25 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, Activity, Heart, Phone, Calendar,
   User, FileText, AlertTriangle, Plus, Edit, Loader2, X,
-  PowerOff, RotateCcw, EyeOff, Mail,
+  PowerOff, RotateCcw, EyeOff, Mail, Maximize2, Telescope, ArrowLeftCircle, History,
 } from 'lucide-react'
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, ReferenceLine,
-} from 'recharts'
 import { isAxiosError } from 'axios'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import { RiskGauge } from '@/components/charts/RiskGauge'
 import { FeatureImportanceBar } from '@/components/charts/FeatureImportanceBar'
 import { PatientCalendar } from '@/components/patients/PatientCalendar'
 import { NewRecordModal } from '@/components/patients/NewRecordModal'
+import { RiskProjectionSection } from '@/components/forecasts/RiskProjectionSection'
+import { RiskEvolutionChart } from '@/components/charts/RiskEvolutionChart'
+import { useCurrentRiskForecast } from '@/hooks/useCurrentRiskForecast'
+import { buildRiskEvolutionModel, selectCompactPredictions, type RiskPoint } from '@/lib/riskEvolution'
+import { RiskPointFullDetail } from '@/components/charts/RiskPointFullDetail'
+import { useFullPredictionHistory } from '@/hooks/useFullPredictionHistory'
+import { getTodayBusinessDateKey } from '@/lib/businessDate'
 import { EditPatientModal } from '@/components/patients/EditPatientModal'
-import { cn, formatDate, formatRelativeBusinessDate, formatRelativeBusinessDateTime, calcAge, sexLabel, timeAgo } from '@/lib/utils'
+import { cn, formatDate, formatRelativeBusinessDate, calcAge, sexLabel, timeAgo } from '@/lib/utils'
 import { getPhoneDisplay } from '@/lib/phone'
 import { patientService } from '@/services/patientService'
 import { predictionService } from '@/services/predictionService'
@@ -25,6 +28,7 @@ import { useActionNotify } from '@/context/ToastContext'
 import { Dialog } from '@/components/ui/Dialog'
 import type { Patient, HealthRecord, Prediction, DashboardEventNavigationState, HistorySortBy, HistorySortOrder } from '@/types'
 import { recordService } from '@/services/recordService'
+import { clinicalTimeLabel, recordClinicalTime, formatClinicalDateTime, LEGACY_TIME_NOTE } from '@/lib/clinicalTime'
 
 // Y6.3B §38 — Risk Evolution chart (Recharts) text sizing. PatientDetailPage
 // is this chart's owning component (the chart is rendered inline here, not
@@ -87,7 +91,9 @@ export default function PatientDetailPage() {
   const location = useLocation()
   const { subscribeToPatient, unsubscribeFromPatient, lastPrediction, lastHealthRecord, lastPatientUpdate,
           clearLastPrediction, clearLastHealthRecord, clearLastPatientUpdate,
-          lastPredictionUnavailable, clearLastPredictionUnavailable } = useSocket()
+          lastPredictionUnavailable, clearLastPredictionUnavailable,
+          lastPredictionFailed, clearLastPredictionFailed,
+          lastRiskForecastsChanged, clearLastRiskForecastsChanged } = useSocket()
   const chartTextSizes = CHART_TEXT_SIZES
   const { notifySuccess, notifyError } = useActionNotify()
 
@@ -104,6 +110,17 @@ export default function PatientDetailPage() {
   const [patient, setPatient] = useState<Patient | null>(null)
   const [patientLoading, setPatientLoading] = useState(true)
   const [patientError, setPatientError] = useState<string | null>(null)
+
+  // NEW S2E-FIX1 — the ONE CURRENT risk-projection load state for this page
+  // (one fetch, one risk_forecasts_changed consumer). Shared by "Evolución
+  // del riesgo" (projected series) and "Proyección de riesgo cardiovascular"
+  // (detail cards). Generation + AbortController guards inside the hook;
+  // patient navigation (id change) restarts it from 'loading'.
+  const { state: forecastState } = useCurrentRiskForecast(id, {
+    changeSignal: lastRiskForecastsChanged,
+    ackChangeSignal: clearLastRiskForecastsChanged,
+    patientIsActive: patient?.isActive,
+  })
 
   // Z8 — lifecycle/visibility action state. `statusBusy` disables the
   // relevant buttons for the duration of one in-flight request (status or
@@ -124,7 +141,9 @@ export default function PatientDetailPage() {
   // `records` above now holds only the CURRENT page's rows.
   const [historyPage, setHistoryPage] = useState(1)
   const [historyLimit, setHistoryLimit] = useState(10)
-  const [historySortBy, setHistorySortBy] = useState<HistorySortBy>('recordedAt')
+  // NEW S2E-FIX2 — default = effective clinical time DESC (newest clinical
+  // measurement first), ordered server-side before pagination.
+  const [historySortBy, setHistorySortBy] = useState<HistorySortBy>('clinicalTime')
   const [historySortOrder, setHistorySortOrder] = useState<HistorySortOrder>('desc')
   const [historyTotal, setHistoryTotal] = useState(0)
   const [historyTotalPages, setHistoryTotalPages] = useState(0)
@@ -152,6 +171,34 @@ export default function PatientDetailPage() {
   const [timelineFeedback, setTimelineFeedback] = useState<string | null>(null)
   const recordRowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map())
   const riskEvolutionRef = useRef<HTMLDivElement>(null)
+
+  // NEW S2E-FIX2 — ONE modal coordinator for the risk experience (a single
+  // Dialog whose content switches; never stacked dialogs / nested focus
+  // traps): 'full' = complete risk-evolution chart, 'projection' = CURRENT
+  // projection detail. `projectionFrom` records whether the projection view
+  // was opened from the full chart (then it offers "Volver a la gráfica
+  // completa") or directly from the compact card.
+  const [riskModal, setRiskModal] = useState<null | 'full' | 'projection'>(null)
+  const [projectionFrom, setProjectionFrom] = useState<'page' | 'full'>('page')
+  // Bumped on every REAL prediction_completed for this patient, so an open
+  // full-history modal reconciles its complete Prediction list.
+  const [fullHistoryReloadKey, setFullHistoryReloadKey] = useState(0)
+  // The page-level button that opened the risk modal; focus returns to it on
+  // close (deterministic in every browser).
+  const riskModalTriggerRef = useRef<HTMLElement | null>(null)
+  const openFullChart = useCallback((trigger?: HTMLElement | null) => {
+    if (trigger !== undefined) riskModalTriggerRef.current = trigger
+    setProjectionFrom('page'); setRiskModal('full')
+  }, [])
+  const openProjection = useCallback((from: 'page' | 'full', trigger?: HTMLElement | null) => {
+    if (from === 'page') riskModalTriggerRef.current = trigger ?? null
+    setProjectionFrom(from); setRiskModal('projection')
+  }, [])
+  const closeRiskModal = useCallback(() => { setRiskModal(null); setProjectionFrom('page') }, [])
+  const restoreRiskModalFocus = useCallback((e: Event) => {
+    const t = riskModalTriggerRef.current
+    if (t && t.isConnected) { e.preventDefault(); t.focus() }
+  }, [])
   // O3-FIX-4/5 — `dashboardNav` is the copy of location.state's payload,
   // read once and kept in React state for the rest of this patient visit
   // (independent of the router's own history-state lifecycle, which gets
@@ -186,6 +233,9 @@ export default function PatientDetailPage() {
     setDashboardNav(null)
     navTargetAppliedRef.current = false
     setPredictionUnavailableNotice(null)
+    // NEW S2E-FIX2 — a risk modal never survives a patient switch.
+    setRiskModal(null)
+    setProjectionFrom('page')
   }, [id])
 
   // U8.6C — prediction_unavailable, user:{userId} room (auto-joined, no
@@ -269,6 +319,11 @@ export default function PatientDetailPage() {
   // Prediction event may legitimately revert this to the normal latest-24
   // window once the target has already been applied (see loadPredictions's
   // own realtime effect, unchanged).
+  // NEW S2E-FIX2 — the compact chart now always shows the latest 10 REAL
+  // Predictions, so a target outside that window is no longer swapped into
+  // the compact dataset (which would silently stop being "the latest 10").
+  // Instead its existence is confirmed with the same targetId lookup and the
+  // COMPLETE chart opens with it highlighted.
   const handleSelectPrediction = useCallback(async (predictionId: string) => {
     if (predictions.some(p => p.id === predictionId)) {
       setTimelineFeedback(null)
@@ -279,22 +334,19 @@ export default function PatientDetailPage() {
     }
     if (!id) return
     try {
-      const result = await predictionService.getHistory(id, { limit: 24, targetId: predictionId })
+      const result = await predictionService.getHistory(id, { limit: 10, targetId: predictionId })
       if (!result.targetResolved) {
         setTimelineFeedback('Esta predicción no está disponible en el historial de este paciente.')
         return
       }
-      setPredictions(result.data)
       setTimelineFeedback(null)
       setSelectedHealthRecordId(null)
       setSelectedPredictionId(predictionId)
-      requestAnimationFrame(() => {
-        riskEvolutionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      })
+      openFullChart(null)
     } catch {
       setTimelineFeedback('Esta predicción no está disponible en el historial de este paciente.')
     }
-  }, [predictions, id])
+  }, [predictions, id, openFullChart])
 
   // P4-FIX — called by PatientCalendar whenever its own temporal context
   // changes (day, month, "Hoy") in a way that invalidates whichever
@@ -480,7 +532,9 @@ export default function PatientDetailPage() {
     const requestId = ++latestRecordRequestIdRef.current
     if (!silent) setLatestRecordLoading(true)
     try {
-      const latest = await recordService.getLatest(id)
+      // NEW S2E-FIX3 — latest CLINICAL record (same helper as the record form
+      // and Nueva predicción), not the latest entered one.
+      const latest = await recordService.getLatestClinical(id)
       if (requestId !== latestRecordRequestIdRef.current) return
       setLatestRecord(latest)
     } catch {
@@ -532,7 +586,12 @@ export default function PatientDetailPage() {
     if (!silent) setPredictionsLoading(true)
     setPredictionsError(null)
     try {
-      const result = await predictionService.getHistory(id, { limit: 24 })
+      // NEW S3 — compact window: the 10 CLINICALLY latest REAL Predictions
+      // (backend sortBy=clinicalTime: source record effective time DESC,
+      // recordedAt, id, predictedAt, id). predictions[0] is therefore the
+      // current observed risk (clinically latest record's Prediction). The
+      // complete history is loaded lazily only by the full-chart modal.
+      const result = await predictionService.getHistory(id, { limit: 10 })
       if (requestId !== predictionsRequestIdRef.current) return
       setPredictions(result.data)
     } catch {
@@ -561,8 +620,20 @@ export default function PatientDetailPage() {
     if (!id || !lastPrediction || lastPrediction.patientId !== id) return
     loadPatient(true)
     loadPredictions(true)
+    setFullHistoryReloadKey(k => k + 1)   // NEW S2E-FIX2 — open full modal reconciles
     clearLastPrediction()
   }, [id, lastPrediction, loadPatient, loadPredictions, clearLastPrediction])
+
+  // NEW S4 — prediction_failed now means "attempt failed, retrying
+  // automatically" (durable task in RETRY_WAIT). Silent patient refetch so
+  // the current-risk card shows "Reintentando predicción automática"; no
+  // error banner, no manual retry, never an older risk.
+  useEffect(() => {
+    if (!id || !lastPredictionFailed || lastPredictionFailed.patientId !== id) return
+    loadPatient(true)
+    clearLastPredictionFailed()
+  }, [id, lastPredictionFailed, loadPatient, clearLastPredictionFailed])
+
 
   // U5.2 — health_record_created. Server-side pagination/sorting means a
   // newly created row's position in the CURRENT page/sort view is
@@ -580,8 +651,9 @@ export default function PatientDetailPage() {
       historyCoalesceTimerRef.current = null
       loadHistory(true)
       loadLatestRecord(true)
+      loadPatient(true)          // NEW S3 — latestClinicalAt ("Última actualización")
     }, 400)
-  }, [loadHistory, loadLatestRecord])
+  }, [loadHistory, loadLatestRecord, loadPatient])
 
   useEffect(() => {
     if (!id || !lastHealthRecord || lastHealthRecord.patientId !== id) return
@@ -695,6 +767,12 @@ export default function PatientDetailPage() {
   const handleRecordCreated = () => {
     loadHistory(true)
     loadLatestRecord(true)
+    // NEW S4 — the record is saved once its transaction commits, whatever
+    // the AI service's state; the automatic Prediction is a durable task
+    // (pending / retrying shown by the current-risk card from the patient
+    // payload). No manual retry action exists.
+    loadPatient(true)
+    notifySuccess('Registro clínico guardado. La predicción se generará automáticamente.')
   }
 
   // U5.2 — Clinical History sort/pagination interaction handlers.
@@ -711,6 +789,44 @@ export default function PatientDetailPage() {
     setHistoryLimit(limit)
     setHistoryPage(1)
   }
+
+  // NEW S2E-FIX1 — "Evolución del riesgo" model on the CLINICAL time axis.
+  // Pure composition of the REAL series (predictions → source HealthRecord
+  // clinical time) and the CURRENT projected series; both filtered to `id`,
+  // so a late response of another patient can never be mixed in.
+  // NEW S2E-FIX2 — compact = latest 10 by Prediction recency, positioned by
+  // clinical time; CURRENT projections (0–3) are added on top of that limit.
+  const compactPredictions = useMemo(() => selectCompactPredictions(predictions), [predictions])
+  const evolutionModel = useMemo(
+    () => buildRiskEvolutionModel({ patientId: id ?? '', predictions: compactPredictions, forecastState, todayKey: getTodayBusinessDateKey() }),
+    [id, compactPredictions, forecastState],
+  )
+  // NEW S2E-FIX2 — complete history, LAZY: only while the full chart (or the
+  // projection view opened FROM it) is showing.
+  const fullHistoryEnabled = riskModal === 'full' || (riskModal === 'projection' && projectionFrom === 'full')
+  const fullHistory = useFullPredictionHistory(id, fullHistoryEnabled, fullHistoryReloadKey)
+  const fullPredictions = fullHistory.phase === 'ready' ? fullHistory.predictions : null
+  const fullModel = useMemo(
+    () => buildRiskEvolutionModel({ patientId: id ?? '', predictions: fullPredictions ?? [], forecastState, todayKey: getTodayBusinessDateKey() }),
+    [id, fullPredictions, forecastState],
+  )
+  // NEW S2E-FIX4 — the full modal's point description is the selected
+  // point's FLOATING box (RiskEvolutionChart variant="full"); no permanent
+  // detail section. A deep-linked Prediction is the chart's initial selection.
+  const fullPredictionsById = useMemo(() => new Map((fullPredictions ?? []).map(p => [p.id, p])), [fullPredictions])
+  const renderFullPointDetail = useCallback(
+    (point: RiskPoint) => <RiskPointFullDetail point={point} predictionsById={fullPredictionsById} forecastState={forecastState} todayKey={getTodayBusinessDateKey()} />,
+    [fullPredictionsById, forecastState],
+  )
+
+  // Deterministic focus when the single dialog switches views.
+  useEffect(() => {
+    if (!riskModal) return
+    const raf = requestAnimationFrame(() => {
+      (document.querySelector('[data-risk-modal-autofocus]') as HTMLElement | null)?.focus()
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [riskModal])
 
   // ── Loading / error states for the patient fetch ──────────────────────
   if (patientLoading) {
@@ -737,7 +853,25 @@ export default function PatientDetailPage() {
     )
   }
 
-  const latestPrediction = predictions[0]
+  // NEW S3-FIX2 — current observed risk comes ONLY from the canonical
+  // backend field `patient.currentPrediction` (Prediction of the EXACT
+  // clinically latest HealthRecord; predictedAt DESC, id DESC within it;
+  // null ⇒ no current risk). It never searches the Prediction history
+  // (`predictions` is the partial compact window for the evolution chart),
+  // so page size, pagination, unlinked/legacy rows, chart loading or a
+  // failed history request cannot change or erase the current state.
+  const latestPrediction = patient.currentPrediction ?? undefined
+  // NEW S4 — durable automatic-Prediction task of that exact record (only
+  // while it has no Prediction yet): pending / retrying wording, never an
+  // older risk. Null ⇒ no active task (completed, blocked or absent).
+  const currentTask = !latestPrediction ? patient.currentPredictionTask ?? null : null
+  // NEW S4 — ONE navigation to THIS patient's Prediction history, shared by
+  // the compact card's "Historial" and the full-chart modal's "Historial".
+  const openPredictionHistory = () => { setRiskModal(null); navigate(`/predictions/${patient.id}`) }
+  // Clinical time of that exact record (it IS the latest clinical record).
+  const currentRecordTime = patient.latestClinicalAt
+    ? { recordedAt: patient.latestClinicalAt, measuredAt: patient.latestClinicalTimeSource === 'CLINICIAN_ENTERED' ? patient.latestClinicalAt : null, clinicalTimeSource: patient.latestClinicalTimeSource ?? 'LEGACY_ENTRY_TIME' }
+    : null
   const age = calcAge(patient.birthDate)
 
   return (
@@ -784,7 +918,9 @@ export default function PatientDetailPage() {
             )}
           </div>
           <p className="text-muted-foreground text-sm mt-1">
-            {age} años · {sexLabel(patient.sex)} · Última actualización {timeAgo(patient.updatedAt)}
+            {/* NEW S3 — clinical time of the clinically latest HealthRecord;
+                personal-info edits (Paciente.updatedAt) never move it. */}
+            {age} años · {sexLabel(patient.sex)} · <span data-testid="patient-last-clinical">{patient.latestClinicalAt ? `Última actualización ${timeAgo(patient.latestClinicalAt)}` : 'Sin registros clínicos'}</span>
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
@@ -797,13 +933,9 @@ export default function PatientDetailPage() {
                 <Plus className="w-4 h-4" />
                 Nuevo registro
               </button>
-              <button
-                onClick={() => navigate(`/predictions/${patient.id}`)}
-                className="flex items-center gap-2 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
-              >
-                <Activity className="w-4 h-4" />
-                Nueva predicción
-              </button>
+              {/* NEW S2E-FIX4 — "Nueva predicción" removed: saving a "Nuevo
+                  registro" is the only way a Prediction is produced
+                  (automatically). */}
               <button
                 onClick={() => setEditPatientModalOpen(true)}
                 className="p-2 rounded-lg border border-border hover:bg-accent transition-colors"
@@ -900,6 +1032,93 @@ export default function PatientDetailPage() {
         </div>
       </Dialog>
 
+      {/* NEW S2E-FIX2 — risk modal coordinator: ONE Dialog, content switches
+          between the complete risk-evolution chart and the CURRENT projection
+          detail (no stacked dialogs → one focus trap, Escape/overlay/X close
+          the whole flow, focus returns to the opening button). Both views
+          read the page's single shared forecast state — opening them never
+          fetches CURRENT again. */}
+      <Dialog
+        open={riskModal !== null}
+        onOpenChange={open => { if (!open) closeRiskModal() }}
+        title={riskModal === 'projection' ? 'Proyección de riesgo cardiovascular' : 'Evolución del riesgo — historial completo'}
+        size="wide"
+        onCloseAutoFocus={restoreRiskModalFocus}
+      >
+        {riskModal === 'full' && (
+          <div className="ui-content-stack" data-testid="full-risk-modal">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <p className="text-xs text-muted-foreground" data-testid="full-evolution-subtitle">
+                {fullHistory.phase === 'ready'
+                  ? `${fullModel.real.length} predicci${fullModel.real.length === 1 ? 'ón' : 'ones'} (historial completo) · por fecha clínica`
+                  : 'Historial completo de predicciones · por fecha clínica'}
+                {fullModel.projected.length > 0 &&
+                  ` · Proyección: ${fullModel.projected.length} fecha${fullModel.projected.length === 1 ? '' : 's'} objetivo`}
+              </p>
+              {/* NEW S4 — upper-right action group: Ver proyección + Historial
+                  (same destination/handler as the compact card's button; wraps
+                  on narrow widths, never squeezes the subtitle). */}
+              <div className="ml-auto flex items-center justify-end gap-2 flex-wrap" data-testid="full-risk-modal-actions">
+                <button
+                  type="button"
+                  data-risk-modal-autofocus
+                  onClick={() => openProjection('full')}
+                  className="flex items-center gap-1.5 px-3 ui-compact-control-density rounded-lg text-xs font-medium border border-primary/40 text-primary hover:bg-primary/5 transition-colors"
+                >
+                  <Telescope className="w-3.5 h-3.5" aria-hidden="true" />
+                  Ver proyección
+                </button>
+                <button
+                  type="button"
+                  onClick={openPredictionHistory}
+                  data-testid="full-modal-open-prediction-history"
+                  title="Historial de predicciones de este paciente"
+                  className="inline-flex items-center gap-1.5 px-3 ui-compact-control-density rounded-lg text-xs font-medium border border-border text-foreground hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <History className="w-3.5 h-3.5" aria-hidden="true" />
+                  Historial
+                </button>
+              </div>
+            </div>
+            {fullHistory.phase === 'loading' || fullHistory.phase === 'idle' ? (
+              <div className="flex items-center justify-center py-16" role="status">
+                <Loader2 className="w-5 h-5 text-primary animate-spin" aria-hidden="true" />
+                <span className="sr-only">Cargando historial completo…</span>
+              </div>
+            ) : fullHistory.phase === 'error' ? (
+              <p className="text-sm text-red-600 dark:text-red-400 text-center py-8">{fullHistory.message}</p>
+            ) : fullModel.rows.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">Aún no hay historial de predicciones para mostrar la evolución.</p>
+            ) : (
+              <>
+                <RiskEvolutionChart
+                  model={fullModel} selectedPredictionId={selectedPredictionId} textSizes={chartTextSizes} height={380}
+                  variant="full" chartLabel="Evolución del riesgo — historial completo"
+                  initialSelectedKey={selectedPredictionId ? `r:${selectedPredictionId}` : null}
+                  renderPointDetail={renderFullPointDetail}
+                />
+              </>
+            )}
+          </div>
+        )}
+        {riskModal === 'projection' && (
+          <div className="ui-content-stack" data-testid="projection-risk-modal">
+            {projectionFrom === 'full' && (
+              <button
+                type="button"
+                data-risk-modal-autofocus
+                onClick={() => setRiskModal('full')}
+                className="self-start flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+              >
+                <ArrowLeftCircle className="w-3.5 h-3.5" aria-hidden="true" />
+                Volver a la gráfica completa
+              </button>
+            )}
+            <RiskProjectionSection state={forecastState} embedded />
+          </div>
+        )}
+      </Dialog>
+
       <NewRecordModal
         patientId={patient.id}
         birthDate={patient.birthDate}
@@ -952,12 +1171,58 @@ export default function PatientDetailPage() {
               <Heart className="w-4 h-4 text-red-500 dark:text-red-400" />
               Riesgo cardiovascular
             </h3>
-            {predictionsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-5 h-5 text-primary animate-spin" />
+            {/* NEW S3-FIX2 — no dependency on the history request's loading
+                / error state: the current card renders from the patient
+                payload alone (the evolution chart reports its own errors). */}
+            {!latestPrediction && patient.latestClinicalRecordId && currentTask?.status === 'MODEL_INELIGIBLE' ? (
+              // NEW S4-FIX2 — TERMINAL: the age recorded for the latest record
+              // is outside the model's supported range. Truthful, no spinner,
+              // no "pending"/"retrying" wording, no retry button, never an
+              // older record's risk.
+              <div className="text-center py-6" data-testid="current-risk-model-ineligible" data-task-status="MODEL_INELIGIBLE">
+                <p className="text-sm font-medium text-foreground">
+                  Predicción no generada: la edad registrada está fuera del rango soportado por el modelo.
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  El registro clínico se guardó correctamente.
+                </p>
+                {patient.latestClinicalAt && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Registro clínico · {formatClinicalDateTime(patient.latestClinicalAt)}
+                  </p>
+                )}
               </div>
-            ) : predictionsError ? (
-              <p className="text-sm text-red-600 dark:text-red-400 text-center py-4">{predictionsError}</p>
+            ) : !latestPrediction && patient.latestClinicalRecordId && currentTask ? (
+              // NEW S4 — the exact latest record's automatic Prediction is a
+              // durable pending obligation (backend task). Pending / retrying
+              // wording only — never an older record's risk, no manual retry.
+              <div className="text-center py-6" data-testid="current-risk-pending" data-task-status={currentTask.status}>
+                <Loader2 className="w-5 h-5 text-primary animate-spin mx-auto mb-2" aria-hidden="true" />
+                <p className="text-sm font-medium text-foreground">
+                  {currentTask.status === 'RETRY_WAIT' ? 'Reintentando predicción automática' : 'Predicción automática pendiente'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {currentTask.status === 'RETRY_WAIT'
+                    ? 'El registro clínico se guardó. El servicio de predicción no respondió; se reintentará automáticamente.'
+                    : 'El registro clínico se guardó. La predicción se generará automáticamente.'}
+                </p>
+                {patient.latestClinicalAt && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Registro clínico · {formatClinicalDateTime(patient.latestClinicalAt)}
+                  </p>
+                )}
+              </div>
+            ) : !latestPrediction && patient.latestClinicalRecordId ? (
+              // NEW S3-FIX1 — the exact latest clinical record has no
+              // Prediction: neutral, never an older record's risk.
+              <div className="text-center py-6" data-testid="current-risk-unavailable">
+                <p className="text-sm text-muted-foreground">Riesgo actual no disponible para el registro clínico más reciente.</p>
+                {patient.latestClinicalAt && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Registro clínico · {formatClinicalDateTime(patient.latestClinicalAt)}
+                  </p>
+                )}
+              </div>
             ) : !latestPrediction ? (
               <div className="text-center py-6">
                 <p className="text-sm text-muted-foreground">Sin predicciones aún</p>
@@ -984,9 +1249,10 @@ export default function PatientDetailPage() {
                   </div>
                 )}
                 <div className="mt-4 pt-4 border-t border-border text-center">
-                  <p className="text-xs text-muted-foreground">
-                    Última predicción {timeAgo(latestPrediction.predictedAt)}
+                  <p className="text-xs text-muted-foreground" data-testid="current-risk-clinical">
+                    {currentRecordTime ? `Registro clínico · ${clinicalTimeLabel(currentRecordTime)}` : '—'}
                   </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Calculada {timeAgo(latestPrediction.predictedAt)}</p>
                   {latestPrediction.modelVersion && (
                     <p className="text-xs text-muted-foreground mt-0.5">
                       Modelo {latestPrediction.modelVersion}
@@ -1094,113 +1360,89 @@ export default function PatientDetailPage() {
           {/* Risk trend chart — real predictions (predictionService.getHistory),
               chronological (oldest→newest; backend returns newest-first) */}
           <div ref={riskEvolutionRef} className="bg-card rounded-xl border border-border ui-card-density">
-            <div className="flex items-center justify-between mb-4">
-              <div>
+            {/* NEW S3 — header: title/subtitle on the left; the action group
+                (Ver proyección · Historial · expand) on the right. On narrow widths
+                the group wraps below the title and stays right-aligned (the title is
+                never squeezed). */}
+            <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+              <div className="flex-1 min-w-[12rem]">
                 <h3 className="font-semibold text-foreground flex items-center gap-2">
                   <Activity className="w-4 h-4 text-muted-foreground" />
                   Evolución del riesgo
                 </h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {predictions.length > 0
-                    ? `Última${predictions.length === 1 ? '' : 's'} ${predictions.length} predicci${predictions.length === 1 ? 'ón' : 'ones'}`
-                    : 'Score cardiovascular'}
+                <p className="text-xs text-muted-foreground mt-0.5" data-testid="compact-evolution-subtitle">
+                  {/* NEW S2E-FIX2 — compact window (latest ≤10 REAL Predictions)
+                      on the clinical time axis; projected targets are counted
+                      separately and never called Predictions. */}
+                  {evolutionModel.real.length > 0
+                    ? `Última${evolutionModel.real.length === 1 ? '' : 's'} ${evolutionModel.real.length} predicci${evolutionModel.real.length === 1 ? 'ón' : 'ones'} · por fecha clínica`
+                    : 'Score cardiovascular · por fecha clínica'}
+                  {evolutionModel.projected.length > 0 &&
+                    ` · Proyección: ${evolutionModel.projected.length} fecha${evolutionModel.projected.length === 1 ? '' : 's'} objetivo`}
                 </p>
+              </div>
+              {/* NEW S3 — right-side action area: "Ver proyección" (moved to
+                  the right), "Historial" (THIS patient's Prediction history —
+                  read-only, no creation control), then the icon-only full
+                  chart button (unchanged, still last). */}
+              <div className="ml-auto flex items-center justify-end gap-2 flex-wrap flex-shrink-0" data-testid="risk-evolution-actions">
+                <button
+                  type="button"
+                  onClick={e => openProjection('page', e.currentTarget)}
+                  data-testid="open-projection"
+                  className="inline-flex items-center gap-1.5 px-3 ui-compact-control-density rounded-lg text-xs font-medium border border-primary/40 text-primary hover:bg-primary/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <Telescope className="w-3.5 h-3.5" aria-hidden="true" />
+                  Ver proyección
+                </button>
+                <button
+                  type="button"
+                  onClick={openPredictionHistory}
+                  data-testid="open-prediction-history"
+                  title="Historial de predicciones de este paciente"
+                  className="inline-flex items-center gap-1.5 px-3 ui-compact-control-density rounded-lg text-xs font-medium border border-border text-foreground hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <History className="w-3.5 h-3.5" aria-hidden="true" />
+                  Historial
+                </button>
+                <button
+                  type="button"
+                  onClick={e => openFullChart(e.currentTarget)}
+                  aria-label="Ver gráfica completa"
+                  title="Ver gráfica completa"
+                  data-testid="open-full-chart"
+                  className="flex-shrink-0 p-2 rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                >
+                  <Maximize2 className="w-4 h-4" aria-hidden="true" />
+                </button>
               </div>
             </div>
             {predictionsLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-5 h-5 text-primary animate-spin" />
               </div>
-            ) : predictions.length === 0 ? (
+            ) : predictionsError ? (
+              // NEW S3-FIX2 — the history error belongs to the chart only;
+              // the current-risk card is unaffected.
+              <p className="text-sm text-red-600 dark:text-red-400 text-center py-4" data-testid="evolution-history-error">{predictionsError}</p>
+            ) : evolutionModel.rows.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 Aún no hay historial de predicciones para mostrar la evolución.
               </p>
             ) : (
-              <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={[...predictions].reverse().map(p => ({
-                  date: formatDate(p.predictedAt, 'dd MMM'),
-                  score: p.riskScore,
-                  predictionId: p.id,
-                }))}>
-                  {/* Y6.2 — grid/tick colors were hardcoded #F3F4F6/#9CA3AF
-                      (fixed light-gray). Recharts passes these straight
-                      through as SVG presentation attributes, which resolve
-                      CSS custom properties through the cascade same as any
-                      other element — so the existing --border/
-                      --muted-foreground tokens apply with no JS needed.
-                      Risk-tier reference lines (#DC2626 "Alto"/#D97706
-                      "Moderado") are UNCHANGED — same values RISK_CONFIG
-                      uses for these tiers; not a color this block may
-                      redefine (Y6.2 §9/§49). */}
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="date" tick={{ fontSize: chartTextSizes.axisTick, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-                  <YAxis
-                    domain={[0, 1]}
-                    tickFormatter={v => `${(v * 100).toFixed(0)}%`}
-                    tick={{ fontSize: chartTextSizes.axisTick, fill: 'hsl(var(--muted-foreground))' }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  {/* Y6.2 — Recharts' <Tooltip> renders its own floating box
-                      with NO styling by default (a plain white box, fixed
-                      regardless of app theme) — contentStyle/itemStyle/
-                      labelStyle are CSS-var-driven here for the same reason
-                      as the axes above, so it now matches the app's
-                      popover surface in both themes instead of always
-                      rendering white-on-white-adjacent in dark mode. */}
-                  <Tooltip
-                    formatter={(v: number) => [`${(v * 100).toFixed(1)}%`, 'Riesgo']}
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--popover))',
-                      borderColor: 'hsl(var(--border))',
-                      borderRadius: '0.5rem',
-                      fontSize: `${chartTextSizes.tooltip}px`,
-                    }}
-                    labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
-                    itemStyle={{ color: 'hsl(var(--popover-foreground))' }}
-                  />
-                  <ReferenceLine y={0.65} stroke="#DC2626" strokeDasharray="4 4" label={{ value: 'Alto', fill: '#DC2626', fontSize: chartTextSizes.refLine }} />
-                  <ReferenceLine y={0.35} stroke="#D97706" strokeDasharray="4 4" label={{ value: 'Moderado', fill: '#D97706', fontSize: chartTextSizes.refLine }} />
-                  <Line
-                    type="monotone"
-                    dataKey="score"
-                    // Y6.2 — was a hardcoded #2563EB. This line represents
-                    // the score trend itself (not a specific risk tier), so
-                    // it maps to the app's own --primary token — which is
-                    // the same blue family already, and Y6.1 already tuned
-                    // --primary specifically for dark-mode contrast.
-                    stroke="hsl(var(--primary))"
-                    strokeWidth={2.5}
-                    dot={(dotProps: { cx?: number; cy?: number; payload?: { predictionId: string } }) => {
-                      const { cx, cy, payload } = dotProps
-                      const isSelected = !!payload && payload.predictionId === selectedPredictionId
-                      return (
-                        <circle
-                          key={payload?.predictionId ?? `${cx}-${cy}`}
-                          cx={cx}
-                          cy={cy}
-                          r={isSelected ? 7 : 4}
-                          // Unselected dots follow the line's own color
-                          // (--primary); the selected dot keeps the same
-                          // #DC2626 "high" red used everywhere else as a
-                          // selection highlight — unchanged, not a risk
-                          // reclassification of that specific point.
-                          fill={isSelected ? '#DC2626' : 'hsl(var(--primary))'}
-                          // Was a hardcoded pure-white ring, which only
-                          // "cut out" correctly against a white card. Using
-                          // --card makes the ring match whatever the actual
-                          // surrounding card background is in either theme.
-                          stroke="hsl(var(--card))"
-                          strokeWidth={isSelected ? 3 : 2}
-                        />
-                      )
-                    }}
-                    activeDot={{ r: 6 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              // NEW S2E-FIX1 — clinical-time chart composing two SEPARATE
+              // series: REAL (solid, from `predictions` + their source
+              // HealthRecord clinical time) and CURRENT projection (dashed,
+              // from the shared forecast state). `predictions` is read only;
+              // forecast points never enter it.
+              <RiskEvolutionChart model={evolutionModel} selectedPredictionId={selectedPredictionId} textSizes={chartTextSizes} variant="compact" chartLabel="Evolución del riesgo" />
             )}
           </div>
+
+          {/* NEW S2E-FIX2 — the projection detail is no longer a permanent
+              block here: it lives in the risk modal (below), opened from the
+              compact chart or from the full chart. CURRENT projected points
+              stay visible in "Evolución del riesgo". */}
 
           {/* Clinical indicators — from the most recent real Health Record (INT-08/INT-10) */}
           <div className="bg-card rounded-xl border border-border ui-card-density">
@@ -1220,7 +1462,8 @@ export default function PatientDetailPage() {
             ) : (
               <>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Último registro: {formatRelativeBusinessDateTime(latestRecord.recordedAt)}
+                  {/* NEW S2E — clinical (measured) time; legacy rows labelled as entry time. */}
+                  Último registro · {clinicalTimeLabel(latestRecord)}
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   {[
@@ -1298,7 +1541,7 @@ export default function PatientDetailPage() {
                     <thead>
                       <tr className="text-left text-xs text-muted-foreground uppercase tracking-wide border-b border-border">
                         {([
-                          ['recordedAt', 'Fecha'],
+                          ['clinicalTime', 'Fecha clínica'],
                           ['sysBP', 'Sistólica'],
                           ['diaBP', 'Diastólica'],
                           ['totChol', 'Colesterol'],
@@ -1333,7 +1576,26 @@ export default function PatientDetailPage() {
                             r.id === selectedHealthRecordId && 'bg-primary/10 ring-1 ring-inset ring-primary',
                           )}
                         >
-                          <td className="ui-clinical-row pr-4 text-muted-foreground">{formatRelativeBusinessDateTime(r.recordedAt)}</td>
+                          {/* NEW S2E — measured time; a legacy row shows its entry time
+                              explicitly tagged "Captura" (no measurement time known). */}
+                          <td className="ui-clinical-row pr-4 text-muted-foreground">
+                            {(() => {
+                              const t = recordClinicalTime(r)
+                              return (
+                                <>
+                                  {formatClinicalDateTime(t.instant)}
+                                  {t.source === 'LEGACY_ENTRY' && (
+                                    <span
+                                      className="ml-1.5 inline-block text-[10px] px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground"
+                                      title={`Fecha de captura — ${LEGACY_TIME_NOTE}`}
+                                    >
+                                      Captura
+                                    </span>
+                                  )}
+                                </>
+                              )
+                            })()}
+                          </td>
                           <td className="ui-clinical-row pr-4">{r.sysBP}</td>
                           <td className="ui-clinical-row pr-4">{r.diaBP}</td>
                           <td className="ui-clinical-row pr-4">{r.totChol}</td>

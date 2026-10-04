@@ -17,6 +17,8 @@ export const MOCK_PATIENTS: Patient[] = [
     latestScore: 0.7234,
     createdAt: '2024-01-20T09:00:00Z',
     updatedAt: '2024-06-10T14:30:00Z',
+    latestClinicalAt: '2024-06-10T14:30:00Z',
+    latestClinicalTimeSource: 'LEGACY_ENTRY_TIME', latestClinicalRecordId: 'mock-rec-1', currentPrediction: { id: 'mock-pred-1', healthRecordId: 'mock-rec-1', riskLevel: 'high', riskScore: 0.7234, isAnomaly: false, predictedAt: '2026-09-01T00:00:00.000Z', modelVersion: null }, currentPredictionTask: null,
   },
   {
     id: 'pat_02',
@@ -34,6 +36,8 @@ export const MOCK_PATIENTS: Patient[] = [
     latestScore: 0.4512,
     createdAt: '2024-02-05T10:00:00Z',
     updatedAt: '2024-06-08T11:00:00Z',
+    latestClinicalAt: '2024-06-08T11:00:00Z',
+    latestClinicalTimeSource: 'LEGACY_ENTRY_TIME', latestClinicalRecordId: 'mock-rec-2', currentPrediction: { id: 'mock-pred-2', healthRecordId: 'mock-rec-2', riskLevel: 'moderate', riskScore: 0.4512, isAnomaly: false, predictedAt: '2026-09-01T00:00:00.000Z', modelVersion: null }, currentPredictionTask: null,
   },
   {
     id: 'pat_03',
@@ -50,6 +54,8 @@ export const MOCK_PATIENTS: Patient[] = [
     latestScore: 0.1823,
     createdAt: '2024-02-18T08:00:00Z',
     updatedAt: '2024-06-05T09:30:00Z',
+    latestClinicalAt: '2024-06-05T09:30:00Z',
+    latestClinicalTimeSource: 'LEGACY_ENTRY_TIME', latestClinicalRecordId: 'mock-rec-3', currentPrediction: { id: 'mock-pred-3', healthRecordId: 'mock-rec-3', riskLevel: 'low', riskScore: 0.1823, isAnomaly: false, predictedAt: '2026-09-01T00:00:00.000Z', modelVersion: null }, currentPredictionTask: null,
   },
   {
     id: 'pat_04',
@@ -67,6 +73,8 @@ export const MOCK_PATIENTS: Patient[] = [
     latestScore: 0.8156,
     createdAt: '2024-03-01T11:00:00Z',
     updatedAt: '2024-06-12T16:00:00Z',
+    latestClinicalAt: '2024-06-12T16:00:00Z',
+    latestClinicalTimeSource: 'LEGACY_ENTRY_TIME', latestClinicalRecordId: 'mock-rec-4', currentPrediction: { id: 'mock-pred-4', healthRecordId: 'mock-rec-4', riskLevel: 'high', riskScore: 0.8156, isAnomaly: false, predictedAt: '2026-09-01T00:00:00.000Z', modelVersion: null }, currentPredictionTask: null,
   },
   {
     id: 'pat_05',
@@ -83,6 +91,8 @@ export const MOCK_PATIENTS: Patient[] = [
     latestScore: 0.2341,
     createdAt: '2024-03-15T09:00:00Z',
     updatedAt: '2024-06-01T10:00:00Z',
+    latestClinicalAt: '2024-06-01T10:00:00Z',
+    latestClinicalTimeSource: 'LEGACY_ENTRY_TIME', latestClinicalRecordId: 'mock-rec-5', currentPrediction: { id: 'mock-pred-5', healthRecordId: 'mock-rec-5', riskLevel: 'low', riskScore: 0.2341, isAnomaly: false, predictedAt: '2026-09-01T00:00:00.000Z', modelVersion: null }, currentPredictionTask: null,
   },
 ]
 
@@ -139,6 +149,7 @@ export const MOCK_PREDICTIONS: Prediction[] = [
     patientId: 'pat_01',
     healthRecordId: 'rec_01',
     healthRecord: null, // V7 — no mock HealthRecord wired here; this file is unused by the live app.
+    origin: 'LEGACY_UNKNOWN',
     riskScore: 0.7234,
     riskLevel: 'high',
     anomalyScore: -0.0812,
@@ -161,6 +172,7 @@ export const MOCK_PREDICTIONS: Prediction[] = [
     patientId: 'pat_02',
     healthRecordId: 'rec_02',
     healthRecord: null, // V7 — no mock HealthRecord wired here; this file is unused by the live app.
+    origin: 'LEGACY_UNKNOWN',
     riskScore: 0.4512,
     riskLevel: 'moderate',
     anomalyScore: -0.0321,
@@ -184,6 +196,8 @@ export const MOCK_HEALTH_RECORD: HealthRecord = {
   id: 'rec_01',
   patientId: 'pat_01',
   recordedAt: '2024-06-10T14:00:00Z',
+  measuredAt: null,
+  clinicalTimeSource: 'LEGACY_ENTRY_TIME',
   age: 56,
   currentSmoker: true,
   cigsPerDay: 10,

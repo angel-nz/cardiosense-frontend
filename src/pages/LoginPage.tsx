@@ -138,8 +138,8 @@ export default function LoginPage() {
 
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-200 dark:border-red-800/60 flex items-center justify-center">
-              <img src="/brand/cardiosense-icon.png" alt="" className="w-5 h-5 object-contain" />
+            <div className="flex items-center justify-center">
+              <img src="/brand/cardiosense-icon.png" alt="" className="w-16 h-16 object-contain" />
             </div>
             <p className="font-bold text-xl text-foreground">CardioSense</p>
           </div>

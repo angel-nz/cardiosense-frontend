@@ -5,6 +5,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { cn, calcAge } from '@/lib/utils'
 import { recordService } from '@/services/recordService'
 import { useActionNotify } from '@/context/ToastContext'
+import { nowClinicalLocalInput, validateMeasuredAtInput, MEASURED_AT_MESSAGES, CLINICAL_TIMEZONE } from '@/lib/clinicalTime'
 import type { HealthRecord, CreateHealthRecordRequest } from '@/types'
 
 const inputClass = cn(
@@ -84,6 +85,11 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
   const [form, setForm] = useState<RecordFormState>(BLANK_FORM)
   const [saving, setSaving] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  // NEW S2E — REAL clinical measurement time, as a Guadalajara wall-clock
+  // datetime-local value ("YYYY-MM-DDTHH:mm"). Deliberately kept OUT of
+  // RecordFormState: it is never prefilled from a previous record (each new
+  // record defaults to "now" at open time) and never clamped/rewritten.
+  const [measuredLocal, setMeasuredLocal] = useState('')
   const savingRef = useRef(false)
   const prefillRequestIdRef = useRef(0)
 
@@ -118,6 +124,9 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
   useEffect(() => {
     if (!open) return
     setFieldErrors({})
+    // NEW S2E — default: current Guadalajara date+time at the moment the
+    // form is initialized (each closed→open transition).
+    setMeasuredLocal(nowClinicalLocalInput())
 
     const explicitPrefill = prefillRecordRef.current
     if (explicitPrefill !== undefined) {
@@ -135,7 +144,10 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
 
     const requestId = ++prefillRequestIdRef.current
     setLoadingLatest(true)
-    recordService.getLatest(patientId)
+    // NEW S2E-FIX3 — prefill VALUES from the latest CLINICAL record (effective
+    // clinical time DESC, recordedAt DESC, id DESC), not the latest entered one.
+    // Its timestamp is never copied: measuredAt still starts at "now".
+    recordService.getLatestClinical(patientId)
       .then(latest => {
         if (requestId !== prefillRequestIdRef.current) return
         if (latest) {
@@ -167,6 +179,13 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (savingRef.current) return
+    // NEW S2E — client-side measuredAt checks (backend remains authoritative).
+    // Fails before any request; the clinician's value is never altered.
+    const measured = validateMeasuredAtInput(measuredLocal, birthDate)
+    if (!measured.ok) {
+      setFieldErrors({ measuredAt: MEASURED_AT_MESSAGES[measured.issue] })
+      return
+    }
     savingRef.current = true
     setSaving(true)
     setFieldErrors({})
@@ -175,8 +194,11 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
       // overwrites it authoritatively from Paciente.birthDate at
       // persistence time (record.service.ts::create). `recordedAt` is not
       // part of this contract either — still server-generated `now()`.
+      // NEW S2E — `measuredAt` (exact UTC ms ISO) is required; the backend
+      // assigns clinicalTimeSource and derives age at the clinical time.
       const payload: CreateHealthRecordRequest = {
         patientId,
+        measuredAt: measured.iso,
         currentSmoker: form.currentSmoker,
         cigsPerDay: Number(form.cigsPerDay || 0),
         bpMeds: form.bpMeds,
@@ -193,8 +215,15 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
       onCreated(created)
       onOpenChange(false)
     } catch (err) {
-      if (isAxiosError(err) && err.response?.status === 400 && err.response.data?.details) {
-        setFieldErrors(err.response.data.details as Record<string, string>)
+      const code = isAxiosError(err) ? err.response?.data?.code : undefined
+      if (isAxiosError(err) && err.response?.status === 400 && (code === 'MEASURED_AT_IN_FUTURE' || code === 'MEASURED_AT_BEFORE_BIRTH')) {
+        // NEW S2E — backend clinical-time bounds → inline field message.
+        setFieldErrors({ measuredAt: MEASURED_AT_MESSAGES[code as 'MEASURED_AT_IN_FUTURE' | 'MEASURED_AT_BEFORE_BIRTH'] })
+      } else if (isAxiosError(err) && err.response?.status === 400 && err.response.data?.details) {
+        const details = { ...(err.response.data.details as Record<string, string>) }
+        // NEW S2E — never show the raw (English) validator message for measuredAt.
+        if (details.measuredAt) details.measuredAt = MEASURED_AT_MESSAGES.MALFORMED
+        setFieldErrors(details)
       } else if (isAxiosError(err) && err.response?.data?.error) {
         // Z3 — generic create-failure feedback now goes through the
         // global action-notification toast instead of an inline banner.
@@ -260,6 +289,28 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
         )}
 
         <fieldset disabled={loadingLatest || saving} className="ui-content-stack">
+          {/* NEW S2E — REAL clinical measurement time (required). Wall time
+              in Guadalajara; converted to an exact UTC instant on submit. */}
+          <div className="space-y-1">
+            <label htmlFor="record-measured-at" className="text-xs font-medium text-muted-foreground">
+              Fecha y hora de la medición
+            </label>
+            <input
+              id="record-measured-at"
+              type="datetime-local"
+              required
+              className={inputClass}
+              value={measuredLocal}
+              onChange={e => setMeasuredLocal(e.target.value)}
+              aria-describedby="record-measured-at-help"
+              aria-invalid={fieldErrors.measuredAt ? true : undefined}
+            />
+            <p id="record-measured-at-help" className="text-[11px] text-muted-foreground">
+              Momento en que realmente se tomaron las mediciones (hora de Guadalajara, {CLINICAL_TIMEZONE}), no el momento en que se capturan.
+            </p>
+            {fieldErrors.measuredAt && <p role="alert" className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.measuredAt}</p>}
+          </div>
+
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Presión sistólica</label>

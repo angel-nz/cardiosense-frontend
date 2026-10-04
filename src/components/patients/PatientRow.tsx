@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, Activity } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { cn, initials, formatRelativeBusinessDate, calcAge, sexLabel } from '@/lib/utils'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import type { Patient } from '@/types'
@@ -55,13 +55,22 @@ export function PatientRow({ patient, className }: PatientRowProps) {
             showScore
           />
         ) : (
-          <span className="text-xs text-muted-foreground italic">Sin predicción</span>
+          // NEW S3-FIX1 — no current observed risk. When the patient HAS a
+          // latest clinical record (without a Prediction), older Predictions
+          // may exist in history but are never shown here as current.
+          <span className="text-xs text-muted-foreground italic" data-testid="patient-no-current-risk">
+            {patient.latestClinicalRecordId ? 'Sin riesgo actual' : 'Sin predicción'}
+          </span>
         )}
       </td>
 
       {/* Last update */}
       <td className="px-4 ui-row-density hidden md:table-cell">
-        <p className="text-sm text-muted-foreground">{formatRelativeBusinessDate(patient.updatedAt).label}</p>
+        {/* NEW S3 — "Última actualización" = clinical time of the patient's
+            clinically latest HealthRecord (never Paciente.updatedAt). */}
+        <p className="text-sm text-muted-foreground" data-testid="patient-last-clinical">
+          {patient.latestClinicalAt ? formatRelativeBusinessDate(patient.latestClinicalAt).label : 'Sin registros clínicos'}
+        </p>
       </td>
 
       {/* Status */}
@@ -84,23 +93,10 @@ export function PatientRow({ patient, className }: PatientRowProps) {
       {/* Action */}
       <td className="px-4 ui-row-density">
         <div className="flex items-center justify-end gap-2">
-          {/* Z8-FIX2 §6 — Predecir is a clinical-create quick action, so it
-              is NOT rendered at all (not merely disabled) for an inactive
-              patient — mirrors the backend's own prediction guard
-              (PatientInactiveError) and the identical pattern
-              PatientDetailPage already uses for Nuevo registro/Nueva
-              predicción (Z8 §25/§34). Hidden patients never reach this row
-              in the first place (excluded server-side), so no separate
-              check is needed for that case. */}
-          {patient.isActive && (
-            <button
-              onClick={e => { e.stopPropagation(); navigate(`/predictions/${patient.id}`) }}
-              className="p-1.5 rounded-lg hover:bg-primary/10 text-primary transition-colors hidden sm:flex items-center gap-1 text-xs font-medium"
-            >
-              <Activity className="w-3.5 h-3.5" />
-              Predecir
-            </button>
-          )}
+          {/* NEW S2E-FIX4 — the former "Predecir" quick action was removed:
+              Predictions are only produced automatically when a REAL clinical
+              record is saved (no user-triggered Prediction anywhere). The row
+              itself still opens the patient detail. */}
           <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
         </div>
       </td>

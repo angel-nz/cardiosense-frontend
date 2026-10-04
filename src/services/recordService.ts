@@ -14,6 +14,11 @@ export interface BackendHealthRecord {
   id: string
   patientId: string
   recordedAt: string
+  // NEW S2E — S2A clinical time. Optional on the wire type only so a
+  // response from a pre-S2A backend still normalizes safely (treated as
+  // legacy entry time — never as a known measurement time).
+  measuredAt?: string | null
+  clinicalTimeSource?: 'CLINICIAN_ENTERED' | 'LEGACY_ENTRY_TIME'
   age: number
   currentSmoker: boolean
   cigsPerDay: number
@@ -34,6 +39,8 @@ export function normalizeHealthRecord(r: BackendHealthRecord): HealthRecord {
     id: r.id,
     patientId: r.patientId,
     recordedAt: r.recordedAt,
+    measuredAt: r.measuredAt ?? null,
+    clinicalTimeSource: r.clinicalTimeSource === 'CLINICIAN_ENTERED' && r.measuredAt ? 'CLINICIAN_ENTERED' : 'LEGACY_ENTRY_TIME',
     age: r.age,
     currentSmoker: r.currentSmoker,
     cigsPerDay: r.cigsPerDay,
@@ -71,6 +78,21 @@ export const recordService = {
   // Clinical History list (U5 will paginate that list; this endpoint won't
   // be affected). Returns `null` when the patient has no prior HealthRecord
   // — a normal state, not an error.
+  // NEW S2E-FIX3 — the ONE "latest clinical record" for UI defaults
+  // (Nuevo registro prefill, Nueva predicción, Indicadores clínicos): the
+  // first row of the accepted S2E-FIX2 clinical history contract
+  // (GET /patients/:id/history, sortBy=clinicalTime, sortOrder=desc, limit=1)
+  // — effective clinical time DESC, recordedAt DESC, id DESC, server-side. No
+  // new endpoint. The entry-time `getLatest` below is left untouched.
+  async getLatestClinical(patientId: string): Promise<HealthRecord | null> {
+    const { data } = await api.get<{ records: { data: BackendHealthRecord[] } }>(
+      `/patients/${patientId}/history`,
+      { params: { page: 1, limit: 1, sortBy: 'clinicalTime', sortOrder: 'desc' } },
+    )
+    const first = data.records?.data?.[0]
+    return first ? normalizeHealthRecord(first) : null
+  },
+
   async getLatest(patientId: string): Promise<HealthRecord | null> {
     const { data } = await api.get<BackendHealthRecord | null>(
       `/health-records/patient/${patientId}/latest`,

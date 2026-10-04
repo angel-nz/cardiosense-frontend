@@ -16,8 +16,8 @@ export function ProtectedRoute() {
         {/* Z1 — official chromatic CardioSense icon; alt="" (decorative —
             the "Cargando CardioSense..." text right below already names
             the brand). */}
-        <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 flex items-center justify-center">
-          <img src="/brand/cardiosense-icon.png" alt="" className="w-6 h-6 object-contain" />
+        <div className="flex items-center justify-center">
+          <img src="/brand/cardiosense-icon.png" alt="" className="w-16 h-16 object-contain" />
         </div>
         <Loader2 className="w-5 h-5 animate-spin text-primary" />
         <p className="text-sm text-muted-foreground">Cargando CardioSense...</p>

@@ -10,8 +10,8 @@ export default function NotFoundPage() {
       {/* Z1 — official chromatic CardioSense icon; alt="" (decorative —
           the "404"/"Página no encontrada" text right below already
           establishes the page context). */}
-      <div className="w-16 h-16 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 flex items-center justify-center mb-6">
-        <img src="/brand/cardiosense-icon.png" alt="" className="w-8 h-8 object-contain" />
+      <div className="flex items-center justify-center mb-6">
+        <img src="/brand/cardiosense-icon.png" alt="" className="w-16 h-16 object-contain" />
       </div>
       <h1 className="text-6xl font-bold text-foreground">404</h1>
       <p className="text-xl font-semibold text-foreground mt-3">Página no encontrada</p>

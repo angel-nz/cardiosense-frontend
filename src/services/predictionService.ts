@@ -1,12 +1,13 @@
 import { api } from './api'
 import { normalizeHealthRecord } from './recordService'
 import type { BackendHealthRecord } from './recordService'
-import type { Prediction, RiskLevel, CreatePredictionRequest, PaginatedResponse, GlobalPredictionQueryParams, PredictionRiskFilter } from '@/types'
+import type { Prediction, RiskLevel, PaginatedResponse, GlobalPredictionQueryParams, PredictionRiskFilter } from '@/types'
 
 // ─── Backend wire shape ───────────────────────────────────────────────────
-// Real routes (see prediction.routes.ts / app.ts):
-//   POST /api/predictions              — NOT /api/predict as the matrix/spec
-//                                         describe. /api/predict does not exist.
+// Real routes (see prediction.routes.ts / app.ts) — READ-ONLY since
+// NEW S2E-FIX4 (Predictions are created only automatically by the backend
+// when a REAL HealthRecord is saved; there is no create call here):
+//   GET  /api/predictions              — global, médico-scoped history
 //   GET  /api/predictions/patient/:id  — NOT /api/predictions/:patientId; that
 //                                         path instead resolves to GET /:id
 //                                         (single prediction by its own id).
@@ -35,6 +36,7 @@ interface BackendPrediction {
   // from the wire shape, so normalizePrediction below can distinguish "no
   // linked record" from "field not sent".
   healthRecord?: BackendHealthRecord | null
+  origin?: string
 }
 
 interface BackendPaginated<T> {
@@ -64,21 +66,13 @@ function normalizePrediction(p: BackendPrediction): Prediction {
     // a future caller of normalizePrediction omits it entirely; both real
     // cases (linked record object, or explicit `null`) are preserved as-is.
     healthRecord: p.healthRecord ? normalizeHealthRecord(p.healthRecord) : null,
+    // NEW S2E-FIX3/FIX4 — anything but AUTOMATIC_HEALTH_RECORD → LEGACY_UNKNOWN
+    // (never "automatic"; there is no manual origin).
+    origin: p.origin === 'AUTOMATIC_HEALTH_RECORD' ? 'AUTOMATIC_HEALTH_RECORD' : 'LEGACY_UNKNOWN',
   }
 }
 
 export const predictionService = {
-  // POST /api/predictions — backend uses the patient's latest Health Record
-  // automatically when healthRecordId is omitted (no manual indicator entry
-  // in the frontend; the backend is the source of truth for which record).
-  async predict(payload: CreatePredictionRequest): Promise<Prediction> {
-    const { data } = await api.post<BackendPrediction>('/predictions', {
-      patientId: payload.patientId,
-      healthRecordId: payload.healthRecordId,
-    })
-    return normalizePrediction(data)
-  },
-
   // GET /api/predictions/patient/:patientId — U8.2B: optional `targetId`
   // deep-link resolution. When provided, the backend ignores `page` and
   // instead returns the canonical page that actually contains the target
@@ -94,21 +88,31 @@ export const predictionService = {
   // performs the actual business-timezone half-open [from, to) conversion;
   // no date math happens here. `riskLevel` is the canonical uppercase
   // value, never derived from riskScore.
+  //
+  // NEW S3 — `order` defaults to 'clinicalTime' (canonical clinical order:
+  // source record effective clinical time DESC → recordedAt → id →
+  // predictedAt → id; targetId pages and from/to use the same clinical axis).
+  // 'predictedAt' exists ONLY for technical recovery (finding a freshly
+  // calculated Prediction by calculation recency), never for display.
   async getHistory(patientId: string, opts: {
     page?: number; limit?: number; targetId?: string
     from?: string; to?: string; riskLevel?: PredictionRiskFilter
+    signal?: AbortSignal
+    order?: 'clinicalTime' | 'predictedAt'
   } = {}): Promise<PaginatedResponse<Prediction>> {
-    const { page, limit = 20, targetId, from, to, riskLevel } = opts
+    const { page, limit = 20, targetId, from, to, riskLevel, signal, order = 'clinicalTime' } = opts
     const { data } = await api.get<BackendPaginated<BackendPrediction> & { targetResolved?: boolean }>(
       `/predictions/patient/${patientId}`,
       { params: {
           limit,
+          sortBy: order,
           ...(page ? { page } : {}),
           ...(targetId ? { targetId } : {}),
           ...(from ? { from } : {}),
           ...(to ? { to } : {}),
           ...(riskLevel ? { riskLevel } : {}),
-        } },
+        },
+        signal },
     )
     return {
       data: data.data.map(normalizePrediction),
@@ -120,14 +124,36 @@ export const predictionService = {
     }
   },
 
+  // NEW S2E-FIX2 — the patient's COMPLETE readable Prediction history (for
+  // the full risk-evolution modal only; loaded lazily). Walks the existing
+  // paginated GET /predictions/patient/:id at its maximum page size (100,
+  // PatientPredictionQueryDto) until `totalPages` is reached, deduplicating
+  // by Prediction id. Each row keeps its source HealthRecord (clinical
+  // time). Never sampled or truncated.
+  async getAllForPatient(patientId: string, opts: { signal?: AbortSignal } = {}): Promise<Prediction[]> {
+    const PAGE_SIZE = 100
+    const seen = new Set<string>()
+    const out: Prediction[] = []
+    let page = 1
+    let totalPages = 1
+    do {
+      const res = await predictionService.getHistory(patientId, { page, limit: PAGE_SIZE, signal: opts.signal })
+      for (const p of res.data) if (!seen.has(p.id)) { seen.add(p.id); out.push(p) }
+      totalPages = res.totalPages
+      page++
+    } while (page <= totalPages)
+    return out
+  },
+
   // GET /api/predictions — global history for the authenticated médico.
   // Backend scopes this by patient.medicoId; server-side paginated,
-  // filtered (search/from/to/riskLevel — U6.2), ordered predictedAt desc —
-  // no client-side re-sort, filter, or "fetch all" needed.
+  // filtered (search/from/to/riskLevel — U6.2). NEW S3 — ordered (and
+  // from/to-filtered) by CLINICAL time (sortBy=clinicalTime) — no client-side
+  // re-sort, filter, or "fetch all" needed.
   async listAll(params: GlobalPredictionQueryParams): Promise<PaginatedResponse<Prediction>> {
     const { data } = await api.get<BackendPaginated<BackendPrediction>>(
       '/predictions',
-      { params },
+      { params: { ...params, sortBy: 'clinicalTime' } },
     )
     return {
       data: data.data.map(normalizePrediction),

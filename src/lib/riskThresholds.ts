@@ -32,6 +32,6 @@ export interface RiskReferenceLine {
 
 // Colors are the same tier colors the chart already used for these lines.
 export const RISK_REFERENCE_LINES: readonly RiskReferenceLine[] = [
-  { value: CURRENT_MODEL_RISK_THRESHOLDS.lowMax,      startsLevel: 'moderate', label: 'Umbral moderado', color: '#D97706' },
-  { value: CURRENT_MODEL_RISK_THRESHOLDS.moderateMax, startsLevel: 'high',     label: 'Umbral alto',     color: '#DC2626' },
+  { value: CURRENT_MODEL_RISK_THRESHOLDS.lowMax,      startsLevel: 'moderate', label: 'Moderado', color: '#D97706' },
+  { value: CURRENT_MODEL_RISK_THRESHOLDS.moderateMax, startsLevel: 'high',     label: 'Alto',     color: '#DC2626' },
 ]

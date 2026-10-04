@@ -18,9 +18,18 @@ interface DialogProps {
   // action (e.g. saving) is in flight — same "don't lose work mid-submit"
   // principle already used elsewhere in this app.
   preventClose?: boolean
+  // NEW S2E-FIX2 — additive. 'wide' gives large content (full risk chart,
+  // projection detail) a desktop-sized box while staying full-width (minus
+  // a 16px gutter) on phones. Omitted → exactly the previous max-w-lg box.
+  size?: 'default' | 'wide'
+  // NEW S2E-FIX2 — additive passthrough of Radix's close-auto-focus hook, so
+  // a caller can return focus to a specific trigger deterministically (some
+  // browsers, e.g. Safari, never focus a mouse-clicked button, which would
+  // otherwise leave focus on <body>). Omitted → Radix default, unchanged.
+  onCloseAutoFocus?: (event: Event) => void
 }
 
-export function Dialog({ open, onOpenChange, title, description, children, preventClose }: DialogProps) {
+export function Dialog({ open, onOpenChange, title, description, children, preventClose, size = 'default', onCloseAutoFocus }: DialogProps) {
   return (
     <RadixDialog.Root open={open} onOpenChange={next => { if (!preventClose) onOpenChange(next) }}>
       <RadixDialog.Portal>
@@ -57,8 +66,10 @@ export function Dialog({ open, onOpenChange, title, description, children, preve
         <RadixDialog.Content
           onEscapeKeyDown={e => { if (preventClose) e.preventDefault() }}
           onPointerDownOutside={e => { if (preventClose) e.preventDefault() }}
+          onCloseAutoFocus={onCloseAutoFocus}
           className={cn(
-            'fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2',
+            'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
+            size === 'wide' ? 'w-[calc(100%-2rem)] max-w-5xl' : 'w-full max-w-lg',
             'bg-card rounded-xl border border-border shadow-lg',
             'overflow-y-auto',
           )}

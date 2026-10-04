@@ -12,6 +12,7 @@ import { RiskBadge } from '@/components/ui/RiskBadge'
 import { useSocket } from '@/context/SocketContext'
 import { groupTimelineEventsForRender } from '@/lib/timelineGrouping'
 import { TimelineEventGroup } from '@/components/timeline/TimelineEventGroup'
+import { RecordProvenance, AutomaticPredictionProvenance, RiskChangeProvenance } from '@/components/timeline/CalendarProvenance'
 import type { PatientTimelineEvent } from '@/types'
 
 // P5 — how long to wait before actually refetching after a realtime signal,
@@ -570,6 +571,7 @@ function TimelineEventRow({ event, isSelected, onSelectHealthRecord, onSelectPre
           <p className="text-xs text-muted-foreground">
             Presión arterial: {event.metadata.sysBP}/{event.metadata.diaBP} mmHg
           </p>
+          <RecordProvenance metadata={event.metadata} />
         </div>
         <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
       </EventRowShell>
@@ -587,7 +589,7 @@ function TimelineEventRow({ event, isSelected, onSelectHealthRecord, onSelectPre
       >
         <Activity className={cn('w-4 h-4 mt-0.5 flex-shrink-0', cfg.text)} />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground">Predicción cardiovascular</p>
+          <p className="text-sm font-medium text-foreground">Predicción automática</p>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <RiskBadge level={event.metadata.riskLevel} size="sm" />
             <span className="text-xs text-muted-foreground">{formatScore(event.metadata.riskScore)}</span>
@@ -598,6 +600,7 @@ function TimelineEventRow({ event, isSelected, onSelectHealthRecord, onSelectPre
           {event.metadata.isAnomaly && (
             <p className="text-xs text-amber-600 dark:text-amber-400 font-medium mt-1">⚠ Anomalía detectada</p>
           )}
+          <AutomaticPredictionProvenance metadata={event.metadata} />
         </div>
         <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
       </EventRowShell>
@@ -629,6 +632,7 @@ function TimelineEventRow({ event, isSelected, onSelectHealthRecord, onSelectPre
           <ArrowRight className="w-3 h-3 text-muted-foreground" />
           <span className={cn('text-xs font-medium', toCfg.text)}>{toCfg.label}</span>
         </div>
+        <RiskChangeProvenance metadata={event.metadata} />
       </div>
       <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
     </EventRowShell>

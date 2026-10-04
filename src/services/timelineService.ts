@@ -35,6 +35,18 @@ export function normalizeEvent(raw: BackendTimelineEvent): PatientTimelineEvent 
           healthRecordId: raw.metadata.healthRecordId as string,
           sysBP: Number(raw.metadata.sysBP),
           diaBP: Number(raw.metadata.diaBP),
+          // NEW S2E-FIX3 — absent fields (older backend) → legacy semantics.
+          clinicalTimeSource: raw.metadata.clinicalTimeSource === 'CLINICIAN_ENTERED' ? 'CLINICIAN_ENTERED' : 'LEGACY_ENTRY_TIME',
+          recordedAt: (raw.metadata.recordedAt as string | undefined) ?? null,
+          // NEW S2E-FIX4 — historical (LEGACY_UNKNOWN) predictions of the record.
+          historicalPredictions: ((raw.metadata.historicalPredictions as Array<Record<string, unknown>> | undefined) ?? []).map(x => ({
+            predictionId: x.predictionId as string,
+            origin: 'LEGACY_UNKNOWN' as const,
+            predictedAt: x.predictedAt as string,
+            riskScore: Number(x.riskScore),
+            riskLevel: (x.riskLevel as string).toLowerCase() as RiskLevel,
+            modelVersion: (x.modelVersion as string | null) ?? null,
+          })),
         },
       } satisfies ClinicalRecordTimelineEvent
     case 'PREDICTION':
@@ -49,6 +61,10 @@ export function normalizeEvent(raw: BackendTimelineEvent): PatientTimelineEvent 
           isAnomaly: Boolean(raw.metadata.isAnomaly),
           anomalyScore: raw.metadata.anomalyScore == null ? null : Number(raw.metadata.anomalyScore),
           modelVersion: (raw.metadata.modelVersion as string | null) ?? null,
+          // NEW S2E-FIX3 — never assume "automatic" when the field is missing.
+          origin: raw.metadata.origin === 'AUTOMATIC_HEALTH_RECORD' ? 'AUTOMATIC_HEALTH_RECORD' : 'LEGACY_UNKNOWN',
+          predictedAt: (raw.metadata.predictedAt as string | undefined) ?? null,
+          clinicalTimeSource: raw.metadata.clinicalTimeSource === 'CLINICIAN_ENTERED' ? 'CLINICIAN_ENTERED' : raw.metadata.clinicalTimeSource === 'LEGACY_ENTRY_TIME' ? 'LEGACY_ENTRY_TIME' : null,
         },
       } satisfies PredictionTimelineEvent
     case 'RISK_CHANGE':
@@ -60,6 +76,10 @@ export function normalizeEvent(raw: BackendTimelineEvent): PatientTimelineEvent 
           toLevel: (raw.metadata.toLevel as string).toLowerCase() as RiskLevel,
           previousPredictionId: raw.metadata.previousPredictionId as string,
           currentPredictionId: raw.metadata.currentPredictionId as string,
+          clinicalTimeSource: raw.metadata.clinicalTimeSource === 'CLINICIAN_ENTERED' ? 'CLINICIAN_ENTERED' : raw.metadata.clinicalTimeSource === 'LEGACY_ENTRY_TIME' ? 'LEGACY_ENTRY_TIME' : null,
+          currentPredictedAt: (raw.metadata.currentPredictedAt as string | undefined) ?? null,
+          clinicalAt: (raw.metadata.clinicalAt as string | undefined) ?? null,
+          generatedAt: (raw.metadata.generatedAt as string | undefined) ?? null,
         },
       } satisfies RiskChangeTimelineEvent
   }

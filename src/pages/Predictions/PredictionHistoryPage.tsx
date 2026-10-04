@@ -5,6 +5,7 @@ import { RiskBadge } from '@/components/ui/RiskBadge'
 import { RiskGauge } from '@/components/charts/RiskGauge'
 import { ClinicalSourceDisclosure } from '@/components/predictions/ClinicalSourceDisclosure'
 import { formatRelativeBusinessDate, formatRelativeBusinessDateTime } from '@/lib/utils'
+import { clinicalTimeLabel, predictionClinicalInstant } from '@/lib/clinicalTime'
 import { getBusinessDateKey, BUSINESS_TIMEZONE } from '@/lib/businessDate'
 import { predictionService } from '@/services/predictionService'
 import { useSocket } from '@/context/SocketContext'
@@ -137,7 +138,7 @@ export default function PredictionHistoryPage() {
   // algorithm (see module-level comment above).
   const groups: { monthKey: string; dayKey: string; items: Prediction[] }[] = []
   for (const pred of predictions) {
-    const dayKey = getBusinessDateKey(pred.predictedAt)
+    const dayKey = getBusinessDateKey(predictionClinicalInstant(pred))   // NEW S3 — clinical day
     const monthKey = dayKey.slice(0, 7)
     const last = groups[groups.length - 1]
     if (last && last.dayKey === dayKey) {
@@ -280,10 +281,13 @@ export default function PredictionHistoryPage() {
                               Modelo {pred.modelVersion}
                             </span>
                           )}
-                          <span className="flex items-center gap-1">
+                          <span className="flex items-center gap-1" data-testid="prediction-clinical-time">
                             <Calendar className="w-3.5 h-3.5" />
-                            {formatRelativeBusinessDateTime(pred.predictedAt)}
+                            {/* NEW S3 — clinical time of the source record; the
+                                calculation time is secondary. */}
+                            {pred.healthRecord ? clinicalTimeLabel(pred.healthRecord) : `Sin registro vinculado · ${formatRelativeBusinessDateTime(pred.predictedAt)}`}
                           </span>
+                          <span className="text-[11px]">Calculada {formatRelativeBusinessDateTime(pred.predictedAt)}</span>
                         </div>
                         {/* featureImportance isn't persisted on the Prediction row, so
                             it's never present on historical entries — no fallback data

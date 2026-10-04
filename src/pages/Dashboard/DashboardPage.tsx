@@ -383,7 +383,8 @@ export default function DashboardPage() {
             <p className="text-sm text-red-600 dark:text-red-400 text-center py-8">{metricsError}</p>
           ) : riskTotal === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">
-              Ningún paciente con predicción todavía.
+              {/* NEW S3-FIX1 — buckets count CURRENT observed risk only (exact latest clinical record). */}
+              Ningún paciente con riesgo actual todavía.
             </p>
           ) : (
             <div className="space-y-3">
