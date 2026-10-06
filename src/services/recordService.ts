@@ -28,7 +28,6 @@ export interface BackendHealthRecord {
   sysBP: string | number
   diaBP: string | number
   bmi: string | number
-  heartRate: number
   glucose: string | number
   notes?: string | null
   createdBy: string
@@ -50,7 +49,6 @@ export function normalizeHealthRecord(r: BackendHealthRecord): HealthRecord {
     sysBP: Number(r.sysBP),
     diaBP: Number(r.diaBP),
     bmi: Number(r.bmi),
-    heartRate: r.heartRate,
     glucose: Number(r.glucose),
     notes: r.notes ?? undefined,
     createdBy: r.createdBy,

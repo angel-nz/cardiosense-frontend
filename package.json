@@ -7,7 +7,12 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node scripts/test-clinical-indicators.cjs && node scripts/test-pre-t-ux1-fix1.cjs && node scripts/test-pre-t-ux1-fix2.cjs && node scripts/test-pre-t-ux1-fix3.cjs && node scripts/test-pre-t-ux1-fix4.cjs",
+    "test:pre-t-ux1-fix1": "node scripts/test-pre-t-ux1-fix1.cjs",
+    "test:pre-t-ux1-fix2": "node scripts/test-pre-t-ux1-fix2.cjs",
+    "test:pre-t-ux1-fix3": "node scripts/test-pre-t-ux1-fix3.cjs",
+    "test:pre-t-ux1-fix4": "node scripts/test-pre-t-ux1-fix4.cjs"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.0",
@@ -44,6 +49,7 @@
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.7",
+    "jsdom": "26.1.0",
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.6",
     "typescript": "^5.2.2",

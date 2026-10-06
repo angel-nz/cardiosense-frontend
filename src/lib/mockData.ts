@@ -156,16 +156,6 @@ export const MOCK_PREDICTIONS: Prediction[] = [
     isAnomaly: false,
     modelVersion: '1.2.0',
     predictedAt: '2024-06-10T14:30:00Z',
-    featureImportance: {
-      age: 0.18,
-      sysBP: 0.22,
-      totChol: 0.14,
-      BMI: 0.11,
-      glucose: 0.10,
-      heartRate: 0.08,
-      currentSmoker: 0.09,
-      diaBP: 0.08,
-    },
   },
   {
     id: 'pred_02',
@@ -179,16 +169,6 @@ export const MOCK_PREDICTIONS: Prediction[] = [
     isAnomaly: false,
     modelVersion: '1.2.0',
     predictedAt: '2024-06-08T11:00:00Z',
-    featureImportance: {
-      age: 0.15,
-      sysBP: 0.19,
-      totChol: 0.18,
-      BMI: 0.13,
-      glucose: 0.12,
-      heartRate: 0.10,
-      currentSmoker: 0.07,
-      diaBP: 0.06,
-    },
   },
 ]
 
@@ -207,7 +187,6 @@ export const MOCK_HEALTH_RECORD: HealthRecord = {
   sysBP: 158.0,
   diaBP: 95.0,
   bmi: 29.8,
-  heartRate: 82,
   glucose: 118.0,
   notes: 'Paciente refiere dolor de cabeza frecuente.',
   createdBy: 'usr_01',

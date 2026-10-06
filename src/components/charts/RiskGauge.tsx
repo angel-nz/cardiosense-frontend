@@ -20,7 +20,7 @@ interface RiskGaugeProps {
   // RiskBadge (which already only ever used the persisted `level`) for the
   // same Prediction, including historical Predictions whose riskLevel may
   // have been classified under a different threshold configuration than
-  // whatever Skorp-Beta-0.1 uses today — that provenance is preserved
+  // the current model uses — that historical provenance is preserved
   // exactly as persisted, never silently reinterpreted here.
   level: RiskLevel
   size?: number

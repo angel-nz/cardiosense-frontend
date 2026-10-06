@@ -1,7 +1,7 @@
 import { RISK_CONFIG } from '@/lib/utils'
 import { formatClinicalDateTime, recordClinicalTime, LEGACY_TIME_NOTE } from '@/lib/clinicalTime'
 import { featureLabel, formatMeasureWithUnit, formatBinary } from '@/lib/clinicalLabels'
-import { PROJECTION_COPY, formatClinicalDay, formatProjectionPercent, formatTargetDate, toBadgeLevel, describeProjectionResponse } from '@/lib/riskProjection'
+import { PROJECTION_COPY, formatClinicalDay, formatProjectionPercent, formatTargetDate, toBadgeLevel, describeProjectionResponse, projectionAssumptionCopy } from '@/lib/riskProjection'
 import { ORIGIN_LABEL, type RiskPoint } from '@/lib/riskEvolution'
 import type { ForecastLoadState } from '@/hooks/useCurrentRiskForecast'
 import type { Prediction, RiskProjection, RiskProjectionSet } from '@/types'
@@ -23,7 +23,7 @@ const PROVENANCE_LABEL: Record<string, string> = {
 }
 
 // Display order of the model feature keys (simulated state / provenance).
-const FEATURE_ORDER = ['age', 'sex', 'currentSmoker', 'cigsPerDay', 'BPMeds', 'diabetes', 'totChol', 'sysBP', 'diaBP', 'BMI', 'heartRate', 'glucose']
+const FEATURE_ORDER = ['age', 'sex', 'currentSmoker', 'cigsPerDay', 'BPMeds', 'diabetes', 'totChol', 'sysBP', 'diaBP', 'BMI', 'glucose']
 const BINARY = new Set(['currentSmoker', 'BPMeds', 'diabetes'])
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -55,16 +55,16 @@ function RealDetail({ prediction }: { prediction: Prediction }) {
   const ct = r ? recordClinicalTime(r) : null
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-detail-kind="REAL">
-      <Section title="Predicción (registro real)">
+      <Section title="Predicción">
         <Row label="Origen" value={ORIGIN_LABEL[prediction.origin]} />
         <Row label="Riesgo" value={formatProjectionPercent(prediction.riskScore)} />
         <Row label="Nivel de riesgo" value={RISK_CONFIG[prediction.riskLevel].label} />
         <Row label="Anomalía" value={prediction.isAnomaly ? 'Sí' : 'No'} />
         <Row label="Puntaje de anomalía" value={Number.isFinite(prediction.anomalyScore) ? prediction.anomalyScore.toFixed(4) : '—'} />
         <Row label="Modelo" value={prediction.modelVersion || '—'} />
-        <Row label="Calculada (hora de cálculo)" value={formatClinicalDateTime(prediction.predictedAt)} />
+        <Row label="Cálculo" value={formatClinicalDateTime(prediction.predictedAt)} />
       </Section>
-      <Section title="Registro clínico de origen">
+      <Section title="Registro clínico">
         {!r || !ct ? (
           <Row label="Registro" value="Sin registro clínico vinculado" />
         ) : (
@@ -82,7 +82,6 @@ function RealDetail({ prediction }: { prediction: Prediction }) {
             <Row label="Presión sistólica" value={formatMeasureWithUnit(r.sysBP, 'sysBP')} />
             <Row label="Presión diastólica" value={formatMeasureWithUnit(r.diaBP, 'diaBP')} />
             <Row label="IMC" value={formatMeasureWithUnit(r.bmi, 'BMI')} />
-            <Row label="Frecuencia cardíaca" value={formatMeasureWithUnit(r.heartRate, 'heartRate')} />
             <Row label="Glucosa" value={formatMeasureWithUnit(r.glucose, 'glucose')} />
           </>
         )}
@@ -99,7 +98,7 @@ function ProjectionDetail({ set, projection, todayKey }: { set: RiskProjectionSe
   return (
     <div className="space-y-3" data-detail-kind="PROJECTION">
       <p className="text-xs text-foreground bg-muted/50 border border-border rounded-lg px-3 py-2">
-        {set.anchor?.cutoffLocalDay ? PROJECTION_COPY.locf(formatClinicalDay(set.anchor.cutoffLocalDay)) : PROJECTION_COPY.locfNoDate}
+        {projectionAssumptionCopy(set, formatClinicalDay)}
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Section title="Proyección">
@@ -107,7 +106,7 @@ function ProjectionDetail({ set, projection, todayKey }: { set: RiskProjectionSe
           <Row label={PROJECTION_COPY.targetDateLabel} value={formatTargetDate(projection.targetDate)} />
           {passed && <Row label="Estado" value={PROJECTION_COPY.pastTarget} />}
           {today && <Row label="Estado" value="Fecha objetivo: hoy — sigue siendo una proyección" />}
-          <Row label="Edad en la fecha objetivo" value={`${projection.targetAge} años`} />
+          <Row label="Edad" value={`${projection.targetAge} años`} />
           <Row label={PROJECTION_COPY.primaryLabel} value={formatProjectionPercent(projection.finalRiskScore)} />
           <Row label="Referencia del modelo global" value={formatProjectionPercent(projection.globalRiskScore)} />
           <Row label="Nivel de riesgo" value={RISK_CONFIG[toBadgeLevel(projection.riskLevel)].label} />

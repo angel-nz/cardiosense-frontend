@@ -152,6 +152,6 @@ export function pointKey(p: RiskPoint): string {
 }
 
 export const ORIGIN_LABEL: Record<PredictionOrigin, string> = {
-  AUTOMATIC_HEALTH_RECORD: 'Predicción automática',
+  AUTOMATIC_HEALTH_RECORD: 'Predicción',
   LEGACY_UNKNOWN: 'Origen no disponible',
 }

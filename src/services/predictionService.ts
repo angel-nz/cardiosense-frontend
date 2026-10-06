@@ -12,9 +12,10 @@ import type { Prediction, RiskLevel, PaginatedResponse, GlobalPredictionQueryPar
 //                                         path instead resolves to GET /:id
 //                                         (single prediction by its own id).
 // riskScore/anomalyScore are Decimal → serialized as strings. riskLevel is
-// uppercase (LOW/MODERATE/HIGH). featureImportance is only present on the
-// response of POST /predictions (computed in-memory from the AI call) — it
-// is NOT persisted on the Prediction row, so history entries never have it.
+// uppercase (LOW/MODERATE/HIGH). featureImportance is not persisted on the
+// Prediction row, so the current read-only prediction endpoints/history do
+// not supply it. The optional field is retained only for additive wire
+// compatibility; the frontend never fabricates it.
 interface BackendPrediction {
   id: string
   patientId: string

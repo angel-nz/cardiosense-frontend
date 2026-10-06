@@ -1,7 +1,7 @@
 import { RISK_CONFIG } from '@/lib/utils'
 import { formatClinicalDateTime, recordClinicalTime, LEGACY_TIME_NOTE } from '@/lib/clinicalTime'
 import { featureLabel, formatMeasureWithUnit, formatBinary } from '@/lib/clinicalLabels'
-import { PROJECTION_COPY, FEATURE_PROVENANCE_LABEL, projectionAssumptionCopy, cadenceCopy, formatClinicalDay, formatProjectionPercent, formatTargetDate, toBadgeLevel, describeProjectionResponse } from '@/lib/riskProjection'
+import { PROJECTION_COPY, projectionAssumptionCopy, cadenceCopy, formatClinicalDay, formatProjectionPercent, formatTargetDate, toBadgeLevel, describeProjectionResponse } from '@/lib/riskProjection'
 import { ORIGIN_LABEL, type RiskPoint } from '@/lib/riskEvolution'
 import type { ForecastLoadState } from '@/hooks/useCurrentRiskForecast'
 import type { Prediction, RiskProjection, RiskProjectionSet } from '@/types'
@@ -14,12 +14,12 @@ import type { Prediction, RiskProjection, RiskProjectionSet } from '@/types'
 // Never shows appliedLogit, sexUsed bridge state, R provenance JSON or
 // fingerprints (none of them exist in the frontend models).
 
-// NEW S3 — provenance labels shared with the projection copy.
-const PROVENANCE_LABEL = FEATURE_PROVENANCE_LABEL
-
-// Display order of the model feature keys (simulated state / provenance).
-const FEATURE_ORDER = ['age', 'sex', 'currentSmoker', 'cigsPerDay', 'BPMeds', 'diabetes', 'totChol', 'sysBP', 'diaBP', 'BMI', 'heartRate', 'glucose']
-const BINARY = new Set(['currentSmoker', 'BPMeds', 'diabetes'])
+// T-UX-FIX-1 — Estimación clínica intentionally exposes only the five
+// projected continuous clinical measures, plus smoking fields when the
+// simulated state is an active smoker. Provenance remains in the data model
+// but is not rendered in this section.
+const CLINICAL_ESTIMATE_ORDER = ['totChol', 'sysBP', 'diaBP', 'BMI', 'glucose']
+const BINARY = new Set(['currentSmoker'])
 
 // Two columns when the floating box is wide enough, one otherwise.
 const AUTO_COLUMNS: React.CSSProperties = { gridTemplateColumns: 'repeat(auto-fit, minmax(13rem, 1fr))' }
@@ -43,7 +43,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function featureValue(key: string, v: number): string {
-  if (key === 'sex') return v === 1 ? 'Masculino' : v === 0 ? 'Femenino' : '—'
   if (BINARY.has(key)) return formatBinary(v)
   return formatMeasureWithUnit(v, key)
 }
@@ -53,16 +52,16 @@ function RealDetail({ prediction }: { prediction: Prediction }) {
   const ct = r ? recordClinicalTime(r) : null
   return (
     <div className="grid gap-3" style={AUTO_COLUMNS} data-detail-kind="REAL">
-      <Section title="Predicción (registro real)">
+      <Section title="Predicción">
         <Row label="Origen" value={ORIGIN_LABEL[prediction.origin]} />
         <Row label="Riesgo" value={formatProjectionPercent(prediction.riskScore)} />
         <Row label="Nivel de riesgo" value={RISK_CONFIG[prediction.riskLevel].label} />
         <Row label="Anomalía" value={prediction.isAnomaly ? 'Sí' : 'No'} />
         <Row label="Puntaje de anomalía" value={Number.isFinite(prediction.anomalyScore) ? prediction.anomalyScore.toFixed(4) : '—'} />
         <Row label="Modelo" value={prediction.modelVersion || '—'} />
-        <Row label="Calculada (hora de cálculo)" value={formatClinicalDateTime(prediction.predictedAt)} />
+        <Row label="Cálculo" value={formatClinicalDateTime(prediction.predictedAt)} />
       </Section>
-      <Section title="Registro clínico de origen">
+      <Section title="Registro clínico">
         {!r || !ct ? (
           <Row label="Registro" value="Sin registro clínico vinculado" />
         ) : (
@@ -80,7 +79,6 @@ function RealDetail({ prediction }: { prediction: Prediction }) {
             <Row label="Presión sistólica" value={formatMeasureWithUnit(r.sysBP, 'sysBP')} />
             <Row label="Presión diastólica" value={formatMeasureWithUnit(r.diaBP, 'diaBP')} />
             <Row label="IMC" value={formatMeasureWithUnit(r.bmi, 'BMI')} />
-            <Row label="Frecuencia cardíaca" value={formatMeasureWithUnit(r.heartRate, 'heartRate')} />
             <Row label="Glucosa" value={formatMeasureWithUnit(r.glucose, 'glucose')} />
           </>
         )}
@@ -93,7 +91,12 @@ function ProjectionDetail({ set, projection, todayKey }: { set: RiskProjectionSe
   const individualized = set.riskInterpretation === 'INDIVIDUALIZED_BRIDGE'
   const passed = projection.targetDate < todayKey
   const today = projection.targetDate === todayKey
-  const keys = FEATURE_ORDER.filter(k => k in (projection.simulatedState ?? {}))
+  const simulatedState = projection.simulatedState ?? {}
+  const isCurrentSmoker = Number(simulatedState.currentSmoker) === 1
+  const keys = [
+    ...(isCurrentSmoker ? ['currentSmoker', 'cigsPerDay'] : []),
+    ...CLINICAL_ESTIMATE_ORDER,
+  ].filter(k => k in simulatedState)
   return (
     <div className="space-y-3" data-detail-kind="PROJECTION">
       <p className="text-xs text-foreground bg-muted/50 border border-border rounded-lg px-3 py-2">
@@ -105,34 +108,29 @@ function ProjectionDetail({ set, projection, todayKey }: { set: RiskProjectionSe
           <Row label={PROJECTION_COPY.targetDateLabel} value={formatTargetDate(projection.targetDate)} />
           {passed && <Row label="Estado" value={PROJECTION_COPY.pastTarget} />}
           {today && <Row label="Estado" value="Fecha objetivo: hoy — sigue siendo una proyección" />}
-          <Row label="Edad en la fecha objetivo" value={`${projection.targetAge} años`} />
+          <Row label="Edad" value={`${projection.targetAge} años`} />
           <Row label={PROJECTION_COPY.primaryLabel} value={formatProjectionPercent(projection.finalRiskScore)} />
-          <Row label="Referencia del modelo global" value={formatProjectionPercent(projection.globalRiskScore)} />
+          <Row label="Estimación global" value={formatProjectionPercent(projection.globalRiskScore)} />
           <Row label="Nivel de riesgo" value={RISK_CONFIG[toBadgeLevel(projection.riskLevel)].label} />
           <Row label="Interpretación" value={individualized ? PROJECTION_COPY.individualized : PROJECTION_COPY.global} />
           <Row label="Incertidumbre" value={PROJECTION_COPY.uncertainty} />
           <Row label="Modelo" value={set.versions?.modelVersion ?? '—'} />
-          {set.versions && <Row label="Política de proyección" value={`${set.versions.sVersion} · ${set.versions.featurePolicyVersion} · ${set.versions.cadencePolicyVersion}`} />}
+          {set.versions && <Row label="Política" value={`${set.versions.sVersion} · ${set.versions.featurePolicyVersion} · ${set.versions.cadencePolicyVersion}`} />}
           {/* NEW S4 — which simulated horizons of the same run informed this one */}
-          {projection.sequentialContext && <Row label="Contexto de la estimación" value={PROJECTION_COPY.sequentialContext(projection.sequentialContext.simulatedContext)} />}
-          {cadenceCopy(set.cadence) && <Row label="Frecuencia de visitas" value={cadenceCopy(set.cadence)!.join(' ')} />}
+          {projection.sequentialContext && <Row label="Contexto" value={PROJECTION_COPY.sequentialContext(projection.sequentialContext.simulatedContext)} />}
+          {cadenceCopy(set.cadence) && <Row label="Frecuencia" value={cadenceCopy(set.cadence)!.join(' ')} />}
           {set.versionStale && <Row label="Versión" value={PROJECTION_COPY.stale} />}
         </Section>
-        <Section title="Estado clínico futuro estimado (simulado)">
+        <Section title="Estimación clínica">
           {keys.map(k => (
-            <Row key={k} label={k === 'sex' ? 'Sexo' : featureLabel(k)} value={
-              <span>{featureValue(k, Number(projection.simulatedState[k]))}
-                {projection.featureProvenance?.[k] && <span className="block text-[10px] font-normal text-muted-foreground">{PROVENANCE_LABEL[projection.featureProvenance[k]] ?? '—'}</span>}
-              </span>
-            } />
+            <Row
+              key={k}
+              label={featureLabel(k)}
+              value={featureValue(k, Number(simulatedState[k]))}
+            />
           ))}
         </Section>
       </div>
-      <Section title="Supuestos">
-        <Row label="Cigarrillos por día forzados a 0" value={projection.assumptionFlags?.cigsForcedZero ? `Sí — ${PROJECTION_COPY.cigsForcedZero}` : 'No'} />
-        <Row label="Edad recalculada para la fecha objetivo" value={projection.assumptionFlags?.ageChangedFromAnchor ? 'Sí' : 'No'} />
-        {set.versions?.featurePolicyVersion !== 'S-FEAT-LOCF-1' && <Row label="Estados discretos" value={PROJECTION_COPY.carriedStates} />}
-      </Section>
     </div>
   )
 }

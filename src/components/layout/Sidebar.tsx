@@ -159,7 +159,7 @@ function CollapsedTooltip({
 // row `ref` are needed for `CollapsedTooltip` (§ above), which can't live
 // inside a `.map()` callback directly (rules of hooks) — hence the
 // extraction into its own component instance per item.
-function SidebarNavLink({
+export function SidebarNavLink({
   to, icon: Icon, label, collapsed, isActive, badgeCount,
 }: {
   to: string
@@ -184,7 +184,7 @@ function SidebarNavLink({
     // everywhere else — no second route→label mapping. When expanded, the
     // rendered text content already names the link, so `aria-label` is
     // `undefined` there rather than duplicating it.
-    <NavLink to={to} aria-label={collapsed ? label : undefined}>
+    <NavLink to={to} aria-label={badgeCount !== undefined ? `${label}, ${badgeCount} no leídas` : collapsed ? label : undefined}>
       <div
         ref={rowRef}
         onMouseEnter={() => setHovered(true)}
@@ -201,16 +201,16 @@ function SidebarNavLink({
           {/* FIX1 §5 — decorative in both states: expanded is named by the
               visible label span, collapsed by the `aria-label` above. */}
           <Icon className="w-5 h-5" aria-hidden="true" />
-          {hasBadge && (
-            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 dark:bg-destructive rounded-full text-white text-[9px] font-bold flex items-center justify-center">
-              {badgeCount! > 9 ? '9+' : badgeCount}
+          {collapsed && hasBadge && (
+            <span data-testid="sidebar-bell-badge" aria-hidden="true" className="absolute -top-1.5 -right-2 min-w-4 px-1 h-4 bg-red-500 dark:bg-destructive rounded-full text-white text-[9px] font-bold flex items-center justify-center">
+              {badgeCount! > 99 ? '99+' : badgeCount}
             </span>
           )}
         </div>
         {!collapsed && <span className="truncate">{label}</span>}
         {!collapsed && hasBadge && (
           <span className="ml-auto bg-red-500 dark:bg-destructive text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-            {badgeCount}
+            {badgeCount! > 99 ? '99+' : badgeCount}
           </span>
         )}
       </div>

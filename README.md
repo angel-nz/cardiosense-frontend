@@ -26,7 +26,7 @@ src/
 │   ├── patients/     # PatientRow
 │   └── alerts/       # AlertToast
 ├── context/          # AlertsContext, AuthContext, SocketContext
-├── hooks/            # usePatients, usePredictions
+├── hooks/            # shared data-loading/state hooks
 ├── lib/              # utils, mockData
 ├── pages/
 │   ├── Dashboard/    # DashboardPage
@@ -72,7 +72,7 @@ npm run build
 | `/patients/new`           | Crear paciente         | Sí      |
 | `/patients/:id`           | Perfil del paciente    | Sí      |
 | `/predictions`            | Historial predicciones | Sí      |
-| `/predictions/:patientId` | Nueva predicción      | Sí      |
+| `/predictions/:patientId` | Historial de predicciones | Sí      |
 | `/alerts`                 | Centro de alertas      | Sí      |
 | `/settings`               | Configuración         | Sí      |
 

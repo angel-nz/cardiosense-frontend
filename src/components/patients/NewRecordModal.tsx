@@ -1,3 +1,5 @@
+import { WheelDatePicker } from '@/components/ui/WheelDatePicker'
+import { WheelTimePicker } from '@/components/ui/WheelTimePicker'
 import { useState, useEffect, useRef } from 'react'
 import { Save } from 'lucide-react'
 import { isAxiosError } from 'axios'
@@ -5,7 +7,8 @@ import { Dialog } from '@/components/ui/Dialog'
 import { cn, calcAge } from '@/lib/utils'
 import { recordService } from '@/services/recordService'
 import { useActionNotify } from '@/context/ToastContext'
-import { nowClinicalLocalInput, validateMeasuredAtInput, MEASURED_AT_MESSAGES, CLINICAL_TIMEZONE } from '@/lib/clinicalTime'
+import { nowClinicalLocalInput, validateMeasuredAtInput, MEASURED_AT_MESSAGES } from '@/lib/clinicalTime'
+import { getTodayBusinessDateKey } from '@/lib/businessDate'
 import type { HealthRecord, CreateHealthRecordRequest } from '@/types'
 
 const inputClass = cn(
@@ -23,7 +26,6 @@ interface RecordFormState {
   sysBP: string
   diaBP: string
   bmi: string
-  heartRate: string
   glucose: string
   notes: string
 }
@@ -32,7 +34,7 @@ interface RecordFormState {
 // used only when the patient has no prior HealthRecord to prefill from.
 const BLANK_FORM: RecordFormState = {
   currentSmoker: false, cigsPerDay: '0', bpMeds: false, diabetes: false,
-  totChol: '', sysBP: '', diaBP: '', bmi: '', heartRate: '', glucose: '',
+  totChol: '', sysBP: '', diaBP: '', bmi: '', glucose: '',
   notes: '',
 }
 
@@ -51,7 +53,6 @@ function prefillFromLatest(latest: HealthRecord): RecordFormState {
     sysBP: String(latest.sysBP),
     diaBP: String(latest.diaBP),
     bmi: String(latest.bmi),
-    heartRate: String(latest.heartRate),
     glucose: String(latest.glucose),
     notes: latest.notes ?? '',
   }
@@ -86,7 +87,7 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
   const [saving, setSaving] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   // NEW S2E — REAL clinical measurement time, as a Guadalajara wall-clock
-  // datetime-local value ("YYYY-MM-DDTHH:mm"). Deliberately kept OUT of
+  // combined local value ("YYYY-MM-DDTHH:mm") produced by the date wheel + WheelTimePicker. Deliberately kept OUT of
   // RecordFormState: it is never prefilled from a previous record (each new
   // record defaults to "now" at open time) and never clamped/rewritten.
   const [measuredLocal, setMeasuredLocal] = useState('')
@@ -207,7 +208,6 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
         sysBP: Number(form.sysBP),
         diaBP: Number(form.diaBP),
         bmi: Number(form.bmi),
-        heartRate: Number(form.heartRate),
         glucose: Number(form.glucose),
         notes: form.notes.trim() || undefined,
       }
@@ -292,21 +292,33 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
           {/* NEW S2E — REAL clinical measurement time (required). Wall time
               in Guadalajara; converted to an exact UTC instant on submit. */}
           <div className="space-y-1">
-            <label htmlFor="record-measured-at" className="text-xs font-medium text-muted-foreground">
-              Fecha y hora de la medición
-            </label>
-            <input
-              id="record-measured-at"
-              type="datetime-local"
-              required
-              className={inputClass}
-              value={measuredLocal}
-              onChange={e => setMeasuredLocal(e.target.value)}
-              aria-describedby="record-measured-at-help"
-              aria-invalid={fieldErrors.measuredAt ? true : undefined}
-            />
+            <div id="record-measured-at" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
+              <WheelDatePicker
+                label="Fecha"
+                required
+                showRequiredIndicator={false}
+                value={measuredLocal.split('T')[0] ?? ''}
+                min={birthDate}
+                max={getTodayBusinessDateKey()}
+                minYear={Number(birthDate.slice(0, 4))}
+                maxYear={Number(getTodayBusinessDateKey().slice(0, 4))}
+                onValueChange={date => setMeasuredLocal(`${date}T${measuredLocal.split('T')[1] ?? ''}`)}
+                aria-describedby="record-measured-at-help"
+                aria-invalid={fieldErrors.measuredAt ? true : undefined}
+              />
+              <WheelTimePicker
+                id="record-measured-time"
+                label="Hora"
+                required
+                showRequiredIndicator={false}
+                value={measuredLocal.split('T')[1] ?? ''}
+                onValueChange={time => setMeasuredLocal(`${measuredLocal.split('T')[0] ?? ''}T${time}`)}
+                aria-describedby="record-measured-at-help"
+                aria-invalid={fieldErrors.measuredAt ? true : undefined}
+              />
+            </div>
             <p id="record-measured-at-help" className="text-[11px] text-muted-foreground">
-              Momento en que realmente se tomaron las mediciones (hora de Guadalajara, {CLINICAL_TIMEZONE}), no el momento en que se capturan.
+              Momento en que realmente se tomaron las mediciones.
             </p>
             {fieldErrors.measuredAt && <p role="alert" className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.measuredAt}</p>}
           </div>
@@ -341,14 +353,7 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
               {fieldErrors.bmi && <p className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.bmi}</p>}
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Frec. cardíaca</label>
-              <input type="number" min={30} max={250} required className={inputClass}
-                value={form.heartRate}
-                onChange={e => setForm(f => ({ ...f, heartRate: e.target.value }))} />
-              {fieldErrors.heartRate && <p className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.heartRate}</p>}
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Glucosa</label>
+              <label className="text-xs font-medium text-muted-foreground">Glucosa casual</label>
               <input type="number" min={30} max={500} required className={inputClass}
                 value={form.glucose}
                 onChange={e => setForm(f => ({ ...f, glucose: e.target.value }))} />

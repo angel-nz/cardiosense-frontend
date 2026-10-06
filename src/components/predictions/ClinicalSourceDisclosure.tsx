@@ -52,7 +52,6 @@ export const FIELDS: FieldSpec[] = [
   { key: 'sysBP',         label: 'Presión sistólica',      unit: 'mmHg',             kind: 'number' },
   { key: 'diaBP',         label: 'Presión diastólica',     unit: 'mmHg',             kind: 'number' },
   { key: 'bmi',           label: 'IMC',                    unit: 'kg/m²',            kind: 'number' },
-  { key: 'heartRate',     label: 'Frecuencia cardíaca',    unit: 'bpm',              kind: 'number' },
   { key: 'glucose',       label: 'Glucosa',                unit: 'mg/dL',            kind: 'number' },
 ]
 

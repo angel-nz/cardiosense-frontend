@@ -1,3 +1,4 @@
+import { ClinicalIndicators } from '@/components/patients/ClinicalIndicators'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
@@ -1041,7 +1042,7 @@ export default function PatientDetailPage() {
       <Dialog
         open={riskModal !== null}
         onOpenChange={open => { if (!open) closeRiskModal() }}
-        title={riskModal === 'projection' ? 'Proyección de riesgo cardiovascular' : 'Evolución del riesgo — historial completo'}
+        title={riskModal === 'projection' ? 'Proyección de riesgo cardiovascular' : 'Evolución del riesgo'}
         size="wide"
         onCloseAutoFocus={restoreRiskModalFocus}
       >
@@ -1050,10 +1051,10 @@ export default function PatientDetailPage() {
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <p className="text-xs text-muted-foreground" data-testid="full-evolution-subtitle">
                 {fullHistory.phase === 'ready'
-                  ? `${fullModel.real.length} predicci${fullModel.real.length === 1 ? 'ón' : 'ones'} (historial completo) · por fecha clínica`
-                  : 'Historial completo de predicciones · por fecha clínica'}
+                  ? `${fullModel.real.length} predicci${fullModel.real.length === 1 ? 'ón' : 'ones'}`
+                  : 'Historial completo de predicciones'}
                 {fullModel.projected.length > 0 &&
-                  ` · Proyección: ${fullModel.projected.length} fecha${fullModel.projected.length === 1 ? '' : 's'} objetivo`}
+                  ` + ${evolutionModel.projected.length} proyecci${evolutionModel.projected.length === 1 ? 'ón' : 'ones'}`}
               </p>
               {/* NEW S4 — upper-right action group: Ver proyección + Historial
                   (same destination/handler as the compact card's button; wraps
@@ -1249,15 +1250,15 @@ export default function PatientDetailPage() {
                   </div>
                 )}
                 <div className="mt-4 pt-4 border-t border-border text-center">
-                  <p className="text-xs text-muted-foreground" data-testid="current-risk-clinical">
-                    {currentRecordTime ? `Registro clínico · ${clinicalTimeLabel(currentRecordTime)}` : '—'}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">Calculada {timeAgo(latestPrediction.predictedAt)}</p>
                   {latestPrediction.modelVersion && (
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Modelo {latestPrediction.modelVersion}
+                      {latestPrediction.modelVersion}
                     </p>
                   )}
+                  <p className="text-xs text-muted-foreground" data-testid="current-risk-clinical">
+                    {currentRecordTime ? `${clinicalTimeLabel(currentRecordTime)}` : '—'}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Calculada {timeAgo(latestPrediction.predictedAt)}</p>
                 </div>
               </>
             )}
@@ -1375,10 +1376,10 @@ export default function PatientDetailPage() {
                       on the clinical time axis; projected targets are counted
                       separately and never called Predictions. */}
                   {evolutionModel.real.length > 0
-                    ? `Última${evolutionModel.real.length === 1 ? '' : 's'} ${evolutionModel.real.length} predicci${evolutionModel.real.length === 1 ? 'ón' : 'ones'} · por fecha clínica`
-                    : 'Score cardiovascular · por fecha clínica'}
+                    ? `Última${evolutionModel.real.length === 1 ? '' : 's'} ${evolutionModel.real.length} predicci${evolutionModel.real.length === 1 ? 'ón' : 'ones'}`
+                    : 'Riesgo cardiovascular'}
                   {evolutionModel.projected.length > 0 &&
-                    ` · Proyección: ${evolutionModel.projected.length} fecha${evolutionModel.projected.length === 1 ? '' : 's'} objetivo`}
+                    ` + ${evolutionModel.projected.length} proyecci${evolutionModel.projected.length === 1 ? 'ón' : 'ones'}`}
                 </p>
               </div>
               {/* NEW S3 — right-side action area: "Ver proyección" (moved to
@@ -1465,33 +1466,7 @@ export default function PatientDetailPage() {
                   {/* NEW S2E — clinical (measured) time; legacy rows labelled as entry time. */}
                   Último registro · {clinicalTimeLabel(latestRecord)}
                 </p>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { label: 'Presión sistólica',  value: latestRecord.sysBP,     unit: 'mmHg', high: latestRecord.sysBP > 140 },
-                    { label: 'Presión diastólica', value: latestRecord.diaBP,     unit: 'mmHg', high: latestRecord.diaBP > 90 },
-                    { label: 'Colesterol total',   value: latestRecord.totChol,   unit: 'mg/dL', high: latestRecord.totChol > 240 },
-                    { label: 'Glucosa',            value: latestRecord.glucose,   unit: 'mg/dL', high: latestRecord.glucose > 126 },
-                    { label: 'IMC',                value: latestRecord.bmi,       unit: 'kg/m²', high: latestRecord.bmi > 30 },
-                    { label: 'Frec. cardíaca',     value: latestRecord.heartRate, unit: 'bpm',   high: latestRecord.heartRate > 100 },
-                  ].map(item => (
-                    <div key={item.label} className={cn(
-                      'bg-card rounded-xl border p-4',
-                      item.high ? 'border-red-200 dark:border-red-800/60 bg-red-50/50 dark:bg-red-950/40' : 'border-border',
-                    )}>
-                      <p className="text-xs text-muted-foreground">{item.label}</p>
-                      <p className={cn('text-2xl font-bold font-mono mt-1', item.high ? 'text-red-600 dark:text-red-400' : 'text-foreground')}>
-                        {item.value}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{item.unit}</p>
-                      {item.high && (
-                        <p className="text-[10px] text-red-600 dark:text-red-400 font-medium mt-1 flex items-center gap-1">
-                          <AlertTriangle className="w-2.5 h-2.5" />
-                          Fuera de rango
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <ClinicalIndicators record={latestRecord} sex={patient.sex} />
               </>
             )}
 
@@ -1545,7 +1520,7 @@ export default function PatientDetailPage() {
                           ['sysBP', 'Sistólica'],
                           ['diaBP', 'Diastólica'],
                           ['totChol', 'Colesterol'],
-                          ['glucose', 'Glucosa'],
+                          ['glucose', 'Glucosa casual'],
                           ['bmi', 'IMC'],
                         ] as [HistorySortBy, string][]).map(([field, label]) => (
                           <th key={field} className="ui-clinical-row pr-4">
@@ -1747,18 +1722,20 @@ export default function PatientDetailPage() {
             )}
           </div>
 
-          {/* Feature importance — real data only; the backend does not
-              persist featureImportance on historical predictions (only the
-              immediate POST /predictions response has it, per
-              predictionService.ts), so this stays hidden until that changes
-              upstream — never fabricated here. */}
+          {/* Feature importance — real data only. The backend does not
+              persist featureImportance on Prediction rows, so normal read
+              paths keep this hidden unless an additive response provides it.
+              Never fabricated client-side. */}
           {latestPrediction?.featureImportance && (
             <div className="bg-card rounded-xl border border-border ui-card-density">
               <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
                 <FileText className="w-4 h-4 text-muted-foreground" />
-                Factores de mayor impacto en la predicción
+                Importancia predictiva global del modelo
               </h3>
-              <FeatureImportanceBar data={latestPrediction.featureImportance} maxItems={6} />
+              <p className="text-xs text-muted-foreground mb-4">
+                Porcentajes globales por permutation importance. No representan causalidad ni el porcentaje del riesgo individual de este paciente.
+              </p>
+              <FeatureImportanceBar data={latestPrediction.featureImportance} />
             </div>
           )}
         </div>

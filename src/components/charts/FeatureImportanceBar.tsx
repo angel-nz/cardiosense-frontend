@@ -12,13 +12,12 @@ const FEATURE_LABELS: Record<string, string> = {
   totChol:       'Colesterol total',
   BMI:           'Índice de masa corporal',
   glucose:       'Glucosa',
-  heartRate:     'Frecuencia cardíaca',
   currentSmoker: 'Fumador activo',
   diaBP:         'Presión diastólica',
   cigsPerDay:    'Cigarrillos/día',
-  bpMeds:        'Medicación HTA',
+  BPMeds:        'Medicación HTA',
   diabetes:      'Diabetes',
-  sex:           'Sexo',
+  male:           'Sexo masculino',
 }
 
 const BAR_COLORS = [
@@ -32,17 +31,17 @@ const BAR_COLORS = [
   'bg-teal-500',
 ]
 
-export function FeatureImportanceBar({ data, className, maxItems = 8 }: FeatureImportanceBarProps) {
+export function FeatureImportanceBar({ data, className, maxItems = 11 }: FeatureImportanceBarProps) {
   const sorted = Object.entries(data)
     .sort(([, a], [, b]) => b - a)
     .slice(0, maxItems)
 
-  const max = sorted[0]?.[1] ?? 1
+  const max = sorted[0]?.[1] ?? 0
 
   return (
     <div className={cn('space-y-3', className)}>
       {sorted.map(([key, value], i) => {
-        const pct = (value / max) * 100
+        const pct = max > 0 ? (value / max) * 100 : 0
         const label = FEATURE_LABELS[key] ?? key
 
         return (
@@ -50,7 +49,7 @@ export function FeatureImportanceBar({ data, className, maxItems = 8 }: FeatureI
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground font-medium">{label}</span>
               <span className="font-mono font-semibold text-foreground">
-                {(value * 100).toFixed(1)}%
+                {value.toFixed(1)}%
               </span>
             </div>
             <div className="h-2 bg-muted rounded-full overflow-hidden">

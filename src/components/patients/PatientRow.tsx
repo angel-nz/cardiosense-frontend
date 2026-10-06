@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
-import { cn, initials, formatRelativeBusinessDate, calcAge, sexLabel } from '@/lib/utils'
+import { cn, initials, formatRelativeBusinessDate, formatTime, calcAge, sexLabel } from '@/lib/utils'
 import { RiskBadge } from '@/components/ui/RiskBadge'
 import type { Patient } from '@/types'
 
@@ -12,6 +12,12 @@ interface PatientRowProps {
 export function PatientRow({ patient, className }: PatientRowProps) {
   const navigate = useNavigate()
   const age = calcAge(patient.birthDate)
+  const latestClinicalDate = patient.latestClinicalAt ? formatRelativeBusinessDate(patient.latestClinicalAt) : null
+  const latestClinicalLabel = patient.latestClinicalAt && latestClinicalDate
+    ? latestClinicalDate.isRelative
+      ? `${latestClinicalDate.label}, ${formatTime(patient.latestClinicalAt, { timeZone: 'business' })}`
+      : latestClinicalDate.label
+    : 'Sin registros clínicos'
 
   return (
     <tr
@@ -69,7 +75,7 @@ export function PatientRow({ patient, className }: PatientRowProps) {
         {/* NEW S3 — "Última actualización" = clinical time of the patient's
             clinically latest HealthRecord (never Paciente.updatedAt). */}
         <p className="text-sm text-muted-foreground" data-testid="patient-last-clinical">
-          {patient.latestClinicalAt ? formatRelativeBusinessDate(patient.latestClinicalAt).label : 'Sin registros clínicos'}
+          {latestClinicalLabel}
         </p>
       </td>
 

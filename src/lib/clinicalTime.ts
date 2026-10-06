@@ -59,7 +59,7 @@ export type ClinicalTimeConversion =
   | { ok: true; iso: string }
   | { ok: false; error: 'MALFORMED' | 'NONEXISTENT' }
 
-// "YYYY-MM-DDTHH:mm" (the <input type="datetime-local"> value) or with
+// "YYYY-MM-DDTHH:mm" (the date-wheel + WheelTimePicker value) or with
 // ":ss" → exact UTC instant. Independent of the browser/process timezone.
 export function clinicalWallTimeToUtcIso(localInput: string): ClinicalTimeConversion {
   const m = LOCAL_INPUT_RE.exec(localInput.trim())
@@ -86,7 +86,7 @@ export function clinicalWallTimeToUtcIso(localInput: string): ClinicalTimeConver
   return { ok: true, iso: new Date(Math.min(...candidates)).toISOString() }
 }
 
-// Current wall clock in the canonical zone, as a datetime-local value
+// Current wall clock in the canonical zone, as the combined local form value
 // ("YYYY-MM-DDTHH:mm"). Used to initialize the form at open time.
 export function nowClinicalLocalInput(now: Date = new Date()): string {
   const w = wallOf(now.getTime())

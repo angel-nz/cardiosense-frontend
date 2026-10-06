@@ -21,7 +21,7 @@ import { ORIGIN_LABEL, pointKey, type ProjectedRiskPoint, type RealRiskPoint, ty
 // transition).
 
 export const SERIES_LABELS = {
-  real: 'Riesgo calculado con registro real',
+  real: 'Riesgo real',
   projected: 'Proyección',
 } as const
 
@@ -101,7 +101,7 @@ export function RiskEvolutionLegend({ hasReal, hasProjected }: { hasReal: boolea
             <line x1="0" y1="5" x2="28" y2="5" stroke={SERIES_COLOR} strokeWidth="2" strokeDasharray={PROJECTED_DASH} />
             <circle cx="14" cy="5" r="3.5" fill="hsl(var(--card))" stroke={SERIES_COLOR} strokeWidth="2" />
           </svg>
-          {SERIES_LABELS.projected} (línea discontinua)
+          {SERIES_LABELS.projected}
         </li>
       )}
     </ul>
@@ -437,14 +437,14 @@ export function RiskEvolutionChart({
 
   return (
     <div ref={containerRef} data-testid="risk-evolution-chart" data-variant={variant} data-real-points={model.real.length} data-projected-points={model.projected.length} className="relative">
-      <div className="flex items-center justify-end gap-1 mb-1" role="group" aria-label={`Navegación de puntos de la gráfica: ${chartLabel}`} data-testid="point-nav">
+      <div className="flex items-center justify-end gap-1 mb-1" role="group" aria-label={`Navegación de la gráfica: ${chartLabel}`} data-testid="point-nav">
         <span className="text-[11px] text-muted-foreground mr-1 tabular-nums" data-testid="point-position">
-          {selectedIndex >= 0 ? `Punto ${selectedIndex + 1} de ${n}` : `${n} punto${n === 1 ? '' : 's'}`}
+          {selectedIndex >= 0 ? `${selectedIndex + 1} de ${n}` : `${n}`}
         </span>
-        <NavButton testId="nav-first" label="Ir al primer punto" disabled={n === 0 || selectedIndex === 0} onClick={() => go(0)}><ChevronsLeft className="w-3.5 h-3.5" aria-hidden="true" /></NavButton>
-        <NavButton testId="nav-prev" label="Ir al punto anterior" disabled={atFirst} onClick={() => go(selectedIndex - 1)}><ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" /></NavButton>
-        <NavButton testId="nav-next" label="Ir al punto siguiente" disabled={atLast} onClick={() => go(selectedIndex + 1)}><ChevronRight className="w-3.5 h-3.5" aria-hidden="true" /></NavButton>
-        <NavButton testId="nav-last" label="Ir al último punto" disabled={n === 0 || selectedIndex === n - 1} onClick={() => go(n - 1)}><ChevronsRight className="w-3.5 h-3.5" aria-hidden="true" /></NavButton>
+        <NavButton testId="nav-first" label="Ir al primero" disabled={n === 0 || selectedIndex === 0} onClick={() => go(0)}><ChevronsLeft className="w-3.5 h-3.5" aria-hidden="true" /></NavButton>
+        <NavButton testId="nav-prev" label="Ir al anterior" disabled={atFirst} onClick={() => go(selectedIndex - 1)}><ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" /></NavButton>
+        <NavButton testId="nav-next" label="Ir al siguiente" disabled={atLast} onClick={() => go(selectedIndex + 1)}><ChevronRight className="w-3.5 h-3.5" aria-hidden="true" /></NavButton>
+        <NavButton testId="nav-last" label="Ir al último" disabled={n === 0 || selectedIndex === n - 1} onClick={() => go(n - 1)}><ChevronsRight className="w-3.5 h-3.5" aria-hidden="true" /></NavButton>
       </div>
       <ResponsiveContainer width="100%" height={height}>
         <ComposedChart data={rows}>
@@ -558,8 +558,8 @@ export function RiskEvolutionChart({
           <div className="flex items-start justify-between gap-2 mb-1">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               {full
-                ? (selectedRow.point.kind === 'REAL' ? 'Predicción con registro real' : 'Proyección — no es un dato observado')
-                : (selectedRow.point.kind === 'REAL' ? 'Registro real' : 'Proyección')}
+                ? (selectedRow.point.kind === 'REAL' ? 'Riesgo real' : 'Proyección')
+                : (selectedRow.point.kind === 'REAL' ? 'Riesgo real' : 'Proyección')}
               <span className="ml-1 font-normal normal-case tracking-normal">· {selectedIndex + 1}/{n}</span>
             </p>
             {full && (

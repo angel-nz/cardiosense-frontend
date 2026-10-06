@@ -1,3 +1,4 @@
+import { WheelDatePicker } from '@/components/ui/WheelDatePicker'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { Calendar, ChevronLeft, ChevronRight, Cpu, History, Loader2 } from 'lucide-react'
@@ -154,37 +155,39 @@ export default function PredictionHistoryPage() {
           pattern: date/select changes apply immediately, no debounce, no
           free-text search (the patient is already scoped by the route). */}
       <div className="bg-card rounded-xl border border-border p-4 space-y-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <label htmlFor="history-from" className="text-xs text-muted-foreground">Desde</label>
-          <input
+        <div className="flex items-end gap-2 flex-wrap">
+          <WheelDatePicker label="Desde"
             id="history-from"
-            type="date"
+            compact
+            className="w-full max-w-full flex-none sm:w-56"
             value={from}
+            maxYear={Number(getBusinessDateKey(new Date().toISOString()).slice(0, 4))}
             max={to || undefined}
-            onChange={e => setFrom(e.target.value)}
-            className="px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card"
+            onValueChange={setFrom}
           />
-          <label htmlFor="history-to" className="text-xs text-muted-foreground">Hasta</label>
-          <input
+          <WheelDatePicker label="Hasta"
             id="history-to"
-            type="date"
+            compact
+            className="w-full max-w-full flex-none sm:w-56"
             value={to}
+            maxYear={Number(getBusinessDateKey(new Date().toISOString()).slice(0, 4))}
             min={from || undefined}
-            onChange={e => setTo(e.target.value)}
-            className="px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card"
+            onValueChange={setTo}
           />
-          <label htmlFor="history-risk" className="sr-only">Nivel de riesgo</label>
-          <select
-            id="history-risk"
-            value={riskLevel}
-            onChange={e => setRiskLevel(e.target.value as PredictionRiskFilter | '')}
-            className="px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card cursor-pointer"
-          >
+          <div className="w-36 max-w-full flex-none">
+            <label htmlFor="history-risk" className="mb-1 block text-xs font-medium text-muted-foreground">Nivel de riesgo</label>
+            <select
+              id="history-risk"
+              value={riskLevel}
+              onChange={e => setRiskLevel(e.target.value as PredictionRiskFilter | '')}
+              className="w-full px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card cursor-pointer"
+            >
             <option value="">Todos los niveles</option>
             <option value="LOW">Bajo</option>
             <option value="MODERATE">Moderado</option>
-            <option value="HIGH">Alto</option>
-          </select>
+              <option value="HIGH">Alto</option>
+            </select>
+          </div>
           {hasActiveFilters && (
             <button
               type="button"

@@ -1,3 +1,4 @@
+import { WheelDatePicker } from '@/components/ui/WheelDatePicker'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
@@ -37,7 +38,7 @@ function dayLabel(dateKey: string): string {
 // readDashboardEventNav precedent (PatientDetailPage.tsx, O3-FIX-4). Never
 // blindly casts location.state — only ever recognizes its OWN relevant
 // `kind`, and only a `businessDateKey` shaped like a real "YYYY-MM-DD" date
-// string (matching the existing <input type="date"> from/to contract
+// string (matching the existing wheel-date from/to contract
 // already used by this component's own filter controls below). Any other/
 // malformed payload is treated as absent.
 function readPredictionsStatNav(state: unknown): string | null {
@@ -49,7 +50,6 @@ function readPredictionsStatNav(state: unknown): string | null {
   if (typeof businessDateKey !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(businessDateKey)) return null
   return businessDateKey
 }
-
 // Reached when the route has no :patientId (e.g. the Sidebar links to the
 // bare /predictions — see router.tsx). Shows the médico's own global
 // prediction history — GET /api/predictions, scoped server-side by
@@ -61,14 +61,12 @@ function GlobalPredictionHistory() {
   const navigate = useNavigate()
   const location = useLocation()
   const { connected, lastDashboardActivity, clearLastDashboardActivity } = useSocket()
-
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
   // U6.2 — filters. `search` is the raw input (updates every keystroke);
   // `debouncedSearch` is what's actually sent, ~350ms after the user stops
   // typing. Date/risk controls fetch immediately (discrete actions, not a
@@ -78,15 +76,12 @@ function GlobalPredictionHistory() {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [riskLevel, setRiskLevel] = useState<PredictionRiskFilter | ''>('')
-
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 350)
     return () => clearTimeout(timer)
   }, [search])
-
   // Any filter change resets to page 1 — mirrors the U5 principle.
   useEffect(() => { setPage(1) }, [debouncedSearch, from, to, riskLevel])
-
   // X2 — consume the Dashboard "Predicciones" navigation intent exactly
   // once: applies to the SAME existing from/to date-input state a doctor
   // could set manually (never a parallel filter mechanism), then
@@ -109,7 +104,6 @@ function GlobalPredictionHistory() {
     setTo(businessDateKey)
     navigate(location.pathname, { replace: true, state: null })
   }, [location.state, location.pathname, navigate])
-
   const requestIdRef = useRef(0)
   const load = useCallback(async (silent = false) => {
     const requestId = ++requestIdRef.current
@@ -141,9 +135,7 @@ function GlobalPredictionHistory() {
       if (requestId === requestIdRef.current && !silent) setLoading(false)
     }
   }, [page, debouncedSearch, from, to, riskLevel])
-
   useEffect(() => { load() }, [load])
-
   // U6.2 — dashboard_activity_changed is reused as-is (already emitted to
   // user:{userId} after every persisted Prediction, no new event, no
   // per-patient subscription needed for a doctor-scoped global view).
@@ -159,13 +151,11 @@ function GlobalPredictionHistory() {
       load(true)
     }, REALTIME_COALESCE_MS)
   }, [load])
-
   useEffect(() => {
     if (!lastDashboardActivity) return
     scheduleRefresh()
     clearLastDashboardActivity()
   }, [lastDashboardActivity, scheduleRefresh, clearLastDashboardActivity])
-
   // Reconnect resync — same pattern already validated in O4.2/U2: skip the
   // very first connection (the mount-driven load above already covers it),
   // treat any subsequent `connected` transition as a genuine reconnect.
@@ -175,11 +165,9 @@ function GlobalPredictionHistory() {
     if (!hasConnectedOnceRef.current) { hasConnectedOnceRef.current = true; return }
     scheduleRefresh()
   }, [connected, scheduleRefresh])
-
   useEffect(() => {
     return () => { if (coalesceTimerRef.current) clearTimeout(coalesceTimerRef.current) }
   }, [])
-
   // U6.2 §13 — binding decision: reuse the existing DashboardEventNavigationState
   // mechanism (O3-FIX-4/5) rather than the old `/predictions/:patientId`
   // navigation. Known, documented limitation (not solved here): if this
@@ -195,7 +183,6 @@ function GlobalPredictionHistory() {
     }
     navigate(`/patients/${pred.patientId}`, { state: { dashboardEventNav: nav } })
   }
-
   // U6.2 — presentation-only grouping of the CURRENT page's already
   // chronologically-ordered predictions, by business month/day
   // (America/Mexico_City). A day/month may legitimately repeat on another
@@ -211,10 +198,8 @@ function GlobalPredictionHistory() {
       groups.push({ monthKey, dayKey, items: [pred] })
     }
   }
-
   const clearFilters = () => { setSearch(''); setFrom(''); setTo('') ; setRiskLevel('') }
   const hasActiveFilters = debouncedSearch || from || to || riskLevel
-
   return (
     <div className="max-w-2xl mx-auto mt-4 ui-content-stack">
       <div className="text-center">
@@ -253,30 +238,38 @@ function GlobalPredictionHistory() {
             className="w-full pl-9 pr-3 ui-compact-control-density text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
           />
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <input
-            type="date"
+        <div className="flex items-end gap-2 flex-wrap">
+          <WheelDatePicker label="Desde"
+            compact
+            className="w-full max-w-full flex-none sm:w-56"
             value={from}
-            onChange={e => setFrom(e.target.value)}
-            className="px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card"
+            maxYear={Number(getBusinessDateKey(new Date().toISOString()).slice(0, 4))}
+            max={to || undefined}
+            onValueChange={setFrom}
           />
-          <span className="text-xs text-muted-foreground">a</span>
-          <input
-            type="date"
+          <span className="flex h-[34px] items-center text-xs text-muted-foreground">a</span>
+          <WheelDatePicker label="Hasta"
+            compact
+            className="w-full max-w-full flex-none sm:w-56"
             value={to}
-            onChange={e => setTo(e.target.value)}
-            className="px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card"
+            maxYear={Number(getBusinessDateKey(new Date().toISOString()).slice(0, 4))}
+            min={from || undefined}
+            onValueChange={setTo}
           />
-          <select
-            value={riskLevel}
-            onChange={e => setRiskLevel(e.target.value as PredictionRiskFilter | '')}
-            className="px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card cursor-pointer"
-          >
+          <div className="w-36 max-w-full flex-none">
+            <label htmlFor="global-history-risk" className="mb-1 block text-xs font-medium text-muted-foreground">Nivel de riesgo</label>
+            <select
+              id="global-history-risk"
+              value={riskLevel}
+              onChange={e => setRiskLevel(e.target.value as PredictionRiskFilter | '')}
+              className="w-full px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card cursor-pointer"
+            >
             <option value="">Todos los niveles</option>
             <option value="LOW">Bajo</option>
             <option value="MODERATE">Moderado</option>
-            <option value="HIGH">Alto</option>
-          </select>
+              <option value="HIGH">Alto</option>
+            </select>
+          </div>
           {hasActiveFilters && (
             <button
               type="button"

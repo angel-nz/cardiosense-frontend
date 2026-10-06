@@ -45,10 +45,7 @@ export function AutomaticPredictionProvenance({ metadata }: { metadata: Predicti
   )
 }
 
-// NEW S3 — under a RISK_CHANGE row. The change is ALERT-LIKE: the row sits
-// at its GENERATED time ("Cambio detectado", = the current automatic
-// Prediction's calculation time); the source record's clinical time is shown
-// as context ("Fecha clínica del registro"). Supersedes FIX4's placement.
+// PRE-T-UX1 — placed at source measuredAt; calculation time is audit context.
 export function RiskChangeProvenance({ metadata }: { metadata: RiskChangeEventMetadata }) {
   const generated = metadata.generatedAt ?? metadata.currentPredictedAt
   if (!metadata.clinicalAt && !generated) return null

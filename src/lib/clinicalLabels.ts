@@ -1,4 +1,4 @@
-// R5 — single source of physician-facing labels/units for the 12 model
+// R5 — single source of physician-facing labels/units for the 11 model
 // feature keys exactly as they appear on the wire (AI feature_importance
 // keys and longitudinal snapshot `features` keys). Display only: nothing
 // here changes any stored value.
@@ -14,19 +14,16 @@ export const FEATURE_LABELS: Record<string, string> = {
   sysBP:         'Presión sistólica',
   diaBP:         'Presión diastólica',
   BMI:           'IMC',
-  heartRate:     'Frecuencia cardíaca',
-  glucose:       'Glucosa',
+  glucose:       'Glucosa casual',
 }
 
 // Units follow the conventions already used in CardioSense
-// (ClinicalSourceDisclosure / Indicadores clínicos): heart rate is 'bpm'.
 export const FEATURE_UNITS: Record<string, string> = {
   totChol:    'mg/dL',
   glucose:    'mg/dL',
   sysBP:      'mmHg',
   diaBP:      'mmHg',
   BMI:        'kg/m²',
-  heartRate:  'bpm',
   cigsPerDay: 'cigarrillos/día',
   age:        'años',
 }

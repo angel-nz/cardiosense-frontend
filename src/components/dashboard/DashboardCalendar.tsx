@@ -29,6 +29,7 @@ const MONTH_LABEL_FORMATTER = new Intl.DateTimeFormat('es-MX', {
   month: 'long', year: 'numeric', timeZone: BUSINESS_TIMEZONE,
 })
 
+
 export function DashboardCalendar() {
   const navigate = useNavigate()
   // O4.2 — passive listener only: this component never calls
@@ -145,11 +146,12 @@ export function DashboardCalendar() {
   }, [connected, scheduleCoalescedRefresh])
 
   const days = useMemo(() => buildCalendarDays(viewYear, viewMonth, todayKey), [viewYear, viewMonth, todayKey])
-  const eventsByDay = useMemo(() => groupEventsByBusinessDay(events), [events])
+
   const monthLabel = useMemo(
     () => MONTH_LABEL_FORMATTER.format(new Date(Date.UTC(viewYear, viewMonth - 1, 15))),
     [viewYear, viewMonth],
   )
+  const eventsByDay = useMemo(() => groupEventsByBusinessDay(events), [events])
 
   const goToPrevMonth = () => {
     setSelectedDateKey(null)

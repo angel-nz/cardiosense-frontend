@@ -1,11 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Users, Bell, Activity, AlertTriangle, Loader2 } from 'lucide-react'
+import { Users, Activity, AlertTriangle, Loader2 } from 'lucide-react'
 import { StatCard } from '@/components/ui/StatCard'
 import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { usePatients } from '@/hooks/usePatients'
-import { useAlerts } from '@/context/AlertsContext'
 import { dashboardService } from '@/services/dashboardService'
 import { patientService } from '@/services/patientService'
 import { DashboardCalendar } from '@/components/dashboard/DashboardCalendar'
@@ -61,12 +60,6 @@ export default function DashboardPage() {
   const [totalPatients, setTotalPatients] = useState(0)
   useEffect(() => { setTotalPatients(initialTotalPatients) }, [initialTotalPatients])
 
-  // Reuses the already-mounted global AlertsContext (fetched once at app
-  // root) — visiting the Dashboard does NOT trigger an additional
-  // GET /api/alerts request. unreadCount is backend-computed across ALL of
-  // the doctor's alerts (not just the loaded page), safe to use directly.
-  // Already fully realtime via lastAlert (U2.1) — untouched by U2.2.
-  const { unreadCount, error: alertsError } = useAlerts()
 
   // U2.2 — passive listener only: this page never calls subscribe_patient.
   // dashboard_activity_changed/patient_created both already arrive via the
@@ -187,7 +180,7 @@ export default function DashboardPage() {
   // riesgo" spotlight card. KPI cards/charts above are untouched.)
   // (Recent Alerts derived list removed — O3-FIX replaced that Dashboard
   // section with DashboardCalendar. AlertsContext/alertService/AlertsPage
-  // and the "Alertas activas" KPI above are untouched.)
+  // remain mounted globally; this page has no alert-count KPI.)
 
   const weekMaxCount = useMemo(
     () => Math.max(1, ...(metrics?.predictionsThisWeek.map(d => d.count) ?? [0])),
@@ -203,7 +196,7 @@ export default function DashboardPage() {
   // X2 — keeps the `{ state: { dashboardStatNav } }` shape in exactly one
   // place, mirroring DashboardCalendar's own navigateToPatientTarget
   // helper (O3-FIX-4) for the analogous DashboardEventNavigationState
-  // convention. Still used by the Alertas/Predicciones cards below.
+  // convention. Used by the Predicciones card below.
   // Z8-FIX2 — the two Patients cards ("Pacientes bajo tu cuidado"/"Riesgo
   // alto") no longer go through this helper at all: they navigate with a
   // real `?status=.../&risk=...` query string directly (see their onClick
@@ -284,7 +277,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── KPI Cards ──────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 ui-element-gap">
+      <div className="grid grid-cols-1 sm:grid-cols-3 ui-element-gap">
         <StatCard
           title="Pacientes"
           value={patientsError ? '—' : totalPatients}
@@ -299,15 +292,6 @@ export default function DashboardPage() {
           // refresh of the destination URL (§5/§21-D) — PatientsPage reads
           // `status` straight from useSearchParams.
           onClick={() => navigate('/patients?status=ACTIVE')}
-        />
-        <StatCard
-          title="Alertas"
-          value={alertsError ? '—' : unreadCount}
-          subtitle={alertsError ? 'No se pudo cargar' : 'Pendientes'}
-          icon={Bell}
-          iconColor="text-amber-600 dark:text-amber-400"
-          iconBg="bg-amber-50 dark:bg-amber-950/40"
-          onClick={() => goToWithStatNav('/alerts', { kind: 'ALERTS_UNREAD' })}
         />
         <StatCard
           title="Predicciones"

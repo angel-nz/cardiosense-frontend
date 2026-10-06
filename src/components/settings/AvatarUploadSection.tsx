@@ -307,16 +307,16 @@ export function AvatarUploadSection() {
 
             <div className="min-w-0 flex-1">
               <p className="ui-text-meta text-muted-foreground truncate">
-                {authUser.medico?.especialidad || NOT_REGISTERED}
+                {authUser.medico?.especialidad || ''}
               </p>
               <p className="text-sm font-semibold text-foreground truncate">
                 Dr. {fullName(authUser.firstName, authUser.lastName)}
               </p>
               <p className="ui-text-meta text-muted-foreground truncate">
-                {authUser.email || NOT_REGISTERED}
+                {authUser.email || ''}
               </p>
               <p className="ui-text-meta text-muted-foreground truncate">
-                {authUser.medico?.phone ? formatInternationalDisplay(authUser.medico.phone) : NOT_REGISTERED}
+                {authUser.medico?.phone ? formatInternationalDisplay(authUser.medico.phone) : ''}
               </p>
             </div>
           </div>

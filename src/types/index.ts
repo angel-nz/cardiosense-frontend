@@ -373,7 +373,6 @@ export interface HealthRecord {
   sysBP: number
   diaBP: number
   bmi: number
-  heartRate: number
   glucose: number
   notes?: string
   createdBy: string
@@ -395,7 +394,6 @@ export interface CreateHealthRecordRequest {
   sysBP: number
   diaBP: number
   bmi: number
-  heartRate: number
   glucose: number
   notes?: string
 }
@@ -493,8 +491,8 @@ export interface RiskChangeEventMetadata {
   toLevel: RiskLevel
   previousPredictionId: string
   currentPredictionId: string
-  // NEW S3 — eventDate is the GENERATED time; clinicalAt is the source
-  // record's clinical time (context only).
+  // PRE-T-UX1 — eventDate/clinicalAt use source measuredAt;
+  // generatedAt remains calculation provenance, never calendar placement.
   clinicalAt: string | null
   generatedAt: string | null
   // NEW S2E-FIX4 — the event is dated at the CURRENT automatic Prediction's
@@ -938,7 +936,7 @@ export interface RiskProjection {
   simulatedState: Record<string, number>
   featureProvenance: Record<string, string>
   assumptionFlags: ForecastAssumptionFlags
-  // NEW S4 — S-FEAT-SEQUENTIAL-ROBUST-1 per-horizon context (null on pre-S4 sets):
+  // NEW S4 — S-FEAT-SEQUENTIAL-ROBUST-2 per-horizon context (null on pre-S4 sets):
   // which earlier simulated horizons of the same run fed this horizon's trend.
   sequentialContext?: {
     realRecordCount: number | null

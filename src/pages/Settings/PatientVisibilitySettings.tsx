@@ -287,9 +287,10 @@ export default function PatientVisibilitySettings() {
                       type="button"
                       onClick={() => handleShow(patient)}
                       disabled={rowBusyId !== null}
-                      className="flex items-center gap-1.5 text-xs font-medium text-primary hover:bg-primary/10 px-2.5 ui-secondary-control-density rounded-lg transition-colors flex-shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="flex items-center gap-1.5 text-xs font-medium text-teal-700 dark:text-teal-300 hover:bg-primary/10 px-2.5 ui-secondary-control-density rounded-lg transition-colors flex-shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       {rowBusyId === patient.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      <Eye className="w-4 h-4 text-teal-700 dark:text-teal-300" />
                       Mostrar
                     </button>
                   </div>

@@ -1,3 +1,4 @@
+import { WheelDatePicker } from '@/components/ui/WheelDatePicker'
 import { useState, useEffect, useRef } from 'react'
 import { Save } from 'lucide-react'
 import { isAxiosError } from 'axios'
@@ -330,16 +331,17 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
             {curpError && <p className="text-[11px] text-red-600 dark:text-red-400">{curpError}</p>}
           </div>
 
-          <div className="ui-field-grid">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Fecha de nacimiento</label>
-              <input type="date" required className={inputClass}
+          <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
+            <div className="min-w-0">
+              <WheelDatePicker label="Fecha de nacimiento" required showRequiredIndicator={false}
                 max={getBusinessDateKey(new Date().toISOString())}
+                minYear={Number(getBusinessDateKey(new Date().toISOString()).slice(0, 4)) - 130}
+                maxYear={Number(getBusinessDateKey(new Date().toISOString()).slice(0, 4))}
                 value={form.birthDate}
-                onChange={e => setForm(f => ({ ...f, birthDate: e.target.value }))} />
+                onValueChange={value => setForm(f => ({ ...f, birthDate: value }))} />
             </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Sexo biológico</label>
+            <div className="min-w-0">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Sexo biológico</label>
               <select required className={cn(inputClass, 'cursor-pointer')}
                 value={form.sex}
                 onChange={e => setForm(f => ({ ...f, sex: e.target.value as '0' | '1' }))}

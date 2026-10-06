@@ -44,9 +44,6 @@ export function RiskProjectionPanel({ state, todayKey, embedded = false }: { sta
             {C.sectionTitle}
           </h3>
         )}
-        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-full border border-primary/40 text-primary bg-primary/5">
-          {C.projectionTag}
-        </span>
       </div>
       <p className="text-xs text-muted-foreground mb-4">{C.intro}</p>
 
@@ -141,7 +138,6 @@ function ProjectionsBody({ set, projections, todayKey }: { set: RiskProjectionSe
                   <p className="text-[11px] text-muted-foreground mt-0.5">{C.globalBaseline(formatProjectionPercent(p.globalRiskScore))}</p>
                 )}
               </div>
-              <p className="text-[11px] text-muted-foreground">{C.targetAge(p.targetAge)}</p>
             </li>
           )
         })}
@@ -159,11 +155,10 @@ function ProjectionsBody({ set, projections, todayKey }: { set: RiskProjectionSe
             <Info className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true" />{fallbackInfo}
           </p>
         )}
-        {set.versions?.featurePolicyVersion !== 'S-FEAT-LOCF-1' && <p data-copy="carried">{C.carriedStates}</p>}
         {anyCigsForcedZero && <p>{C.cigsForcedZero}</p>}
         {/* NEW S4 — multimodal: "Frecuencia multimodal detectada" + projected intervals; never one fake cadence. */}
-        {cadenceCopy(set.cadence)?.map((line, i) => <p key={i} data-copy="cadence">{line}</p>)}
-        <p>{C.uncertainty}</p>
+        {cadenceCopy(set.cadence)?.map((line, i) => <p key={i} data-copy="cadence">Frecuencia: {line}</p>)}
+        <p>Incertidumbre: {C.uncertainty}</p>
         <p>{C.computedAt(formatClinicalDateTime(set.createdAt))}</p>
       </div>
     </>

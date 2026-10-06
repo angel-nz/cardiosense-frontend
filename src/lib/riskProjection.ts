@@ -14,20 +14,19 @@ import { formatDayKeyShort } from '@/lib/clinicalTime'
 export const PROJECTION_COPY = {
   sectionTitle: 'Proyección de riesgo cardiovascular',
   projectionTag: 'Proyección',
-  intro: 'Estimación calculada sobre un estado clínico futuro supuesto. No es una predicción registrada, un evento observado ni una alerta.',
-  primaryLabel: 'Riesgo estimado (proyección)',
-  targetDateLabel: 'Fecha objetivo estimada',
+  intro: 'Estimación calculada de las predicciones del historial clínico. No es una predicción real registrada.',
+  primaryLabel: 'Estimación',
+  targetDateLabel: 'Fecha estimada',
   horizon: (i: number) => `Horizonte ${i}`,
-  targetAge: (age: number) => `Edad en la fecha objetivo: ${age} años`,
+  targetAge: (age: number) => `Edad: ${age} años`,
   pastTarget: 'Fecha vencida — sin nuevo registro real',
   todayTarget: 'Fecha objetivo: hoy — sigue siendo una proyección mientras no exista un registro real',
-  // NEW S4 — S-FEAT-SEQUENTIAL-ROBUST-1 copy (current policy).
-  sequential: (fecha: string) =>
-    `Proyección simulada, no un evento clínico observado ni una medición garantizada. La primera fecha se estima a partir del historial clínico disponible; la segunda también considera la primera estimación, y la tercera considera las dos anteriores. El registro clínico real más reciente (${fecha}) recibe una ligera prioridad.`,
-  sequentialNoDate: 'Proyección simulada, no un evento clínico observado ni una medición garantizada. La primera fecha se estima a partir del historial clínico disponible; la segunda también considera la primera estimación, y la tercera considera las dos anteriores. El registro clínico real más reciente recibe una ligera prioridad.',
+  // NEW S4 — S-FEAT-SEQUENTIAL-ROBUST-2 copy (current policy).
+  sequential: 'Proyección simulada, no es un evento clínico observado ni una medición garantizada.',
+  sequentialNoDate: 'Proyección simulada, no es un evento clínico observado ni una medición garantizada.',
   sequentialContext: (ctx: string[]) => ctx.length === 0
-    ? 'Estimada solo con el historial clínico real.'
-    : `Estimada con el historial clínico real y ${ctx.length === 1 ? 'la estimación' : 'las estimaciones'} ${ctx.map(c => c.replace('F', 'del horizonte ')).join(' y ')} (simulada${ctx.length === 1 ? '' : 's'}, no observada${ctx.length === 1 ? '' : 's'}).`,
+    ? 'Estimación con el historial clínico.'
+    : `Estimación con el historial clínico + ${ctx.map(c => c.replace('F', 'H')).join(' y ')}.`,
   multimodalCadence: 'Frecuencia multimodal detectada.',
   intervals: (xs: number[]) => `Próximos intervalos estimados: ${xs.length > 1 ? `${xs.slice(0, -1).join(', ')} y ${xs[xs.length - 1]}` : xs.join('')} días.`,
   // S3 — S-FEAT-ROBUST-TREND-1 copy (previous policy; old S-2 sets until re-evaluated).
@@ -42,12 +41,12 @@ export const PROJECTION_COPY = {
   locfLegacyNoDate: 'Proyección calculada con la política anterior: los valores se mantenían como en el último registro real.',
   cigsForcedZero: 'Cigarrillos por día se proyecta como 0 porque el estado de fumador proyectado es no fumador.',
   global: 'Calculado con el modelo cardiovascular global.',
-  individualized: 'Proyección ajustada con el estado individualizado disponible a partir del historial clínico real.',
+  individualized: 'Calculado con el modelo cardiovascular e historial clínico personal.',
   interpretationTagGlobal: 'Modelo global',
-  interpretationTagIndividualized: 'Ajuste individualizado',
+  interpretationTagIndividualized: 'Análisis personal',
   globalBaseline: (pct: string) => `Referencia del modelo global: ${pct}`,
-  uncertainty: 'La incertidumbre de esta proyección no está cuantificada.',
-  cadence: (days: number) => `Intervalo estimado entre visitas: ${days} ${days === 1 ? 'día' : 'días'} (según la frecuencia de las visitas con hora de medición).`,
+  uncertainty: 'No cuantificada.',
+  cadence: (days: number) => `${days} ${days === 1 ? 'día' : 'días'} aprox.`,
   computedAt: (when: string) => `Calculada: ${when}`,
   partial: (n: number) =>
     `Solo ${n === 1 ? 'una fecha objetivo queda' : `${n} fechas objetivo quedan`} dentro del rango que soporta el modelo; las demás no se proyectan.`,
@@ -80,7 +79,7 @@ export function projectionAssumptionCopy(set: Pick<RiskProjectionSet, 'versions'
   const day = set.anchor?.cutoffLocalDay ?? null
   if (set.versions?.featurePolicyVersion === 'S-FEAT-LOCF-1') return day ? PROJECTION_COPY.locfLegacy(formatDay(day)) : PROJECTION_COPY.locfLegacyNoDate
   if (set.versions?.featurePolicyVersion === 'S-FEAT-ROBUST-TREND-1') return day ? PROJECTION_COPY.trend(formatDay(day)) : PROJECTION_COPY.trendNoDate
-  return day ? PROJECTION_COPY.sequential(formatDay(day)) : PROJECTION_COPY.sequentialNoDate
+  return day ? PROJECTION_COPY.sequential : PROJECTION_COPY.sequentialNoDate
 }
 
 // NEW S4 — truthful cadence copy: a multimodal cadence never shows one fake

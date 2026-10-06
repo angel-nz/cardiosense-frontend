@@ -1,8 +1,9 @@
+import { WheelDatePicker } from '@/components/ui/WheelDatePicker'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Save, User } from 'lucide-react'
 import { cn, CURP_REGEX, EMAIL_REGEX, calcAge } from '@/lib/utils'
-import { getBusinessDateKey, getTodayBusinessDateKey } from '@/lib/businessDate'
+import { getTodayBusinessDateKey } from '@/lib/businessDate'
 import { patientService } from '@/services/patientService'
 import { isAxiosError } from 'axios'
 import { CountryPhoneInput, type PhoneInputState } from '@/components/phone/CountryPhoneInput'
@@ -269,53 +270,27 @@ export default function PatientCreatePage() {
           </FormField>
 
           <FormField label="Fecha de nacimiento" required error={errors.birthDate}>
-            <input
-              type="date"
+            <WheelDatePicker
+              label="Fecha de nacimiento"
+              hideLabel
+              required
+              aria-invalid={!!errors.birthDate}
               value={form.birthDate}
-              onChange={set('birthDate')}
-              max={getBusinessDateKey(new Date().toISOString())}
-              className={cn(inputClass, errors.birthDate && 'border-red-400 dark:border-red-500/70 focus:border-red-400 dark:focus:border-red-500/70')}
+              onValueChange={value => setForm(f => ({ ...f, birthDate: value }))}
+              minYear={Number(getTodayBusinessDateKey().slice(0, 4)) - 130}
+              maxYear={Number(getTodayBusinessDateKey().slice(0, 4))}
+              max={getTodayBusinessDateKey()}
             />
           </FormField>
-
-          {/* PRE-R2B §3/§5/§6 — Edad: read-only, DERIVED presentation, live
-              preview from the draft birthDate; never an input the user can
-              edit, never sent to the backend (birthDate alone remains the
-              source of truth — patientService.create() below still never
-              includes an `age` field). Age math is UNCHANGED by
-              PRE-R2B-FIX1 (still the shared, canonical calcAge(), still the
-              same future-birthDate guard) — only this field's element type
-              changed.
-              PRE-R2B-FIX1 §5 — root cause of the reported misalignment: this
-              was a plain <div> dressed up with the same Tailwind classes as
-              a real <input>. A <div> and an <input type="date"> (its row
-              sibling, Fecha de nacimiento, right above) are NOT guaranteed
-              to render at the same height even with identical padding/
-              font-size classes — a native date input carries its own
-              browser-chrome (calendar icon) that inflates its effective box
-              beyond what pure CSS padding alone produces on a <div>. The
-              project's own established pattern for "read-only, derived
-              field" is a real <input readOnly> — switching to that real
-              form control here gives Edad the same box-model category as
-              every sibling field in this grid, fixing the alignment at its
-              actual source.
-              PRE-R2B-FIX2 §7 — the `bg-muted/40` tone FIX1 added on top of
-              that (to visually mark the field as non-editable) is REMOVED:
-              Angel's explicit feedback is that it reads as disabled/
-              unavailable rather than simply read-only. `inputClass` already
-              supplies `bg-card`, the same background every other active
-              field in this form uses — removing the override is enough to
-              make Edad look like a normal field. `cursor-default` (no
-              text-edit cursor, since there's nothing to type) and the
-              suppressed focus ring stay: those communicate "read-only", not
-              "disabled", and aren't part of Angel's reported defect. */}
+          
           <FormField label="Edad">
             <input
               readOnly
-              value={previewAge !== null ? `${previewAge} años` : '—'}
+              value={previewAge !== null ? `${previewAge} años` : ''}
+              placeholder='Selecciona una fecha de nacimiento'
               tabIndex={-1}
               aria-readonly="true"
-              className={cn(inputClass, 'cursor-default focus:ring-0 focus:border-border')}
+              className={cn(inputClass, 'cursor-default')}
             />
           </FormField>
 

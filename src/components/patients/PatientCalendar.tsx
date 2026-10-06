@@ -30,6 +30,7 @@ const MONTH_LABEL_FORMATTER = new Intl.DateTimeFormat('es-MX', {
   month: 'long', year: 'numeric', timeZone: BUSINESS_TIMEZONE,
 })
 
+
 interface PatientCalendarProps {
   patientId: string
   // P4 — cross-navigation into the longitudinal views already rendered by
@@ -335,11 +336,12 @@ export function PatientCalendar({
   }, [navigationTarget, viewYear, viewMonth, loadedMonthKey, events])
 
   const days = useMemo(() => buildCalendarDays(viewYear, viewMonth, todayKey), [viewYear, viewMonth, todayKey])
-  const eventsByDay = useMemo(() => groupEventsByBusinessDay(events), [events])
+
   const monthLabel = useMemo(
     () => MONTH_LABEL_FORMATTER.format(new Date(Date.UTC(viewYear, viewMonth - 1, 15))),
     [viewYear, viewMonth],
   )
+  const eventsByDay = useMemo(() => groupEventsByBusinessDay(events), [events])
 
   const goToPrevMonth = () => {
     clearEventSelection()
@@ -372,7 +374,7 @@ export function PatientCalendar({
           Actividad cardiovascular
         </h3>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Historial temporal de registros clínicos, predicciones y cambios de riesgo.
+          Registros clínicos, predicciones y cambios de riesgo.
         </p>
       </div>
 
