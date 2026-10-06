@@ -26,7 +26,6 @@ import { formatInternationalDisplay } from '@/lib/phone'
 // formatted phone value via formatInternationalDisplay; no collapsing
 // email/phone into a single fallback identifier) was already correct and
 // is left untouched.
-const NOT_REGISTERED = 'No registrado'
 
 // Y3.1B §31 — real avatar section for Profile, replacing nothing (Y3.1A's
 // header comment explicitly excluded avatar upload; that exclusion is
