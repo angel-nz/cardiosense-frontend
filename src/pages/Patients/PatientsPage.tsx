@@ -115,18 +115,31 @@ export default function PatientsPage() {
   // cleared) — same "preserve search if UX supports it" instruction as §24.
   useEffect(() => { setPage(1) }, [statusFilter])
 
+  // SORT-SEARCH-STICKY-FIX-1 — Edad and Riesgo order the WHOLE filtered
+  // dataset on the server (numeric age / numeric current-risk percentage,
+  // before pagination); the page only renders the order it receives. Name and
+  // date keep their historical page-local ordering. A server-sort change must
+  // restart pagination, exactly like search/risk/status above.
+  const serverSortBy = sortKey === 'age' || sortKey === 'risk' ? sortKey : undefined
+  const serverSortOrder = serverSortBy ? sortDir : undefined
+  useEffect(() => { setPage(1) }, [serverSortBy, serverSortOrder])
+
   const { patients, total, totalPages, loading, error, refetch } = usePatients({
     page, limit: PAGE_LIMIT, search: search || undefined,
     risk: riskFilter === 'all' ? undefined : CANONICAL_RISK[riskFilter],
     status: statusFilter,
+    sortBy: serverSortBy, sortOrder: serverSortOrder,
   })
 
   // X2 — risk filtering is now genuinely applied server-side (dataset-wide,
   // before pagination, via usePatients({ risk }) above) — this no longer
   // re-applies a redundant client-side risk filter on top of an already
-  // risk-filtered page. Sorting remains client-side/page-local, unchanged.
+  // risk-filtered page. Name/date sorting remains client-side/page-local; age/risk are server-side (FIX-1/FIX-2).
   const filtered = useMemo(() => {
     const list = [...patients]
+    // Age / risk: the backend already returned the globally correct order
+    // (numeric, missing last, deterministic ties) — never re-sorted locally.
+    if (serverSortBy) return list
 
     list.sort((a, b) => {
       let cmp = 0
@@ -134,14 +147,7 @@ export default function PatientsPage() {
         case 'name':
           cmp = `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`)
           break
-        case 'age':
-          cmp = (a.age ?? 0) - (b.age ?? 0)
-          break
-        case 'risk': {
-          const order: Record<string, number> = { high: 3, moderate: 2, low: 1 }
-          cmp = (order[a.latestRisk ?? ''] ?? 0) - (order[b.latestRisk ?? ''] ?? 0)
-          break
-        }
+        // 'age' / 'risk' are ordered by the backend (see serverSortBy above).
         case 'date':
           // NEW S3 — clinical time of the latest HealthRecord; patients
           // without records sort as the oldest (never by Paciente.updatedAt).
@@ -153,7 +159,7 @@ export default function PatientsPage() {
     })
 
     return list
-  }, [patients, sortKey, sortDir])
+  }, [patients, sortKey, sortDir, serverSortBy])
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -197,10 +203,10 @@ export default function PatientsPage() {
           Topbar's translucent treatment exactly; blur is centralized in
           `.ui-sticky-toolbar`. Visual-only. */}
       <div
-        className="ui-sticky-toolbar flex flex-col sm:flex-row gap-3 bg-background/80 border-b border-border"
+        className="ui-sticky-toolbar max-sm:static [@media(max-width:1023px)_and_(max-height:480px)]:static flex flex-col sm:flex-row sm:max-lg:flex-wrap gap-3 bg-background/80 border-b border-border"
         style={{ paddingTop: 'var(--ui-secondary-control-padding-y)', paddingBottom: 'var(--ui-secondary-control-padding-y)' }}
       >
-        <div className="relative flex-1">
+        <div className="relative flex-1 sm:max-lg:min-w-[14rem]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
@@ -210,13 +216,19 @@ export default function PatientsPage() {
             className="w-full pl-9 pr-4 ui-control-density text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
           />
         </div>
-        <div className="flex items-center gap-2">
+        {/* B5 — below sm the toolbar stacks to over half the viewport
+            height at large zoom, so it scrolls with the page there
+            (`max-sm:static`), as it does on short landscape screens; the
+            selects wrap and share the row, and between sm and lg the search
+            keeps a usable minimum width by wrapping onto its own row, so the
+            toolbar never forces page-level horizontal overflow. */}
+        <div className="flex items-center gap-2 max-sm:flex-wrap">
           {/* Z8 §24 — compact lifecycle filter, same select styling as the
               existing risk filter beside it. */}
           <select
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value as PatientLifecycleFilter)}
-            className="ui-control-density px-3 text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer"
+            className="ui-control-density px-3 text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer max-sm:flex-1 max-sm:min-w-[9rem]"
           >
             {STATUS_FILTER_OPTIONS.map(o => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -225,7 +237,7 @@ export default function PatientsPage() {
           <select
             value={riskFilter}
             onChange={e => setRiskFilter(e.target.value as RiskLevel | 'all')}
-            className="ui-control-density px-3 text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer"
+            className="ui-control-density px-3 text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer max-sm:flex-1 max-sm:min-w-[9rem]"
           >
             {RISK_FILTER_OPTIONS.map(o => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -234,7 +246,7 @@ export default function PatientsPage() {
         </div>
         <button
           onClick={() => navigate('/patients/new')}
-          className="flex items-center gap-2 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+          className="flex items-center gap-2 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm touch-target-h"
         >
           <Plus className="w-4 h-4" />
           Nuevo paciente
@@ -254,7 +266,7 @@ export default function PatientsPage() {
             <p className="text-sm text-muted-foreground mt-1">{error}</p>
             <button
               onClick={refetch}
-              className="mt-3 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+              className="mt-3 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors touch-target-h"
             >
               Reintentar
             </button>
@@ -272,30 +284,44 @@ export default function PatientsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
-                  <th className="px-4 ui-table-header-density text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    <button onClick={() => toggleSort('name')} className="hover:text-foreground transition-colors">
+                  <th className="px-4 ui-table-header-density text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide max-sm:px-3">
+                    <button onClick={() => toggleSort('name')} className="hover:text-foreground transition-colors touch-target-h">
                       Paciente <SortIcon col="name" />
+                    </button>
+                    {/* B5 — sort controls of the Edad / Riesgo / Actualización columns,
+                        which are hidden at narrow widths (display:none where the column
+                        header shows). SORT-SEARCH-STICKY-FIX-1: Edad now has real data
+                        (server-side numeric sort), so its narrow-width control exists
+                        too — the age is shown under the name on those widths. */}
+                    <button onClick={() => toggleSort('age')} className="sm:hidden flex items-center py-1 hover:text-foreground transition-colors touch-target-h">
+                      Edad <SortIcon col="age" />
+                    </button>
+                    <button onClick={() => toggleSort('risk')} className="sm:hidden flex items-center py-1 hover:text-foreground transition-colors touch-target-h">
+                      Riesgo <SortIcon col="risk" />
+                    </button>
+                    <button onClick={() => toggleSort('date')} className="md:hidden flex items-center py-1 hover:text-foreground transition-colors touch-target-h">
+                      Actualización <SortIcon col="date" />
                     </button>
                   </th>
                   <th className="px-4 ui-table-header-density text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide hidden sm:table-cell">
-                    <button onClick={() => toggleSort('age')} className="hover:text-foreground transition-colors">
+                    <button onClick={() => toggleSort('age')} className="hover:text-foreground transition-colors touch-target-h">
                       Edad <SortIcon col="age" />
                     </button>
                   </th>
-                  <th className="px-4 ui-table-header-density text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    <button onClick={() => toggleSort('risk')} className="hover:text-foreground transition-colors">
+                  <th className="px-4 ui-table-header-density text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide max-sm:hidden">
+                    <button onClick={() => toggleSort('risk')} className="hover:text-foreground transition-colors touch-target-h">
                       Nivel de riesgo <SortIcon col="risk" />
                     </button>
                   </th>
                   <th className="px-4 ui-table-header-density text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide hidden md:table-cell">
-                    <button onClick={() => toggleSort('date')} className="hover:text-foreground transition-colors">
+                    <button onClick={() => toggleSort('date')} className="hover:text-foreground transition-colors touch-target-h">
                       Última actualización <SortIcon col="date" />
                     </button>
                   </th>
                   <th className="px-4 ui-table-header-density text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide hidden lg:table-cell">
                     Estado
                   </th>
-                  <th className="px-4 ui-table-header-density" />
+                  <th className="px-4 ui-table-header-density max-sm:px-2" />
                 </tr>
               </thead>
               <tbody>
@@ -314,7 +340,8 @@ export default function PatientsPage() {
               <button
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={page <= 1}
-                className="rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                aria-label="Página anterior"
+                className="rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed touch-target-box"
                 style={{ padding: 'var(--ui-secondary-control-padding-y)' }}
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
@@ -322,7 +349,8 @@ export default function PatientsPage() {
               <button
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
-                className="rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                aria-label="Página siguiente"
+                className="rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed touch-target-box"
                 style={{ padding: 'var(--ui-secondary-control-padding-y)' }}
               >
                 <ChevronRight className="w-3.5 h-3.5" />

@@ -68,7 +68,7 @@ function ReadyBody({ state, todayKey }: { state: Extract<ForecastLoadState, { ph
   return (
     <div className="ui-content-stack">
       {state.refreshing && (
-        <p className="text-[11px] text-muted-foreground flex items-center gap-1.5" role="status">
+        <p className="text-[11px] max-lg:text-xs text-muted-foreground flex items-center gap-1.5" role="status">
           <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" /> {C.refreshing}
         </p>
       )}
@@ -110,32 +110,32 @@ function ProjectionsBody({ set, projections, todayKey }: { set: RiskProjectionSe
           return (
             <li key={p.horizonIndex} className="min-w-0 rounded-xl border border-border bg-background/40 p-3 flex flex-col gap-1.5" data-horizon={p.horizonIndex} data-date-state={dateState}>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{C.horizon(p.horizonIndex)}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground">
+                <span className="text-[11px] max-lg:text-xs font-medium text-muted-foreground uppercase tracking-wide">{C.horizon(p.horizonIndex)}</span>
+                <span className="text-[10px] max-lg:text-xs px-1.5 py-0.5 rounded border border-border text-muted-foreground">
                   {individualized ? C.interpretationTagIndividualized : C.interpretationTagGlobal}
                 </span>
               </div>
               <div>
-                <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                <p className="text-[11px] max-lg:text-xs text-muted-foreground flex items-center gap-1">
                   <CalendarClock className="w-3 h-3" aria-hidden="true" />{C.targetDateLabel}
                 </p>
                 <p className="text-sm font-semibold text-foreground">{formatTargetDate(p.targetDate)}</p>
                 {dateState === 'PAST' && (
-                  <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300 mt-0.5">{C.pastTarget}</p>
+                  <p className="text-[11px] max-lg:text-xs font-medium text-amber-700 dark:text-amber-300 mt-0.5">{C.pastTarget}</p>
                 )}
                 {dateState === 'TODAY' && (
-                  <p className="text-[11px] text-muted-foreground mt-0.5">{C.todayTarget}</p>
+                  <p className="text-[11px] max-lg:text-xs text-muted-foreground mt-0.5">{C.todayTarget}</p>
                 )}
               </div>
               <div>
-                <p className="text-[11px] text-muted-foreground">{C.primaryLabel}</p>
+                <p className="text-[11px] max-lg:text-xs text-muted-foreground">{C.primaryLabel}</p>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-2xl font-bold font-mono text-foreground">{formatProjectionPercent(p.finalRiskScore)}</span>
                   {/* Backend riskLevel is authoritative; text label, not color only. */}
                   <RiskBadge level={toBadgeLevel(p.riskLevel)} size="sm" />
                 </div>
                 {individualized && p.globalRiskScore !== p.finalRiskScore && (
-                  <p className="text-[11px] text-muted-foreground mt-0.5">{C.globalBaseline(formatProjectionPercent(p.globalRiskScore))}</p>
+                  <p className="text-[11px] max-lg:text-xs text-muted-foreground mt-0.5">{C.globalBaseline(formatProjectionPercent(p.globalRiskScore))}</p>
                 )}
               </div>
             </li>

@@ -228,14 +228,14 @@ function GlobalPredictionHistory() {
           `.ui-sticky-toolbar`. This remains the one floating-card-styled
           region among the six (full `border`, not just `border-b`) — that
           pre-existing shape is untouched, only its opacity changes. */}
-      <div className="ui-sticky-toolbar bg-card/80 rounded-xl border border-border p-4 space-y-3">
+      <div className="ui-sticky-toolbar max-sm:static [@media(max-width:1023px)_and_(max-height:480px)]:static bg-card/80 rounded-xl border border-border p-4 space-y-3">
         <div className="relative">
           <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar por nombre o CURP..."
-            className="w-full pl-9 pr-3 ui-compact-control-density text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+            className="w-full pl-9 pr-3 ui-compact-control-density text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all touch-target-min"
           />
         </div>
         <div className="flex items-end gap-2 flex-wrap">
@@ -263,6 +263,7 @@ function GlobalPredictionHistory() {
               value={riskLevel}
               onChange={e => setRiskLevel(e.target.value as PredictionRiskFilter | '')}
               className="w-full px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card cursor-pointer"
+              data-touch-min
             >
             <option value="">Todos los niveles</option>
             <option value="LOW">Bajo</option>
@@ -293,7 +294,7 @@ function GlobalPredictionHistory() {
             <p className="font-medium text-red-600 dark:text-red-400">{error}</p>
             <button
               onClick={() => load()}
-              className="mt-3 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+              className="mt-3 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors touch-target-h"
             >
               Reintentar
             </button>
@@ -314,7 +315,7 @@ function GlobalPredictionHistory() {
                     {monthLabel(group.monthKey + '-01')}
                   </div>
                 )}
-                <div className="px-4 pt-2 pb-1 text-[11px] font-medium text-muted-foreground">
+                <div className="px-4 pt-2 pb-1 text-[11px] max-lg:text-xs font-medium text-muted-foreground">
                   {/* W7 — day-group heading: "Hoy"/"Ayer" for the current/
                       previous business day, otherwise the existing
                       weekday+day style (dayLabel) unchanged. The month
@@ -368,14 +369,16 @@ function GlobalPredictionHistory() {
               <button
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={page <= 1}
-                className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                aria-label="Página anterior"
+                className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed touch-target-box"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
-                className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                aria-label="Página siguiente"
+                className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed touch-target-box"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
@@ -448,7 +451,7 @@ export default function PredictionsPage() {
         <p className="font-medium text-foreground">{patientError ?? 'Paciente no encontrado'}</p>
         <button
           onClick={() => navigate('/patients')}
-          className="mt-4 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+          className="mt-4 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors touch-target-h"
         >
           Volver a pacientes
         </button>
@@ -460,7 +463,7 @@ export default function PredictionsPage() {
     <div className="ui-section-stack-tight" data-testid="patient-prediction-history-page">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate(`/patients/${patient.id}`)} aria-label="Volver al paciente" className="p-2 rounded-lg hover:bg-accent transition-colors">
+        <button onClick={() => navigate(`/patients/${patient.id}`)} aria-label="Volver al paciente" className="p-2 rounded-lg hover:bg-accent transition-colors touch-target-box">
           <ArrowLeft className="w-5 h-5 text-muted-foreground" />
         </button>
         <div className="flex-1 min-w-0">

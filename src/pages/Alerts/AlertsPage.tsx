@@ -281,7 +281,7 @@ export default function AlertsPage() {
         <p className="font-medium text-foreground">{error}</p>
         <button
           onClick={() => load()}
-          className="mt-4 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+          className="mt-4 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors touch-target-h"
         >
           Reintentar
         </button>
@@ -304,7 +304,7 @@ export default function AlertsPage() {
         {unreadCount > 0 && (
           <button
             onClick={handleMarkAllRead}
-            className="flex items-center gap-2 px-4 ui-compact-control-density text-sm font-medium text-muted-foreground hover:text-foreground border border-border rounded-lg hover:bg-accent transition-colors"
+            className="flex items-center gap-2 px-4 ui-compact-control-density text-sm font-medium text-muted-foreground hover:text-foreground border border-border rounded-lg hover:bg-accent transition-colors touch-target-h"
           >
             <CheckCheck className="w-4 h-4" />
             Marcar todas como leídas
@@ -332,7 +332,7 @@ export default function AlertsPage() {
           unchanged by that addition (see index.css comment) — the Alerts
           popover above still renders unconditionally above it. */}
       <div
-        className="ui-sticky-toolbar flex flex-col sm:flex-row gap-3 bg-background/80 border-b border-border"
+        className="ui-sticky-toolbar max-sm:static [@media(max-width:1023px)_and_(max-height:340px)]:static flex flex-col sm:flex-row gap-3 bg-background/80 border-b border-border"
         style={{ paddingTop: 'var(--ui-secondary-control-padding-y)', paddingBottom: 'var(--ui-secondary-control-padding-y)' }}
       >
         <div className="relative flex-1">
@@ -342,7 +342,7 @@ export default function AlertsPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar por paciente, CURP o mensaje..."
-            className="w-full pl-9 pr-4 py-2.5 text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all"
+            className="w-full pl-9 pr-4 py-2.5 text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all touch-target-min"
           />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -351,7 +351,7 @@ export default function AlertsPage() {
               key={opt.value}
               onClick={() => setSeverityFilter(opt.value)}
               className={cn(
-                'px-3 py-2 text-xs font-medium rounded-lg border transition-colors',
+                'px-3 py-2 text-xs font-medium rounded-lg border transition-colors touch-target-h',
                 severityFilter === opt.value
                   ? 'bg-primary text-white border-primary'
                   : 'border-border text-muted-foreground hover:bg-accent',
@@ -364,7 +364,7 @@ export default function AlertsPage() {
           <select
             value={readFilter}
             onChange={e => setReadFilter(e.target.value as typeof readFilter)}
-            className="ui-compact-control-density px-3 text-xs rounded-lg border border-border bg-card focus:outline-none cursor-pointer"
+            className="ui-compact-control-density px-3 text-xs rounded-lg border border-border bg-card focus:outline-none cursor-pointer touch-target-min"
           >
             <option value="all">Todas</option>
             <option value="unread">Sin leer</option>
@@ -456,8 +456,9 @@ export default function AlertsPage() {
                     {!alert.isRead && (
                       <button
                         onClick={e => { e.stopPropagation(); handleMarkAsRead(alert.id) }}
-                        className="p-1.5 rounded-lg hover:bg-accent transition-colors"
+                        className="p-1.5 rounded-lg hover:bg-accent transition-colors touch-target-box"
                         title="Marcar como leída"
+                        aria-label="Marcar como leída"
                       >
                         <CheckCheck className="w-3.5 h-3.5 text-muted-foreground" />
                       </button>
@@ -476,7 +477,7 @@ export default function AlertsPage() {
             <select
               value={limit}
               onChange={e => handleLimitChange(Number(e.target.value))}
-              className="border border-border rounded-md px-2 py-1 bg-card cursor-pointer"
+              className="border border-border rounded-md px-2 py-1 bg-card cursor-pointer touch-target-min"
             >
               {LIMIT_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
             </select>
@@ -489,14 +490,16 @@ export default function AlertsPage() {
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page <= 1}
-                  className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Página anterior"
+                  className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed touch-target-box"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages}
-                  className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Página siguiente"
+                  className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed touch-target-box"
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>

@@ -300,7 +300,7 @@ export default function RegisterPage() {
       </div>
 
       {/* ── Right panel — form ─────────────────────────────────────── */}
-      <div className="flex-1 flex items-center justify-center p-8 bg-background overflow-y-auto">
+      <div className="flex-1 flex items-center justify-center px-4 py-8 sm:p-8 bg-background overflow-y-auto">
         <div className="w-full max-w-sm space-y-6 py-8">
 
           <div className="lg:hidden flex items-center gap-3">
@@ -323,13 +323,14 @@ export default function RegisterPage() {
                 </p>
               </div>
 
-              <form onSubmit={handleSubmit} className="ui-content-stack">
+              {/* Below sm: 16px inputs (prevents iOS focus zoom); sm+ keeps text-sm. */}
+              <form onSubmit={handleSubmit} className="ui-content-stack max-sm:[&_input]:text-base">
                 {/* Z3 — the generic registration-failure banner previously
                     here now shows as a global action notification instead
                     (see handleSubmit's catch). Field-level errors (below)
                     remain inline. */}
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3">
                   <div>
                     <label className="text-sm font-medium text-foreground block mb-1.5">Nombre(s)<RequiredMark /></label>
                     <input
@@ -388,7 +389,7 @@ export default function RegisterPage() {
                     onClick={() => setProfessionalOpen(o => !o)}
                     aria-expanded={professionalOpen}
                     aria-controls="register-professional-info-panel"
-                    className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-sm font-medium text-foreground hover:bg-accent transition-colors"
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-sm font-medium text-foreground hover:bg-accent transition-colors touch-target-h"
                   >
                     <span>Información profesional</span>
                     {professionalOpen
@@ -427,12 +428,13 @@ export default function RegisterPage() {
                       autoComplete="new-password"
                       required
                       aria-required="true"
-                      className={cn(inputClass(!!errors.password), 'pr-10')}
+                      className={cn(inputClass(!!errors.password), 'pr-10 max-lg:pr-14')}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPwd(s => !s)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      aria-label={showPwd ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                      className="absolute right-1.5 p-1.5 sm:right-3 sm:p-0 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground touch-target-box"
                     >
                       {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -475,7 +477,7 @@ export default function RegisterPage() {
 
               <p className="text-center text-sm text-muted-foreground">
                 ¿Ya tienes una cuenta?{' '}
-                <Link to="/login" className="text-primary font-medium hover:underline">
+                <Link to="/login" className="text-primary font-medium hover:underline touch-target-h">
                   Inicia sesión
                 </Link>
               </p>

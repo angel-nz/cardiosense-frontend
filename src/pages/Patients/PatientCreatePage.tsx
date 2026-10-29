@@ -226,7 +226,8 @@ export default function PatientCreatePage() {
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate('/patients')}
-          className="p-2 rounded-lg hover:bg-accent transition-colors"
+          aria-label="Volver a pacientes"
+          className="p-2 rounded-lg hover:bg-accent transition-colors touch-target-box"
         >
           <ArrowLeft className="w-5 h-5 text-muted-foreground" />
         </button>
@@ -371,14 +372,14 @@ export default function PatientCreatePage() {
           <button
             type="button"
             onClick={() => navigate('/patients')}
-            className="px-4 ui-compact-control-density text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            className="px-4 ui-compact-control-density text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors touch-target-h"
           >
             Cancelar
           </button>
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center gap-2 bg-primary text-white px-5 ui-compact-control-density rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors shadow-sm"
+            className="flex items-center gap-2 bg-primary text-white px-5 ui-compact-control-density rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors shadow-sm touch-target-h"
           >
             <Save className="w-4 h-4" />
             {saving ? 'Guardando...' : 'Guardar paciente'}

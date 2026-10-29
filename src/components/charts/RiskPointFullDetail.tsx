@@ -23,6 +23,9 @@ const BINARY = new Set(['currentSmoker'])
 
 // Two columns when the floating box is wide enough, one otherwise.
 const AUTO_COLUMNS: React.CSSProperties = { gridTemplateColumns: 'repeat(auto-fit, minmax(13rem, 1fr))' }
+// Below lg only: let a column shrink to the box width (min(13rem,100%)) so values are not pushed
+// out of the box and hidden behind a horizontal scroll at narrow widths with the Large preset.
+const AUTO_COLUMNS_CLASS = 'grid gap-3 max-lg:![grid-template-columns:repeat(auto-fit,minmax(min(13rem,100%),1fr))]'
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -36,7 +39,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <h5 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">{title}</h5>
+      <h5 className="text-[11px] max-lg:text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">{title}</h5>
       <dl>{children}</dl>
     </div>
   )
@@ -51,7 +54,7 @@ function RealDetail({ prediction }: { prediction: Prediction }) {
   const r = prediction.healthRecord
   const ct = r ? recordClinicalTime(r) : null
   return (
-    <div className="grid gap-3" style={AUTO_COLUMNS} data-detail-kind="REAL">
+    <div className={AUTO_COLUMNS_CLASS} style={AUTO_COLUMNS} data-detail-kind="REAL">
       <Section title="Predicción">
         <Row label="Origen" value={ORIGIN_LABEL[prediction.origin]} />
         <Row label="Riesgo" value={formatProjectionPercent(prediction.riskScore)} />
@@ -102,7 +105,7 @@ function ProjectionDetail({ set, projection, todayKey }: { set: RiskProjectionSe
       <p className="text-xs text-foreground bg-muted/50 border border-border rounded-lg px-3 py-2">
         {projectionAssumptionCopy(set, formatClinicalDay)}
       </p>
-      <div className="grid gap-3" style={AUTO_COLUMNS}>
+      <div className={AUTO_COLUMNS_CLASS} style={AUTO_COLUMNS}>
         <Section title="Proyección">
           <Row label="Horizonte" value={projection.horizonIndex} />
           <Row label={PROJECTION_COPY.targetDateLabel} value={formatTargetDate(projection.targetDate)} />

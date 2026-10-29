@@ -259,7 +259,7 @@ export default function DashboardPage() {
           PRE-R2E-FIX2 combined-row layout, or the FIX2 Topbar-gap fix
           above. */}
       <div
-        className="ui-sticky-toolbar flex items-start justify-between bg-background/80 border-b border-border"
+        className="ui-sticky-toolbar [@media(max-width:1023px)_and_(max-height:340px)]:static flex items-start justify-between bg-background/80 border-b border-border"
         style={{ paddingTop: 'var(--ui-secondary-control-padding-y)', paddingBottom: 'var(--ui-secondary-control-padding-y)' }}
       >
         <div>
@@ -269,7 +269,7 @@ export default function DashboardPage() {
         </div>
         <button
           onClick={() => navigate('/patients/new')}
-          className="hidden sm:flex items-center gap-2 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+          className="hidden sm:flex items-center gap-2 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm touch-target-h"
         >
           <Users className="w-4 h-4" />
           Nuevo paciente
@@ -338,15 +338,15 @@ export default function DashboardPage() {
           ) : metricsError ? (
             <p className="text-sm text-red-600 dark:text-red-400 text-center py-10">{metricsError}</p>
           ) : (
-            <div className="flex items-end justify-between gap-2 h-32 px-1">
+            <div className="flex items-end justify-between gap-2 max-sm:gap-1 h-32 px-1">
               {metrics!.predictionsThisWeek.map(day => (
-                <div key={day.date} className="flex-1 flex flex-col items-center gap-1.5">
+                <div key={day.date} className="flex-1 max-lg:min-w-0 flex flex-col items-center gap-1.5">
                   <span className="text-xs font-mono text-muted-foreground">{day.count}</span>
                   <div
                     className={cn('w-full rounded-t-md', day.count > 0 ? 'bg-primary' : 'bg-border')}
                     style={{ height: `${Math.max(4, (day.count / weekMaxCount) * 88)}px` }}
                   />
-                  <span className="text-[10px] text-muted-foreground">{shortWeekday(day.date)}</span>
+                  <span className="text-[10px] max-lg:text-xs text-muted-foreground">{shortWeekday(day.date)}</span>
                 </div>
               ))}
             </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
@@ -14,9 +14,33 @@ const PAGE_TITLES: Record<string, string> = {
   '/settings':    'Configuración',
 }
 
+// Mirrors Tailwind's `lg` breakpoint, where the sidebar becomes a fixed column.
+const DESKTOP_QUERY = '(min-width: 1024px)'
+const MENU_TRIGGER_ID = 'app-mobile-menu-trigger'
+const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+function useIsDesktop(): boolean {
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(DESKTOP_QUERY).matches,
+  )
+  useEffect(() => {
+    const mql = window.matchMedia(DESKTOP_QUERY)
+    const onChange = () => setIsDesktop(mql.matches)
+    onChange()
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [])
+  return isDesktop
+}
+
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const isDesktop = useIsDesktop()
+  // The drawer is a modal only below `lg`; at `lg+` the sidebar is a plain column.
+  const drawerOpen = mobileOpen && !isDesktop
+  const sidebarWrapRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const location = useLocation()
   const { unreadCount } = useAlerts()
 
@@ -28,6 +52,55 @@ export function AppLayout() {
   useEffect(() => {
     setMobileOpen(false)
   }, [location.pathname])
+
+  // Reaching a desktop width must not leave (or later restore) an open drawer.
+  useEffect(() => {
+    if (isDesktop) setMobileOpen(false)
+  }, [isDesktop])
+
+  // Modal drawer lifecycle: scroll lock, inert background, focus entry,
+  // Escape, Tab containment and focus restore. Fully undone on cleanup.
+  useEffect(() => {
+    if (!drawerOpen) return
+    const wrap = sidebarWrapRef.current
+    const content = contentRef.current
+    const body = document.body
+    const prevOverflow = body.style.overflow
+    body.style.overflow = 'hidden'
+    content?.setAttribute('inert', '')
+    wrap?.querySelector<HTMLElement>('[data-drawer-close]')?.focus()
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) {
+        setMobileOpen(false)
+        return
+      }
+      if (e.key !== 'Tab' || !wrap) return
+      const items = Array.from(wrap.querySelectorAll<HTMLElement>(FOCUSABLE))
+      if (items.length === 0) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      const active = document.activeElement
+      if (e.shiftKey && (active === first || !wrap.contains(active))) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && (active === last || !wrap.contains(active))) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      body.style.overflow = prevOverflow
+      content?.removeAttribute('inert')
+      const trigger = document.getElementById(MENU_TRIGGER_ID)
+      // Trigger is hidden at desktop widths; fall back to the sidebar so focus is not lost.
+      if (trigger && trigger.getClientRects().length > 0) trigger.focus()
+      else wrap?.querySelector<HTMLElement>('nav a[href]')?.focus()
+    }
+  }, [drawerOpen])
 
   return (
     // PRE-Y8 (Interface Size Preference), FIX2 — was `min-h-screen`
@@ -43,15 +116,18 @@ export function AppLayout() {
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-20 bg-black/50 lg:hidden"
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+          aria-hidden="true"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
       {/* Sidebar */}
-      <div className={cn('lg:block', mobileOpen ? 'block' : 'hidden lg:block')}>
+      <div ref={sidebarWrapRef} id="app-sidebar" className={cn('lg:block', mobileOpen ? 'block' : 'hidden lg:block')}>
         <Sidebar
           collapsed={collapsed}
+          drawer={!isDesktop}
+          onClose={() => setMobileOpen(false)}
           onToggle={() => setCollapsed(c => !c)}
           alertCount={unreadCount}
         />
@@ -67,13 +143,20 @@ export function AppLayout() {
           have to be fixed together for the compensation to actually take
           effect. */}
       <div
-        className="transition-all duration-300 ui-viewport-min-height flex flex-col"
+        ref={contentRef}
+        // UI-MOBILE-B1 (UI-MOB-001/004) — the sidebar is hidden below `lg`,
+        // so it must not reserve horizontal space there. The offset is
+        // carried by `--shell-offset` (same value as before) and applied
+        // only from `lg` up; below `lg` the margin is 0.
+        className="transition-all duration-300 ui-viewport-min-height flex flex-col lg:ml-[var(--shell-offset)]"
         style={{
-          marginLeft: collapsed ? 'var(--sidebar-collapsed)' : 'var(--sidebar-width)',
+          ['--shell-offset' as string]: collapsed ? 'var(--sidebar-collapsed)' : 'var(--sidebar-width)',
         }}
       >
         <Topbar
           sidebarCollapsed={collapsed}
+          mobileMenuOpen={mobileOpen}
+          mobileMenuControlsId="app-sidebar"
           onMobileMenuToggle={() => setMobileOpen(o => !o)}
           alertCount={unreadCount}
           pageTitle={pageTitle}

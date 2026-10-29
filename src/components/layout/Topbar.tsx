@@ -21,11 +21,15 @@ const PREVIEW_COALESCE_MS = 400
 interface TopbarProps {
   sidebarCollapsed: boolean
   onMobileMenuToggle: () => void
+  // UI-MOBILE-B1 (UI-MOB-012) — state/target of the mobile menu trigger,
+  // used only for its accessibility attributes.
+  mobileMenuOpen?: boolean
+  mobileMenuControlsId?: string
   alertCount?: number
   pageTitle?: string
 }
 
-export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, pageTitle }: TopbarProps) {
+export function Topbar({ sidebarCollapsed, onMobileMenuToggle, mobileMenuOpen = false, mobileMenuControlsId, alertCount = 0, pageTitle }: TopbarProps) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [dropdownOpen, setDropdownOpen] = useState(false)
@@ -353,12 +357,14 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
         // gap-4 (icon/title/actions rhythm) is horizontal-only and matches
         // --ui-element-gap's own Classic value exactly, so it safely
         // participates without any risk to the fixed shell height.
-        'fixed top-0 right-0 z-20 h-[68px] flex items-center ui-element-gap px-6',
+        // UI-MOBILE-B1 (UI-MOB-002) — starts at the left edge below `lg`
+        // (sidebar hidden); the sidebar offset applies from `lg` up.
+        'fixed top-0 left-0 lg:left-[var(--shell-offset)] right-0 z-20 h-[68px] flex items-center ui-element-gap px-6',
         'bg-background/80 backdrop-blur-md border-b border-border',
         'transition-all duration-300',
       )}
       style={{
-        left: sidebarCollapsed ? 'var(--sidebar-collapsed)' : 'var(--sidebar-width)',
+        ['--shell-offset' as string]: sidebarCollapsed ? 'var(--sidebar-collapsed)' : 'var(--sidebar-width)',
       }}
     >
       {/* Mobile menu toggle — Y6.3B-FIX1 §8: p-2 (8px) is "safe internal
@@ -367,9 +373,14 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
           elsewhere, applied here via inline style since it needs uniform
           padding on all 4 sides for a square icon button, not just Y. */}
       <button
-        className="lg:hidden rounded-lg hover:bg-accent transition-colors"
+        type="button"
+        id="app-mobile-menu-trigger"
+        aria-label="Abrir menú de navegación"
+        aria-expanded={mobileMenuOpen}
+        aria-controls={mobileMenuControlsId}
+        className="lg:hidden rounded-lg hover:bg-accent transition-colors touch-target-box"
         style={{ padding: 'calc(var(--ui-control-padding-y) - 0.125rem)' }}
-        onClick={onMobileMenuToggle}
+        onClick={() => { setDropdownOpen(false); onMobileMenuToggle() }}
       >
         <Menu className="w-5 h-5 text-muted-foreground" />
       </button>
@@ -512,6 +523,13 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
               className={cn(
                 'z-50 bg-popover rounded-xl border border-border shadow-lg',
                 'overflow-hidden animate-fade-in',
+                // B7 — below lg only: never taller than the room Radix measured
+                // between the bell and the viewport edge (collision padding
+                // included; divided by --ui-zoom because this node re-applies
+                // the zoom). The alert list (already a scroll container)
+                // shrinks and scrolls, so the header and the "Ver todas" footer
+                // stay on screen in short landscape viewports.
+                'max-lg:flex max-lg:flex-col max-lg:max-h-[calc(var(--radix-dropdown-menu-content-available-height)/var(--ui-zoom,1))]',
               )}
               style={{
                 zoom: 'var(--ui-zoom, 1)',
@@ -532,7 +550,7 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
                     <button
                       onClick={handleMarkAllRead}
                       disabled={markingAllRead || pendingIds.size > 0}
-                      className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors touch-target-h"
                     >
                       {markingAllRead ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -550,7 +568,7 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
                       text. */}
                   <button
                     onClick={handleOpenAlertSettings}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+                    className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0 touch-target-box"
                     aria-label="Configurar alertas"
                     title="Configurar alertas"
                   >
@@ -597,7 +615,7 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
                           <button
                             type="button"
                             onClick={() => handleAlertRowClick(alert)}
-                            className="w-full flex items-start gap-3 pl-4 pr-12 py-3 text-left"
+                            className="w-full flex items-start gap-3 pl-4 pr-12 max-lg:pr-16 py-3 text-left"
                           >
                             <span className={cn('w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0', cfg.bg, cfg.border)}>
                               <AlertTriangle className={cn('w-3.5 h-3.5', cfg.text)} />
@@ -631,7 +649,8 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
                             aria-busy={pending || undefined}
                             title="Marcar como leída"
                             className={cn(
-                              'absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-lg',
+                              // B7 — below lg: 44 px device-constant target (the row's right gutter widens to match).
+                              'absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-lg touch-target-box',
                               'text-muted-foreground hover:text-foreground hover:bg-accent transition-colors',
                               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
                               'aria-disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted-foreground',
@@ -755,7 +774,7 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
           type="button"
           onClick={() => setConfirmLogoutOpen(false)}
           disabled={loggingOut}
-          className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-target-h"
         >
           Cancelar
         </button>
@@ -763,7 +782,7 @@ export function Topbar({ sidebarCollapsed, onMobileMenuToggle, alertCount = 0, p
           type="button"
           onClick={handleConfirmLogout}
           disabled={loggingOut}
-          className="flex items-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-target-h"
         >
           {loggingOut && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           Cerrar sesión

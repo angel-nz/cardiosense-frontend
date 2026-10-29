@@ -9,6 +9,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  X,
   Wifi,
   WifiOff,
 } from 'lucide-react'
@@ -28,6 +29,10 @@ interface NavItem {
 interface SidebarProps {
   collapsed: boolean
   onToggle: () => void
+  // Below `lg` the sidebar is a modal drawer: always expanded, no collapse
+  // toggle, scrollable, with its own close button.
+  drawer?: boolean
+  onClose?: () => void
   alertCount?: number
 }
 
@@ -209,7 +214,7 @@ export function SidebarNavLink({
         </div>
         {!collapsed && <span className="truncate">{label}</span>}
         {!collapsed && hasBadge && (
-          <span className="ml-auto bg-red-500 dark:bg-destructive text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+          <span className="ml-auto bg-red-500 dark:bg-destructive text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full max-lg:text-xs">
             {badgeCount! > 99 ? '99+' : badgeCount}
           </span>
         )}
@@ -224,7 +229,9 @@ export function SidebarNavLink({
   )
 }
 
-export function Sidebar({ collapsed, onToggle, alertCount = 0 }: SidebarProps) {
+export function Sidebar({ collapsed: collapsedPref, onToggle, drawer = false, onClose, alertCount = 0 }: SidebarProps) {
+  // The desktop collapsed preference never applies to the drawer.
+  const collapsed = collapsedPref && !drawer
   const { user } = useAuth()
   const { connected } = useSocket()
   const location = useLocation()
@@ -238,12 +245,18 @@ export function Sidebar({ collapsed, onToggle, alertCount = 0 }: SidebarProps) {
 
   return (
     <aside
+      role={drawer ? 'dialog' : undefined}
+      aria-modal={drawer ? true : undefined}
+      aria-label={drawer ? 'Menú de navegación' : undefined}
       className={cn(
         'fixed left-0 top-0 h-full z-30 flex flex-col transition-all duration-300 ease-in-out select-none',
         'border-r border-white/10',
+        drawer && 'overflow-y-auto overscroll-contain',
       )}
       style={{
         width: collapsed ? 'var(--sidebar-collapsed)' : 'var(--sidebar-width)',
+        // vw tracks the visible viewport even when the page overflows (% resolves against the expanded layout viewport); /zoom cancels html zoom.
+        maxWidth: drawer ? 'calc(85vw / var(--ui-zoom, 1))' : undefined,
         background: 'hsl(var(--sidebar-bg))',
       }}
     >
@@ -268,7 +281,7 @@ export function Sidebar({ collapsed, onToggle, alertCount = 0 }: SidebarProps) {
           value is unconditional (not gated on `collapsed`), so collapsing
           cannot change the header's height or shift the border, matching
           §18. */}
-      <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10 h-[68px]">
+      <div className={cn('flex items-center px-4 py-4 border-b border-white/10 h-[68px]', drawer ? 'gap-2 shrink-0' : 'gap-3')}>
         <img
           src="/brand/cardiosense-icon.png"
           alt={collapsed ? 'CardioSense' : ''}
@@ -281,6 +294,17 @@ export function Sidebar({ collapsed, onToggle, alertCount = 0 }: SidebarProps) {
             </p>
           </div>
         )}
+        {drawer && (
+          <button
+            type="button"
+            data-drawer-close
+            onClick={onClose}
+            aria-label="Cerrar menú de navegación"
+            className="ml-auto -mr-3 w-10 h-10 shrink-0 flex items-center justify-center rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors touch-target-box"
+          >
+            <X aria-hidden="true" className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
       {/* ─── Primary Nav ───────────────────────────────────────────────── */}
@@ -291,7 +315,10 @@ export function Sidebar({ collapsed, onToggle, alertCount = 0 }: SidebarProps) {
           `<nav>` is wider than the collapsed rail, so this only guards
           against the CSS auto-computed-overflow-x quirk itself, it doesn't
           clip anything that needs to be visible. */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden">
+      <nav
+        aria-label={drawer ? 'Navegación principal' : undefined}
+        className={cn('px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden', drawer ? 'grow shrink-0' : 'flex-1')}
+      >
         {NAV_ITEMS.map(({ to, icon, label }) => (
           <SidebarNavLink
             key={to}
@@ -306,7 +333,7 @@ export function Sidebar({ collapsed, onToggle, alertCount = 0 }: SidebarProps) {
       </nav>
 
       {/* ─── Bottom Section ────────────────────────────────────────────── */}
-      <div className="px-3 py-4 border-t border-white/10 space-y-1">
+      <div className={cn('px-3 py-4 border-t border-white/10 space-y-1', drawer && 'shrink-0')}>
         {BOTTOM_ITEMS.map(({ to, icon, label }) => (
           <SidebarNavLink
             key={to}
@@ -398,7 +425,7 @@ export function Sidebar({ collapsed, onToggle, alertCount = 0 }: SidebarProps) {
                 </p>
                 {/* Z6-R1 — a phone-only doctor has no email; falls back to
                     phone rather than rendering nothing/"null". */}
-                <p className="text-white/40 text-[10px] truncate mt-0.5">{userIdentifierLabel(user)}</p>
+                <p className="text-white/40 text-[10px] truncate mt-0.5 max-lg:text-xs">{userIdentifierLabel(user)}</p>
               </div>
             )}
           </div>
@@ -418,17 +445,19 @@ export function Sidebar({ collapsed, onToggle, alertCount = 0 }: SidebarProps) {
           was bg-white/hover:bg-gray-50/text-gray-500, now the same
           card/accent/muted-foreground tokens every other generic surface
           control in the app uses. */}
-      <button
-        onClick={onToggle}
-        className="absolute -right-3 top-20 w-6 h-6 rounded-full bg-card border border-border shadow-sm flex items-center justify-center hover:bg-accent transition-colors z-40"
-        aria-label={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
-      >
-        {collapsed ? (
-          <ChevronRight className="w-3 h-3 text-muted-foreground" />
-        ) : (
-          <ChevronLeft className="w-3 h-3 text-muted-foreground" />
-        )}
-      </button>
+      {!drawer && (
+        <button
+          onClick={onToggle}
+          className="absolute -right-3 top-20 w-6 h-6 rounded-full bg-card border border-border shadow-sm flex items-center justify-center hover:bg-accent transition-colors z-40"
+          aria-label={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
+        >
+          {collapsed ? (
+            <ChevronRight className="w-3 h-3 text-muted-foreground" />
+          ) : (
+            <ChevronLeft className="w-3 h-3 text-muted-foreground" />
+          )}
+        </button>
+      )}
     </aside>
   )
 }

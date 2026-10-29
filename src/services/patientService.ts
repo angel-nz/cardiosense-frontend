@@ -157,6 +157,11 @@ export interface PatientListParams {
   // Hidden patients are excluded from the result for every value — there is
   // no way to request them through this normal list endpoint.
   status?: PatientLifecycleFilter
+  // SORT-SEARCH-STICKY-FIX-1 — dataset-wide numeric ordering applied by the
+  // backend to the WHOLE filtered set before pagination (patient.dto.ts
+  // PatientQueryDto.sortBy/sortOrder). Omitted ⇒ default clinical-time order.
+  sortBy?: 'age' | 'risk'
+  sortOrder?: 'asc' | 'desc'
 }
 
 export const patientService = {

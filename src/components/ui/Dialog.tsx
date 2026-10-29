@@ -6,6 +6,7 @@
 import * as RadixDialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useCallback, useRef } from 'react'
 import type { ReactNode } from 'react'
 
 interface DialogProps {
@@ -29,7 +30,41 @@ interface DialogProps {
   onCloseAutoFocus?: (event: Event) => void
 }
 
+// Below lg, keeps the dialog inside the *visible* viewport. CSS alone
+// (vw/dvh) fixes the size and the base center, but when a horizontally
+// overflowing page lets the visual viewport pan inside the expanded layout
+// viewport, only its offset (visualViewport.offsetLeft/Top) can re-anchor a
+// position:fixed box. Published as --vv-x/--vv-y (CSS px, zoom-corrected).
+function useVisualViewportAnchor() {
+  const cleanup = useRef<(() => void) | null>(null)
+  return useCallback((node: HTMLElement | null) => {
+    cleanup.current?.()
+    cleanup.current = null
+    const vv = window.visualViewport
+    if (!node || !vv) return
+    const mq = window.matchMedia('(max-width: 1023px)')
+    const update = () => {
+      if (!mq.matches) {
+        node.style.removeProperty('--vv-x')
+        node.style.removeProperty('--vv-y')
+        return
+      }
+      const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1
+      node.style.setProperty('--vv-x', `${vv.offsetLeft / zoom}px`)
+      node.style.setProperty('--vv-y', `${vv.offsetTop / zoom}px`)
+    }
+    update()
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    cleanup.current = () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [])
+}
+
 export function Dialog({ open, onOpenChange, title, description, children, preventClose, size = 'default', onCloseAutoFocus }: DialogProps) {
+  const anchorRef = useVisualViewportAnchor()
   return (
     <RadixDialog.Root open={open} onOpenChange={next => { if (!preventClose) onOpenChange(next) }}>
       <RadixDialog.Portal>
@@ -64,14 +99,22 @@ export function Dialog({ open, onOpenChange, title, description, children, preve
             re-scaling — confirmed empirically to render a constant,
             correct height regardless of zoom (see final report). */}
         <RadixDialog.Content
+          ref={anchorRef}
           onEscapeKeyDown={e => { if (preventClose) e.preventDefault() }}
           onPointerDownOutside={e => { if (preventClose) e.preventDefault() }}
           onCloseAutoFocus={onCloseAutoFocus}
           className={cn(
             'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
-            size === 'wide' ? 'w-[calc(100%-2rem)] max-w-5xl' : 'w-full max-w-lg',
+            // Below lg, size and center against the device viewport (vw/dvh)
+            // instead of %, which resolves against the layout viewport that a
+            // horizontally overflowing page expands. Divided by --ui-zoom to
+            // cancel the root zoom.
+            'max-lg:left-[calc(50vw/var(--ui-zoom,1)_+_var(--vv-x,0px))] max-lg:top-[calc(50dvh/var(--ui-zoom,1)_+_var(--vv-y,0px))] max-lg:!max-h-[calc(90dvh/var(--ui-zoom,1))]',
+            size === 'wide'
+              ? 'w-[calc(100%-2rem)] max-w-5xl max-lg:w-[calc(100vw/var(--ui-zoom,1)_-_2rem)]'
+              : 'w-full max-w-lg max-lg:w-[calc(100vw/var(--ui-zoom,1)_-_2rem)]',
             'bg-card rounded-xl border border-border shadow-lg',
-            'overflow-y-auto',
+            'overflow-y-auto max-sm:!p-4',
           )}
           style={{ padding: 'var(--ui-modal-padding)', maxHeight: 'calc(90vh / var(--ui-zoom, 1))' }}
         >
@@ -89,7 +132,7 @@ export function Dialog({ open, onOpenChange, title, description, children, preve
             <RadixDialog.Close
               disabled={preventClose}
               aria-label="Cerrar"
-              className="p-1.5 rounded-lg hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+              className="p-1.5 rounded-lg hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0 touch-target-box"
             >
               <X className="w-4 h-4 text-muted-foreground" />
             </RadixDialog.Close>

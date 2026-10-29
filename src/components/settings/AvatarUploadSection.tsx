@@ -302,19 +302,27 @@ export function AvatarUploadSection() {
               >
                 <Camera className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" />
               </span>
+              {/* B6 — touch screens have no hover, so a persistent camera badge shows below lg. */}
+              <span
+                aria-hidden="true"
+                className="lg:hidden absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-card bg-primary text-white shadow-sm"
+              >
+                <Camera className="h-3 w-3" />
+              </span>
             </button>
 
-            <div className="min-w-0 flex-1">
-              <p className="ui-text-meta text-muted-foreground truncate">
+            {/* B5 — below sm the identity text wraps under the avatar instead of truncating. */}
+            <div className="min-w-0 flex-1 max-sm:basis-full">
+              <p className="ui-text-meta text-muted-foreground truncate max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere]">
                 {authUser.medico?.especialidad || ''}
               </p>
-              <p className="text-sm font-semibold text-foreground truncate">
+              <p className="text-sm font-semibold text-foreground truncate max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere]">
                 Dr. {fullName(authUser.firstName, authUser.lastName)}
               </p>
-              <p className="ui-text-meta text-muted-foreground truncate">
+              <p className="ui-text-meta text-muted-foreground truncate max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere]">
                 {authUser.email || ''}
               </p>
-              <p className="ui-text-meta text-muted-foreground truncate">
+              <p className="ui-text-meta text-muted-foreground truncate max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere]">
                 {authUser.medico?.phone ? formatInternationalDisplay(authUser.medico.phone) : ''}
               </p>
             </div>
@@ -369,7 +377,7 @@ export function AvatarUploadSection() {
                 type="button"
                 onClick={handlePick}
                 disabled={busy}
-                className="flex items-center justify-center gap-2 bg-primary text-white px-3.5 ui-compact-control-density rounded-lg text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center justify-center gap-2 bg-primary text-white px-3.5 ui-compact-control-density rounded-lg text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors touch-target-h"
               >
                 <Upload className="w-4 h-4" />
                 {hasAvatar ? 'Cambiar imagen' : 'Subir imagen'}
@@ -379,7 +387,7 @@ export function AvatarUploadSection() {
                   type="button"
                   onClick={() => setStage('confirmDelete')}
                   disabled={busy}
-                  className="flex items-center justify-center gap-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 px-3.5 ui-compact-control-density rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="flex items-center justify-center gap-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 px-3.5 ui-compact-control-density rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors touch-target-h"
                 >
                   <Trash2 className="w-4 h-4" />
                   Eliminar imagen
@@ -408,7 +416,7 @@ export function AvatarUploadSection() {
                 type="button"
                 onClick={handleCancelUpload}
                 disabled={phase === 'uploading'}
-                className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-target-h"
               >
                 Cancelar
               </button>
@@ -416,7 +424,7 @@ export function AvatarUploadSection() {
                 type="button"
                 onClick={handleConfirmUpload}
                 disabled={phase === 'uploading'}
-                className="flex items-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-target-h"
               >
                 {phase === 'uploading' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 <Save className="w-4 h-4" />
@@ -433,7 +441,7 @@ export function AvatarUploadSection() {
                 type="button"
                 onClick={handleCancelDelete}
                 disabled={phase === 'deleting'}
-                className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-target-h"
               >
                 Cancelar
               </button>
@@ -441,7 +449,7 @@ export function AvatarUploadSection() {
                 type="button"
                 onClick={handleDelete}
                 disabled={phase === 'deleting'}
-                className="flex items-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-target-h"
               >
                 {phase === 'deleting' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 <Trash2 className="w-4 h-4" />

@@ -57,7 +57,7 @@ function validateNewPassword(pwd: string): string | null {
 
 // Y6.3B — `ui-control-density` replaces `py-2.5` (Classic exact match, §45).
 const inputClass = (hasError?: boolean) => cn(
-  'w-full px-3 text-sm rounded-lg border bg-card pr-10 ui-control-density',
+  'w-full px-3 text-sm rounded-lg border bg-card pr-10 max-lg:pr-14 ui-control-density',
   'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
   'transition-all',
   hasError ? 'border-red-400 dark:border-red-500/70' : 'border-border',
@@ -383,7 +383,7 @@ export default function SecuritySettings() {
                 type="button"
                 onClick={() => setShowCurrent(s => !s)}
                 tabIndex={-1}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground touch-target-box"
                 aria-label={showCurrent ? 'Ocultar contraseña actual' : 'Mostrar contraseña actual'}
               >
                 {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -415,7 +415,7 @@ export default function SecuritySettings() {
                 type="button"
                 onClick={() => setShowNew(s => !s)}
                 tabIndex={-1}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground touch-target-box"
                 aria-label={showNew ? 'Ocultar nueva contraseña' : 'Mostrar nueva contraseña'}
               >
                 {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -495,7 +495,7 @@ export default function SecuritySettings() {
                 type="button"
                 onClick={() => setConfirmOthersOpen(true)}
                 disabled={mutatingTarget !== null || otherSessionsCount === 0}
-                className="flex items-center justify-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/60 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors flex-shrink-0"
+                className="flex items-center justify-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/60 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors flex-shrink-0 touch-target-h"
               >
                 {mutatingTarget === 'others' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Cerrar todas las demás sesiones
@@ -593,7 +593,7 @@ export default function SecuritySettings() {
                         onClick={() => setConfirmTarget(session)}
                         disabled={anyMutationInFlight}
                         aria-label={`Cerrar sesión: ${label}${session.current ? ' (esta sesión)' : ''}`}
-                        className="flex items-center justify-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-red-700 dark:border-red-800/60 text-red-700 dark:text-red-300 bg-red-50 hover:bg-red-100 dark:bg-red-950/15 dark:hover:bg-red-950/60 transition-colors flex-shrink-0 self-start sm:self-center"
+                        className="flex items-center justify-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-red-700 dark:border-red-800/60 text-red-700 dark:text-red-300 bg-red-50 hover:bg-red-100 dark:bg-red-950/15 dark:hover:bg-red-950/60 transition-colors flex-shrink-0 self-start sm:self-center touch-target-h"
                       >
                         {isMutatingThis && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                         Cerrar sesión
@@ -627,14 +627,14 @@ export default function SecuritySettings() {
               <button
                 type="button"
                 onClick={() => blocker.reset()}
-                className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors"
+                className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors touch-target-h"
               >
                 Permanecer
               </button>
               <button
                 type="button"
                 onClick={() => blocker.proceed()}
-                className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
+                className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors touch-target-h"
               >
                 Salir sin guardar
               </button>
@@ -666,7 +666,7 @@ export default function SecuritySettings() {
             type="button"
             onClick={() => setConfirmTarget(null)}
             disabled={mutatingTarget !== null}
-            className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-target-h"
           >
             Cancelar
           </button>
@@ -674,7 +674,7 @@ export default function SecuritySettings() {
             type="button"
             onClick={handleConfirmRevoke}
             disabled={mutatingTarget !== null}
-            className="flex items-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-target-h"
           >
             {confirmTarget && mutatingTarget === confirmTarget.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             Cerrar sesión
@@ -697,7 +697,7 @@ export default function SecuritySettings() {
             type="button"
             onClick={() => setConfirmOthersOpen(false)}
             disabled={mutatingTarget !== null}
-            className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-target-h"
           >
             Cancelar
           </button>
@@ -705,7 +705,7 @@ export default function SecuritySettings() {
             type="button"
             onClick={handleConfirmRevokeOthers}
             disabled={mutatingTarget !== null}
-            className="flex items-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-target-h"
           >
             {mutatingTarget === 'others' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             Cerrar las demás sesiones
@@ -729,7 +729,7 @@ export default function SecuritySettings() {
             type="button"
             onClick={() => setConfirmPasswordOpen(false)}
             disabled={saving}
-            className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-target-h"
           >
             Cancelar
           </button>
@@ -737,7 +737,7 @@ export default function SecuritySettings() {
             type="button"
             onClick={handleConfirmPasswordChange}
             disabled={saving}
-            className="flex items-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-target-h"
           >
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             Cambiar contraseña

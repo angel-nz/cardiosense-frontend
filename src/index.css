@@ -474,6 +474,31 @@
     font-size: var(--ui-calendar-count-size);
   }
 
+  /*
+    B6 — touch-target minimums. Below lg only (same breakpoint as Tailwind's
+    `lg`), so every computed style at >= 1024 px is unchanged. Dividing by
+    --ui-zoom keeps the rendered size at 44 device px for every interface
+    size (the same technique as the shell min-height helper below).
+  */
+  @media not all and (min-width: 1024px) {
+    .touch-target-h,
+    .touch-target-box {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(2.75rem / var(--ui-zoom, 1));
+    }
+    .touch-target-box {
+      min-width: calc(2.75rem / var(--ui-zoom, 1));
+    }
+    /* For native controls (select) that must keep their own display.
+       The data attribute serves markup whose frozen className contract cannot change. */
+    .touch-target-min,
+    [data-touch-min] {
+      min-height: calc(2.75rem / var(--ui-zoom, 1));
+    }
+  }
+
   /* Y6.3B-FIX1 §6 — Clinical History table row density. */
   .ui-clinical-row {
     padding-top: var(--ui-clinical-row-padding-y);
@@ -718,5 +743,84 @@
     z-index: 10;
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
+  }
+}
+
+/*
+  B7 — risk-evolution chart reference-line labels ("Moderado"/"Alto").
+  Recharts draws them with a `font-size` presentation attribute from the
+  `textSizes.refLine` prop (11). Below lg only, a plain CSS rule (which
+  outranks a presentation attribute) lifts them to 12 px; the prop, the
+  axis/tooltip sizes, the label text and the line values are untouched and
+  nothing changes at >= 1024 px. Declared OUTSIDE any @layer on purpose:
+  Tailwind purges @layer rules whose selectors use no class found in the
+  content globs, and these selectors are Recharts' own class names.
+*/
+@media not all and (min-width: 1024px) {
+  [data-testid="risk-evolution-chart"] .recharts-reference-line text,
+  [data-testid="risk-evolution-chart"] .recharts-reference-line tspan {
+    font-size: 12px;
+  }
+}
+
+/*
+  SORT-SEARCH-STICKY-FIX-1 (FIX-4) — patient prediction-history filter card
+  (.ui-history-filters, PredictionHistoryPage.tsx), short-landscape presentation.
+
+  The card is pinned under the fixed Topbar with the shared `.ui-sticky-toolbar`
+  recipe at EVERY viewport. In short landscape (the exact B7 condition used by
+  the global /predictions toolbar's `static` escape hatch: max-width:1023px AND
+  max-height:480px) a pinned two-row card would leave too little scrollable
+  band, so this card is not un-pinned (the filters must stay visible) but
+  compacted instead:
+    1. ONE slim row (the three controls + "Limpiar filtros"), tighter padding,
+       10px labels — measured occupancy is reported in the implementation report;
+    2. opaque card background and no backdrop-filter. A backdrop-filter makes
+       the card the containing block of `position:fixed` descendants, which
+       would defeat (3); an opaque background keeps the pinned strip legible;
+    3. the WheelDatePicker popup (≈232px tall, normally an absolutely
+       positioned dropdown that, while the card is pinned, would overflow the
+       short viewport with no way to scroll to it) is anchored to the viewport
+       directly under the Topbar and capped to the free height, scrolling inside
+       itself if it must. The vh term is divided by --ui-zoom for the same reason
+       `.ui-viewport-min-height` does (html{zoom} inflates vh).
+  Declared after every Tailwind layer at equal-or-higher specificity so the
+  shorter rules win over the base utilities on the same elements.
+*/
+@media (max-width: 1023px) and (max-height: 480px) {
+  .ui-history-filters {
+    padding: 0.5rem 0.75rem;
+    background-color: hsl(var(--card));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .ui-history-filters .ui-history-filters-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: flex-end;
+    gap: 0.5rem;
+  }
+  .ui-history-filters .ui-history-filters-row > * {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+  }
+  .ui-history-filters .ui-history-filters-row > div:nth-child(3) { flex: 0 0 7.5rem; }
+  .ui-history-filters .ui-history-filters-row > button { flex: 0 0 auto; margin-left: 0; white-space: nowrap; }
+  .ui-history-filters label {
+    margin-bottom: 0.125rem;
+    font-size: 10px;
+    line-height: 12px;
+  }
+  .ui-history-filters [data-wheel-popup] {
+    position: fixed;
+    top: calc(var(--topbar-height) + 0.25rem);
+    left: 0.5rem;
+    right: auto;
+    margin: 0;
+    width: min(22rem, calc(100vw / var(--ui-zoom, 1) - 1rem));
+    max-height: calc(100vh / var(--ui-zoom, 1) - var(--topbar-height) - 0.75rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 }

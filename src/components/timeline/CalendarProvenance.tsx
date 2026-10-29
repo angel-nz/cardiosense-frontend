@@ -15,13 +15,13 @@ import type { ClinicalRecordEventMetadata, PredictionEventMetadata, RiskChangeEv
 export function RecordProvenance({ metadata }: { metadata: ClinicalRecordEventMetadata }) {
   return (
     <>
-      <span className="block text-[11px] text-muted-foreground" data-provenance={metadata.clinicalTimeSource}>
+      <span className="block text-[11px] max-lg:text-xs text-muted-foreground" data-provenance={metadata.clinicalTimeSource}>
         {metadata.clinicalTimeSource === 'CLINICIAN_ENTERED' ? 'Medición' : `Captura — ${LEGACY_TIME_NOTE}`}
       </span>
       {metadata.historicalPredictions.length > 0 && (
         <span className="block mt-1 space-y-0.5" data-testid="record-historical-predictions">
           {metadata.historicalPredictions.map(r => (
-            <span key={r.predictionId} className="block text-[11px] text-muted-foreground" data-origin={r.origin}>
+            <span key={r.predictionId} className="block text-[11px] max-lg:text-xs text-muted-foreground" data-origin={r.origin}>
               Predicción histórica — origen no disponible
               {' · '}{formatScore(r.riskScore)} {RISK_CONFIG[r.riskLevel].label}
               {' · '}Calculada {formatClinicalDateTime(r.predictedAt)}
@@ -38,7 +38,7 @@ export function RecordProvenance({ metadata }: { metadata: ClinicalRecordEventMe
 export function AutomaticPredictionProvenance({ metadata }: { metadata: PredictionEventMetadata }) {
   if (metadata.origin !== 'AUTOMATIC_HEALTH_RECORD') return null
   return (
-    <span className="block text-[11px] text-muted-foreground mt-1" data-origin="AUTOMATIC_HEALTH_RECORD">
+    <span className="block text-[11px] max-lg:text-xs text-muted-foreground mt-1" data-origin="AUTOMATIC_HEALTH_RECORD">
       Predicción automática del registro
       {metadata.predictedAt && <> · Calculada {formatClinicalDateTime(metadata.predictedAt)}</>}
     </span>
@@ -51,7 +51,7 @@ export function RiskChangeProvenance({ metadata }: { metadata: RiskChangeEventMe
   if (!metadata.clinicalAt && !generated) return null
   const kind = metadata.clinicalTimeSource === 'LEGACY_ENTRY_TIME' ? ` (captura — ${LEGACY_TIME_NOTE})` : ''
   return (
-    <span className="block text-[11px] text-muted-foreground mt-1" data-testid="risk-change-provenance" data-provenance={metadata.clinicalTimeSource ?? undefined}>
+    <span className="block text-[11px] max-lg:text-xs text-muted-foreground mt-1" data-testid="risk-change-provenance" data-provenance={metadata.clinicalTimeSource ?? undefined}>
       {generated && <span className="block">Cambio detectado: {formatClinicalDateTime(generated)}</span>}
       {metadata.clinicalAt && <span className="block">Fecha clínica del registro: {formatClinicalDateTime(metadata.clinicalAt)}{kind}</span>}
     </span>

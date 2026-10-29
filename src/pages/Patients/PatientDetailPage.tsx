@@ -50,9 +50,9 @@ interface InfoRowProps {
 function InfoRow({ label, value, unit, highlight }: InfoRowProps) {
   const display = typeof value === 'boolean' ? (value ? 'Sí' : 'No') : String(value)
   return (
-    <div className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
+    <div className="flex items-center justify-between py-2.5 border-b border-border last:border-0 max-lg:flex-wrap max-lg:gap-x-3">
       <span className="text-sm text-muted-foreground">{label}</span>
-      <span className={cn('text-sm font-semibold', highlight ? 'text-red-600 dark:text-red-400' : 'text-foreground')}>
+      <span className={cn('text-sm font-semibold max-lg:min-w-0 max-lg:max-w-full max-lg:[overflow-wrap:anywhere]', highlight ? 'text-red-600 dark:text-red-400' : 'text-foreground')}>
         {display}{unit && <span className="font-normal text-muted-foreground ml-1">{unit}</span>}
       </span>
     </div>
@@ -846,7 +846,7 @@ export default function PatientDetailPage() {
         <p className="font-medium text-foreground">{patientError ?? 'Paciente no encontrado'}</p>
         <button
           onClick={() => navigate('/patients')}
-          className="mt-4 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+          className="mt-4 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors touch-target-h"
         >
           Volver a pacientes
         </button>
@@ -894,18 +894,19 @@ export default function PatientDetailPage() {
           `.ui-sticky-toolbar`. Visual-only — none of the patient-state
           action-button logic above is touched. */}
       <div
-        className="ui-sticky-toolbar flex items-center gap-3 bg-background/80 border-b border-border"
+        className="ui-sticky-toolbar flex items-center gap-3 max-sm:flex-wrap max-sm:items-start max-sm:static [@media(max-width:1023px)_and_(max-height:480px)]:static bg-background/80 border-b border-border"
         style={{ paddingTop: 'var(--ui-secondary-control-padding-y)', paddingBottom: 'var(--ui-secondary-control-padding-y)' }}
       >
         <button
           onClick={() => navigate('/patients')}
-          className="p-2 rounded-lg hover:bg-accent transition-colors"
+          aria-label="Volver a pacientes"
+          className="p-2 rounded-lg hover:bg-accent transition-colors touch-target-box"
         >
           <ArrowLeft className="w-5 h-5 text-muted-foreground" />
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-bold text-foreground">
+            <h1 className="text-2xl max-sm:text-xl font-bold text-foreground max-sm:break-words">
               {patient.firstName} {patient.lastName}
             </h1>
             {patient.latestRisk && (
@@ -924,12 +925,12 @@ export default function PatientDetailPage() {
             {age} años · {sexLabel(patient.sex)} · <span data-testid="patient-last-clinical">{patient.latestClinicalAt ? `Última actualización ${timeAgo(patient.latestClinicalAt)}` : 'Sin registros clínicos'}</span>
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+        <div className="flex items-center gap-2 flex-wrap flex-shrink-0 max-sm:w-full">
           {patient.isActive ? (
             <>
               <button
                 onClick={() => setNewRecordModalOpen(true)}
-                className="flex items-center gap-2 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+                className="flex items-center gap-2 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm touch-target-h"
               >
                 <Plus className="w-4 h-4" />
                 Nuevo registro
@@ -939,7 +940,8 @@ export default function PatientDetailPage() {
                   (automatically). */}
               <button
                 onClick={() => setEditPatientModalOpen(true)}
-                className="p-2 rounded-lg border border-border hover:bg-accent transition-colors"
+                aria-label="Editar información personal"
+                className="p-2 rounded-lg border border-border hover:bg-accent transition-colors touch-target-box"
               >
                 <Edit className="w-4 h-4 text-muted-foreground" />
               </button>
@@ -949,7 +951,7 @@ export default function PatientDetailPage() {
               <button
                 onClick={handleReactivate}
                 disabled={statusBusy}
-                className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-teal-700 dark:border-teal-800/60 text-teal-700 dark:text-teal-300 bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/15 dark:hover:bg-teal-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-teal-700 dark:border-teal-800/60 text-teal-700 dark:text-teal-300 bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/15 dark:hover:bg-teal-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed touch-target-h"
               >
                 <RotateCcw className="w-4 h-4 text-teal-700 dark:text-teal-300" />
                 Reactivar
@@ -957,7 +959,7 @@ export default function PatientDetailPage() {
               <button
                 onClick={() => setConfirmHideOpen(true)}
                 disabled={statusBusy}
-                className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-amber-700 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/15 dark:hover:bg-amber-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-amber-700 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/15 dark:hover:bg-amber-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed touch-target-h"
               >
                 <EyeOff className="w-4 h-4 text-amber-700 dark:text-amber-300" />
                 Ocultar
@@ -987,18 +989,18 @@ export default function PatientDetailPage() {
         description="El paciente dejará de poder recibir nuevos registros clínicos o predicciones hasta que lo reactives. Su información e historial clínico se conservarán sin cambios."
         preventClose={statusBusy}
       >
-        <div className="flex justify-end gap-2 mt-2">
+        <div className="flex justify-end gap-2 mt-2 max-sm:flex-wrap">
           <button
             onClick={() => setConfirmDeactivateOpen(false)}
             disabled={statusBusy}
-            className="px-4 ui-compact-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-60"
+            className="px-4 ui-compact-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-60 touch-target-h"
           >
             Cancelar
           </button>
           <button
             onClick={handleDeactivate}
             disabled={statusBusy}
-            className="flex items-center gap-2 px-4 ui-compact-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-60"
+            className="flex items-center gap-2 px-4 ui-compact-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-60 touch-target-h"
           >
             {statusBusy && <Loader2 className="w-4 h-4 animate-spin" />}
             Desactivar
@@ -1014,18 +1016,18 @@ export default function PatientDetailPage() {
         description="Este paciente dejará de aparecer en las vistas normales de CardioSense. Su información y su historial clínico se conservarán y podrás volver a mostrarlo desde Configuración."
         preventClose={statusBusy}
       >
-        <div className="flex justify-end gap-2 mt-2">
+        <div className="flex justify-end gap-2 mt-2 max-sm:flex-wrap">
           <button
             onClick={() => setConfirmHideOpen(false)}
             disabled={statusBusy}
-            className="px-4 ui-compact-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-60"
+            className="px-4 ui-compact-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-60 touch-target-h"
           >
             Cancelar
           </button>
           <button
             onClick={handleHide}
             disabled={statusBusy}
-            className="flex items-center gap-2 px-4 ui-compact-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-60"
+            className="flex items-center gap-2 px-4 ui-compact-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-60 touch-target-h"
           >
             {statusBusy && <Loader2 className="w-4 h-4 animate-spin" />}
             Ocultar
@@ -1064,7 +1066,7 @@ export default function PatientDetailPage() {
                   type="button"
                   data-risk-modal-autofocus
                   onClick={() => openProjection('full')}
-                  className="flex items-center gap-1.5 px-3 ui-compact-control-density rounded-lg text-xs font-medium border border-primary/40 text-primary hover:bg-primary/5 transition-colors"
+                  className="flex items-center gap-1.5 px-3 ui-compact-control-density rounded-lg text-xs font-medium border border-primary/40 text-primary hover:bg-primary/5 transition-colors touch-target-h"
                 >
                   <Telescope className="w-3.5 h-3.5" aria-hidden="true" />
                   Ver proyección
@@ -1074,7 +1076,7 @@ export default function PatientDetailPage() {
                   onClick={openPredictionHistory}
                   data-testid="full-modal-open-prediction-history"
                   title="Historial de predicciones de este paciente"
-                  className="inline-flex items-center gap-1.5 px-3 ui-compact-control-density rounded-lg text-xs font-medium border border-border text-foreground hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  className="inline-flex items-center gap-1.5 px-3 ui-compact-control-density rounded-lg text-xs font-medium border border-border text-foreground hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary touch-target-h"
                 >
                   <History className="w-3.5 h-3.5" aria-hidden="true" />
                   Historial
@@ -1258,7 +1260,7 @@ export default function PatientDetailPage() {
                   <p className="text-xs text-muted-foreground" data-testid="current-risk-clinical">
                     {currentRecordTime ? `${clinicalTimeLabel(currentRecordTime)}` : '—'}
                   </p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">Calculada {timeAgo(latestPrediction.predictedAt)}</p>
+                  <p className="text-[11px] max-lg:text-xs text-muted-foreground mt-0.5">Calculada {timeAgo(latestPrediction.predictedAt)}</p>
                 </div>
               </>
             )}
@@ -1277,7 +1279,7 @@ export default function PatientDetailPage() {
                   onClick={() => setEditPatientModalOpen(true)}
                   aria-label="Editar información personal"
                   title="Editar información personal"
-                  className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors flex-shrink-0"
+                  className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors flex-shrink-0 touch-target-box"
                 >
                   <Edit className="w-3.5 h-3.5" />
                 </button>
@@ -1302,11 +1304,11 @@ export default function PatientDetailPage() {
                   non-clickable omission this row already used before, and
                   the same convention CURP/phone already follow just below. */}
               {patient.email && (
-                <div className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
+                <div className="flex items-center justify-between py-2.5 border-b border-border last:border-0 max-lg:flex-wrap max-lg:gap-x-3">
                   <span className="text-sm text-muted-foreground">Email</span>
                   <a
                     href={`mailto:${patient.email}`}
-                    className="text-sm font-semibold text-primary flex items-center gap-1"
+                    className="text-sm font-semibold text-primary flex items-center gap-1 max-lg:min-w-0 max-lg:max-w-full max-lg:[overflow-wrap:anywhere]"
                   >
                     <Mail className="w-3.5 h-3.5" />
                     {patient.email}
@@ -1316,15 +1318,15 @@ export default function PatientDetailPage() {
               {patient.phone && (() => {
                 const { text, telHref } = getPhoneDisplay(patient.phone)
                 return (
-                  <div className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
+                  <div className="flex items-center justify-between py-2.5 border-b border-border last:border-0 max-lg:flex-wrap max-lg:gap-x-3">
                     <span className="text-sm text-muted-foreground">Teléfono</span>
                     {telHref ? (
-                      <a href={telHref} className="text-sm font-semibold text-primary flex items-center gap-1">
+                      <a href={telHref} className="text-sm font-semibold text-primary flex items-center gap-1 max-lg:min-w-0 max-lg:max-w-full max-lg:[overflow-wrap:anywhere]">
                         <Phone className="w-3.5 h-3.5" />
                         {text}
                       </a>
                     ) : (
-                      <span className="text-sm font-semibold text-foreground flex items-center gap-1">
+                      <span className="text-sm font-semibold text-foreground flex items-center gap-1 max-lg:min-w-0 max-lg:max-w-full max-lg:[overflow-wrap:anywhere]">
                         <Phone className="w-3.5 h-3.5 text-muted-foreground" />
                         {text}
                       </span>
@@ -1386,12 +1388,12 @@ export default function PatientDetailPage() {
                   the right), "Historial" (THIS patient's Prediction history —
                   read-only, no creation control), then the icon-only full
                   chart button (unchanged, still last). */}
-              <div className="ml-auto flex items-center justify-end gap-2 flex-wrap flex-shrink-0" data-testid="risk-evolution-actions">
+              <div className="ml-auto flex items-center justify-end gap-2 flex-wrap flex-shrink-0 max-sm:max-w-full" data-testid="risk-evolution-actions">
                 <button
                   type="button"
                   onClick={e => openProjection('page', e.currentTarget)}
                   data-testid="open-projection"
-                  className="inline-flex items-center gap-1.5 px-3 ui-compact-control-density rounded-lg text-xs font-medium border border-primary/40 text-primary hover:bg-primary/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  className="inline-flex items-center gap-1.5 px-3 ui-compact-control-density rounded-lg text-xs font-medium border border-primary/40 text-primary hover:bg-primary/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary touch-target-h"
                 >
                   <Telescope className="w-3.5 h-3.5" aria-hidden="true" />
                   Ver proyección
@@ -1401,7 +1403,7 @@ export default function PatientDetailPage() {
                   onClick={openPredictionHistory}
                   data-testid="open-prediction-history"
                   title="Historial de predicciones de este paciente"
-                  className="inline-flex items-center gap-1.5 px-3 ui-compact-control-density rounded-lg text-xs font-medium border border-border text-foreground hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  className="inline-flex items-center gap-1.5 px-3 ui-compact-control-density rounded-lg text-xs font-medium border border-border text-foreground hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary touch-target-h"
                 >
                   <History className="w-3.5 h-3.5" aria-hidden="true" />
                   Historial
@@ -1412,7 +1414,7 @@ export default function PatientDetailPage() {
                   aria-label="Ver gráfica completa"
                   title="Ver gráfica completa"
                   data-testid="open-full-chart"
-                  className="flex-shrink-0 p-2 rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                  className="flex-shrink-0 p-2 rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground transition-colors touch-target-box focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                 >
                   <Maximize2 className="w-4 h-4" aria-hidden="true" />
                 </button>
@@ -1527,7 +1529,7 @@ export default function PatientDetailPage() {
                             <button
                               type="button"
                               onClick={() => handleSortClick(field)}
-                              className="flex items-center gap-1 hover:text-foreground transition-colors"
+                              className="flex items-center gap-1 hover:text-foreground transition-colors touch-target-box"
                             >
                               {label}
                               {historySortBy === field && (
@@ -1561,7 +1563,7 @@ export default function PatientDetailPage() {
                                   {formatClinicalDateTime(t.instant)}
                                   {t.source === 'LEGACY_ENTRY' && (
                                     <span
-                                      className="ml-1.5 inline-block text-[10px] px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground"
+                                      className="ml-1.5 inline-block text-[10px] max-lg:text-xs px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground"
                                       title={`Fecha de captura — ${LEGACY_TIME_NOTE}`}
                                     >
                                       Captura
@@ -1589,7 +1591,7 @@ export default function PatientDetailPage() {
                     <select
                       value={historyLimit}
                       onChange={e => handleLimitChange(Number(e.target.value))}
-                      className="border border-border rounded-md px-2 py-1 bg-card cursor-pointer"
+                      className="border border-border rounded-md px-2 py-1 bg-card cursor-pointer touch-target-min"
                     >
                       <option value={10}>10</option>
                       <option value={25}>25</option>
@@ -1597,7 +1599,7 @@ export default function PatientDetailPage() {
                     </select>
                     <span>por página</span>
                   </div>
-                  <div className="flex items-center gap-3 text-xs">
+                  <div className="flex items-center gap-3 text-xs max-sm:flex-wrap">
                     <span className="text-muted-foreground">
                       Página {Math.min(historyPage, Math.max(historyTotalPages, 1))} de {Math.max(historyTotalPages, 1)}
                     </span>
@@ -1606,7 +1608,7 @@ export default function PatientDetailPage() {
                         type="button"
                         onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
                         disabled={historyPage <= 1}
-                        className="px-2.5 py-1 rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="px-2.5 py-1 rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed touch-target-h"
                       >
                         Anterior
                       </button>
@@ -1614,7 +1616,7 @@ export default function PatientDetailPage() {
                         type="button"
                         onClick={() => setHistoryPage(p => Math.min(historyTotalPages, p + 1))}
                         disabled={historyPage >= historyTotalPages}
-                        className="px-2.5 py-1 rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="px-2.5 py-1 rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed touch-target-h"
                       >
                         Siguiente
                       </button>
@@ -1686,7 +1688,7 @@ export default function PatientDetailPage() {
                 <button
                   onClick={() => setConfirmDeactivateOpen(true)}
                   disabled={statusBusy}
-                  className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-red-700 dark:border-red-800/60 text-red-700 dark:text-red-300 bg-red-50 hover:bg-red-100 dark:bg-red-950/15 dark:hover:bg-red-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-red-700 dark:border-red-800/60 text-red-700 dark:text-red-300 bg-red-50 hover:bg-red-100 dark:bg-red-950/15 dark:hover:bg-red-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed touch-target-h"
                 >
                   <PowerOff className="w-4 h-4 text-muted-foreground text-red-700 dark:text-red-300" />
                   Desactivar
@@ -1704,7 +1706,7 @@ export default function PatientDetailPage() {
                   <button
                     onClick={handleReactivate}
                     disabled={statusBusy}
-                    className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-teal-700 dark:border-teal-800/60 text-teal-700 dark:text-teal-300 bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/15 dark:hover:bg-teal-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-teal-700 dark:border-teal-800/60 text-teal-700 dark:text-teal-300 bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/15 dark:hover:bg-teal-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed touch-target-h"
                   >
                     <RotateCcw className="w-4 h-4 text-muted-foreground text-teal-700 dark:text-teal-300" />
                     Reactivar
@@ -1712,7 +1714,7 @@ export default function PatientDetailPage() {
                   <button
                     onClick={() => setConfirmHideOpen(true)}
                     disabled={statusBusy}
-                    className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-amber-700 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/15 dark:hover:bg-amber-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="flex items-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-amber-700 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/15 dark:hover:bg-amber-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed touch-target-h"
                   >
                     <EyeOff className="w-4 h-4 text-muted-foreground text-amber-700 dark:text-amber-300" />
                     Ocultar

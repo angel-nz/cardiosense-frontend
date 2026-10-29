@@ -533,7 +533,7 @@ export default function ProfileSettings() {
               type="button"
               onClick={handleCancelEdit}
               disabled={saving}
-              className="flex items-center gap-1.5 px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+              className="flex items-center gap-1.5 px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 touch-target-h"
             >
               Cancelar edición
             </button>
@@ -541,7 +541,7 @@ export default function ProfileSettings() {
             <button
               type="button"
               onClick={handleEnterEdit}
-              className="flex items-center gap-1.5 px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors flex-shrink-0"
+              className="flex items-center gap-1.5 px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors flex-shrink-0 touch-target-h"
             >
               <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
               Editar
@@ -551,7 +551,7 @@ export default function ProfileSettings() {
       >
         <form onSubmit={handleSubmit} className="ui-content-stack" noValidate>
           {/* Pre-Y8 visual polish — Row 1: Nombre(s) / Apellidos. */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
             <div>
               <FieldLabel icon={UserIcon}>Nombre(s)</FieldLabel>
               <input
@@ -582,7 +582,7 @@ export default function ProfileSettings() {
                   left, Cédula profesional right — swapped from this field's
                   previous left/right order to match the reference layout.
                   No field added or removed, no validation changed. */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
                 <div>
                   <FieldLabel icon={Stethoscope}>Especialidad</FieldLabel>
                   <input
@@ -701,7 +701,7 @@ export default function ProfileSettings() {
             type="button"
             onClick={() => setConfirmOpen(false)}
             disabled={saving}
-            className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-target-h"
           >
             Cancelar
           </button>
@@ -709,7 +709,7 @@ export default function ProfileSettings() {
             type="button"
             onClick={handleConfirmSave}
             disabled={saving}
-            className="flex items-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-target-h"
           >
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             <Save className="w-4 h-4" />
@@ -738,14 +738,14 @@ export default function ProfileSettings() {
               <button
                 type="button"
                 onClick={() => blocker.reset()}
-                className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors"
+                className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors touch-target-h"
               >
                 Permanecer
               </button>
               <button
                 type="button"
                 onClick={() => blocker.proceed()}
-                className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
+                className="px-3 ui-secondary-control-density text-sm font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors touch-target-h"
               >
                 Salir sin guardar
               </button>

@@ -37,7 +37,7 @@ function WheelColumn({
 
   return (
     <div className="min-w-0 flex-1">
-      <div className="mb-1 text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mb-1 text-center text-[10px] max-lg:text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
       <div
         ref={ref}
         role="listbox"
@@ -169,7 +169,7 @@ export function WheelDatePicker({
         aria-invalid={aria['aria-invalid']}
         onClick={() => setOpen(current => !current)}
         className={cn(
-          'flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-card text-foreground transition-colors',
+          'flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-card text-foreground transition-colors touch-target-h',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60',
           compact ? 'px-2.5 ui-secondary-control-density text-xs' : 'px-3 py-2 text-sm',
         )}
@@ -182,7 +182,7 @@ export function WheelDatePicker({
       </button>
 
       {open && (
-        <div className="absolute left-0 z-[80] mt-1 w-[min(22rem,calc(100vw-2rem))] max-w-full rounded-xl border border-border bg-card p-3 shadow-xl">
+        <div data-wheel-popup className="absolute left-0 z-[80] mt-1 w-[min(22rem,calc(100vw-2rem))] max-w-full rounded-xl border border-border bg-card p-3 shadow-xl">
           <div className="grid grid-cols-3 gap-2" aria-label={`${label}: Día Mes Año`}>
             <WheelColumn label="Día" values={dayValues} value={Math.min(draft.day, dayValues.length)}
               format={pad} onChange={day => publish(draft.year, draft.month, day)} />
@@ -193,11 +193,11 @@ export function WheelDatePicker({
           </div>
           <div className="mt-3 flex items-center justify-between gap-3">
             {!required ? (
-              <button type="button" className="text-xs text-muted-foreground underline hover:text-foreground" onClick={() => { onValueChange(''); setOpen(false) }}>
+              <button type="button" className="text-xs text-muted-foreground underline hover:text-foreground touch-target-h px-2" onClick={() => { onValueChange(''); setOpen(false) }}>
                 Limpiar
               </button>
             ) : <span />}
-            <button type="button" className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white" onClick={() => setOpen(false)}>
+            <button type="button" className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white touch-target-h" onClick={() => setOpen(false)}>
               Listo
             </button>
           </div>

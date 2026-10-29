@@ -17,7 +17,7 @@ import type { Patient, UpdatePatientRequest, Sex } from '@/types'
 const inputClass = cn(
   'w-full px-3 py-2 text-sm rounded-lg border border-border bg-card',
   'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
-  'transition-all placeholder:text-muted-foreground',
+  'transition-all placeholder:text-muted-foreground touch-target-min',
 )
 
 // V6.4 — `phone` removed from FormState/draftFromPatient/dirty-checking:
@@ -328,7 +328,7 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
             <input className={cn(inputClass, 'font-mono uppercase')}
               value={form.curp}
               onChange={e => { setForm(f => ({ ...f, curp: e.target.value.toUpperCase() })); setCurpError(null) }} />
-            {curpError && <p className="text-[11px] text-red-600 dark:text-red-400">{curpError}</p>}
+            {curpError && <p className="text-[11px] max-lg:text-xs text-red-600 dark:text-red-400">{curpError}</p>}
           </div>
 
           <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
@@ -367,7 +367,7 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
             <input type="email" className={inputClass}
               value={form.email}
               onChange={e => { setForm(f => ({ ...f, email: e.target.value })); setEmailError(null) }} />
-            {emailError && <p className="text-[11px] text-red-600 dark:text-red-400">{emailError}</p>}
+            {emailError && <p className="text-[11px] max-lg:text-xs text-red-600 dark:text-red-400">{emailError}</p>}
           </div>
           
           <CountryPhoneInput
@@ -383,7 +383,7 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
           <button
             type="submit"
             disabled={saving || !isDirty}
-            className="flex items-center gap-1.5 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors"
+            className="flex items-center gap-1.5 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors touch-target-h"
           >
             <Save className="w-4 h-4" />
             {saving ? 'Guardando...' : 'Guardar cambios'}
@@ -392,7 +392,7 @@ export function EditPatientModal({ patient, open, onOpenChange, onUpdated }: Edi
             type="button"
             onClick={handleClose}
             disabled={saving}
-            className="px-4 ui-compact-control-density text-xs font-medium text-muted-foreground hover:bg-accent rounded-lg transition-colors disabled:opacity-60"
+            className="px-4 ui-compact-control-density text-xs font-medium text-muted-foreground hover:bg-accent rounded-lg transition-colors disabled:opacity-60 touch-target-h"
           >
             Cancelar
           </button>

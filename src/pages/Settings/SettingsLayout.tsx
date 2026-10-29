@@ -47,16 +47,19 @@ export default function SettingsLayout() {
           the shared .ui-major-grid-gap calc() offset rather than forced
           onto the standard token (§5/§11), while still scaling
           proportionally with it. */}
-      <div className="flex flex-col sm:flex-row ui-major-grid-gap">
+      {/* B5 — the side-by-side layout starts at md (was sm): between 640 and
+          767 px at larger interface sizes the content column was squeezed
+          below ~280 px and forced page-level overflow. */}
+      <div className="flex flex-col md:flex-row ui-major-grid-gap">
         {/* ── Section navigation ─────────────────────────────────────────
             Real routes via NavLink, not an in-page tab widget — no
             role="tab"/tablist semantics, per Y1 §9. NavLink itself applies
             aria-current="page" to the active link, and each item is a real
             <a> (keyboard-reachable, focusable, no clickable <div>s). */}
-        <aside className="sm:w-52 flex-shrink-0 min-w-0">
+        <aside className="md:w-52 flex-shrink-0 min-w-0">
           <nav
             aria-label="Configuración"
-            className="bg-card rounded-xl border border-border p-2 flex sm:flex-col gap-0.5 overflow-x-auto sm:overflow-x-visible"
+            className="bg-card rounded-xl border border-border p-2 flex md:flex-col gap-0.5 overflow-x-auto md:overflow-x-visible max-md:flex-wrap"
           >
             {SETTINGS_NAV.map(item => (
               <NavLink
@@ -71,6 +74,8 @@ export default function SettingsLayout() {
                   // High Visibility grow it, keeping the nav readable and
                   // non-colliding at larger presets.
                   'flex items-center gap-3 px-3 ui-control-density rounded-lg ui-text-body font-medium transition-colors text-left whitespace-nowrap flex-shrink-0',
+                  // B5 — below md the tabs wrap onto rows and share the width.
+                  'max-md:grow max-md:justify-center',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
                   isActive
                     ? 'bg-primary text-white'

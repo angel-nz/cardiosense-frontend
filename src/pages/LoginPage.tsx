@@ -133,7 +133,7 @@ export default function LoginPage() {
       </div>
 
       {/* ── Right panel — form ─────────────────────────────────────── */}
-      <div className="flex-1 flex items-center justify-center p-8 bg-background">
+      <div className="flex-1 flex items-center justify-center px-4 py-8 sm:p-8 bg-background">
         <div className="w-full max-w-sm space-y-8">
 
           {/* Mobile logo */}
@@ -155,9 +155,10 @@ export default function LoginPage() {
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="ui-content-stack">
+          {/* Below sm: 16px inputs (prevents iOS focus zoom); sm+ keeps text-sm. */}
+          <form onSubmit={handleSubmit} className="ui-content-stack max-sm:[&_input]:text-base">
             <div>
-              <div className="flex items-center justify-between mb-1.5">
+              <div className="flex max-sm:flex-wrap items-center justify-between max-sm:gap-x-2 max-sm:gap-y-1 mb-1.5">
                 <label className="text-sm font-medium text-foreground">
                   {mode === 'email' ? 'Correo electrónico' : 'Teléfono'}<RequiredMark />
                 </label>
@@ -170,7 +171,7 @@ export default function LoginPage() {
                     type="button"
                     onClick={() => switchMode('email')}
                     className={cn(
-                      'flex items-center gap-1 px-2 py-1 rounded-md transition-colors',
+                      'flex items-center gap-1 px-2.5 py-1.5 sm:px-2 sm:py-1 rounded-md transition-colors touch-target-h',
                       mode === 'email' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground',
                     )}
                   >
@@ -181,7 +182,7 @@ export default function LoginPage() {
                     type="button"
                     onClick={() => switchMode('phone')}
                     className={cn(
-                      'flex items-center gap-1 px-2 py-1 rounded-md transition-colors',
+                      'flex items-center gap-1 px-2.5 py-1.5 sm:px-2 sm:py-1 rounded-md transition-colors touch-target-h',
                       mode === 'phone' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground',
                     )}
                   >
@@ -218,11 +219,11 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1.5">
+              <div className="flex max-sm:flex-wrap items-center justify-between max-sm:gap-x-2 max-sm:gap-y-1 mb-1.5">
                 <label className="text-sm font-medium text-foreground">Contraseña<RequiredMark /></label>
                 <button
                   type="button"
-                  className="text-xs text-primary hover:underline"
+                  className="text-xs text-primary hover:underline touch-target-h"
                 >
                   ¿Olvidaste tu contraseña?
                 </button>
@@ -237,7 +238,7 @@ export default function LoginPage() {
                   required
                   aria-required="true"
                   className={cn(
-                    'w-full px-3 pr-10 text-sm rounded-lg border bg-card',
+                    'w-full px-3 pr-10 max-lg:pr-14 text-sm rounded-lg border bg-card',
                     'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
                     'transition-all',
                     error ? 'border-red-400 dark:border-red-500/70' : 'border-border',
@@ -247,7 +248,8 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPwd(s => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  aria-label={showPwd ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  className="absolute right-1.5 p-1.5 sm:right-3 sm:p-0 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground touch-target-box"
                 >
                   {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -280,7 +282,7 @@ export default function LoginPage() {
 
           <p className="text-center text-sm text-muted-foreground">
             ¿No tienes una cuenta?{' '}
-            <Link to="/register" className="text-primary font-medium hover:underline">
+            <Link to="/register" className="text-primary font-medium hover:underline touch-target-h">
               Regístrate
             </Link>
           </p>

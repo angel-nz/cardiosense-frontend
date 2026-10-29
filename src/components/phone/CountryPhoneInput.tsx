@@ -87,6 +87,7 @@ export function CountryPhoneInput({
   const [highlight, setHighlight] = useState(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const popupRef = useRef<HTMLDivElement>(null)
 
   const options: CountryOption[] = selectorOpen ? searchCountries(query) : []
   const selectedOption = country ? getCountryOptions().find(o => o.code === country) ?? null : null
@@ -102,7 +103,17 @@ export function CountryPhoneInput({
     setSelectorOpen(true)
     setHighlight(0)
     // Focus moves into the search box once it mounts.
-    requestAnimationFrame(() => searchInputRef.current?.focus())
+    requestAnimationFrame(() => {
+      searchInputRef.current?.focus()
+      // UI-MOBILE-B7 — below lg only: bring the whole popup (search + list)
+      // inside the visible area. The popup is anchored under the field and,
+      // near the bottom of a phone screen, used to extend past the screen
+      // edge. `block: 'nearest'` scrolls the minimum needed (nothing when it
+      // already fits). Never runs at >=1024 px (desktop popup unchanged).
+      if (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 1023px)').matches) {
+        popupRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      }
+    })
   }
 
   function selectCountry(code: CountryCode) {
@@ -148,9 +159,13 @@ export function CountryPhoneInput({
         </label>
       )}
 
-      <div className="flex gap-2">
+      {/* UI-MOBILE-B7 — below lg the field row (not the narrow trigger) is the
+          popup's containing block, so the popup spans exactly the row and can
+          never extend past the screen's right edge. At >=1024 px the trigger
+          wrapper stays the containing block (unchanged geometry). */}
+      <div className="flex gap-2 max-lg:relative">
         {/* Country selector trigger */}
-        <div className="relative">
+        <div className="relative max-lg:static">
           <button
             ref={triggerRef}
             type="button"
@@ -161,7 +176,7 @@ export function CountryPhoneInput({
             onClick={() => (selectorOpen ? closeSelector() : openSelector())}
             className={cn(
               baseFieldClass(showInvalid || hasExternalError),
-              'flex items-center gap-1.5 whitespace-nowrap',
+              'flex items-center gap-1.5 whitespace-nowrap touch-target-min',
               selectedOption ? 'w-auto' : 'w-auto text-muted-foreground',
             )}
           >
@@ -178,7 +193,8 @@ export function CountryPhoneInput({
 
           {selectorOpen && (
             <div
-              className="absolute z-50 mt-1 w-64 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+              ref={popupRef}
+              className="absolute z-50 mt-1 w-64 bg-card border border-border rounded-lg shadow-lg overflow-hidden max-lg:left-0 max-lg:right-0 max-lg:top-full max-lg:w-auto max-lg:scroll-mb-4"
               onKeyDown={handleSelectorKeyDown}
             >
               <div className="flex items-center gap-2 px-2.5 py-2 border-b border-border">
@@ -190,10 +206,10 @@ export function CountryPhoneInput({
                   onChange={e => { setQuery(e.target.value); setHighlight(0) }}
                   aria-label="Buscar país"
                   placeholder="Buscar país o código..."
-                  className="w-full text-sm bg-transparent focus:outline-none"
+                  className="w-full text-sm bg-transparent focus:outline-none touch-target-min"
                 />
               </div>
-              <ul role="listbox" aria-label="Países" className="max-h-56 overflow-y-auto py-1">
+              <ul role="listbox" aria-label="Países" className="max-h-56 max-lg:max-h-[clamp(7rem,calc((100dvh/var(--ui-zoom,1))-9rem),14rem)] overflow-y-auto py-1">
                 {options.length === 0 && (
                   <li className="px-3 py-2 text-xs text-muted-foreground">Sin resultados</li>
                 )}

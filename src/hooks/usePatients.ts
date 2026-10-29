@@ -17,6 +17,10 @@ interface UsePatientsParams {
   // param here, never defaulted locally so there is exactly one source of
   // truth for "what does omitted mean".
   status?: PatientLifecycleFilter
+  // SORT-SEARCH-STICKY-FIX-1 — server-side age / current-risk-percentage
+  // ordering (whole filtered dataset, before pagination).
+  sortBy?: 'age' | 'risk'
+  sortOrder?: 'asc' | 'desc'
 }
 
 interface UsePatientsReturn {
@@ -30,7 +34,7 @@ interface UsePatientsReturn {
 }
 
 export function usePatients(params: UsePatientsParams = {}): UsePatientsReturn {
-  const { page = 1, limit = 20, search, risk, status } = params
+  const { page = 1, limit = 20, search, risk, status, sortBy, sortOrder } = params
 
   const [patients,   setPatients]   = useState<Patient[]>([])
   const [total,      setTotal]      = useState(0)
@@ -62,7 +66,7 @@ export function usePatients(params: UsePatientsParams = {}): UsePatientsReturn {
     setLoading(true)
     setError(null)
     try {
-      const result = await patientService.list({ page, limit, search, risk, status })
+      const result = await patientService.list({ page, limit, search, risk, status, sortBy, sortOrder })
       if (requestId !== requestIdRef.current) return
       setPatients(result.data)
       setTotal(result.total)
@@ -73,7 +77,7 @@ export function usePatients(params: UsePatientsParams = {}): UsePatientsReturn {
     } finally {
       if (requestId === requestIdRef.current) setLoading(false)
     }
-  }, [page, limit, search, risk, status])
+  }, [page, limit, search, risk, status, sortBy, sortOrder])
 
   useEffect(() => { fetchPatients() }, [fetchPatients])
 

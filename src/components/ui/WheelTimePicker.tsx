@@ -42,7 +42,7 @@ function TimeWheelColumn<T extends number | Meridiem>({
 
   return (
     <div className="min-w-0 flex-1">
-      <div className="mb-1 text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mb-1 text-center text-[10px] max-lg:text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
       <div
         ref={ref}
         role="listbox"
@@ -156,7 +156,7 @@ export function WheelTimePicker({
         aria-required={required || undefined}
         onClick={() => setOpen(current => !current)}
         className={cn(
-          'flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-colors',
+          'flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-colors touch-target-h',
           'hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60',
         )}
       >
@@ -178,7 +178,7 @@ export function WheelTimePicker({
               format={period => period === 'AM' ? 'a. m.' : 'p. m.'} onChange={period => publish({ ...anchor, period })} />
           </div>
           <div className="mt-3 flex justify-end">
-            <button type="button" className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white" onClick={() => setOpen(false)}>
+            <button type="button" className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white touch-target-h" onClick={() => setOpen(false)}>
               Listo
             </button>
           </div>

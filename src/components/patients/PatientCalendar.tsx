@@ -367,7 +367,7 @@ export function PatientCalendar({
   const hasAnyEventsThisMonth = events.length > 0
 
   return (
-    <div className="bg-card rounded-xl border border-border ui-card-density">
+    <div className="bg-card rounded-xl border border-border ui-card-density max-sm:p-3">
       <div className="mb-4">
         <h3 className="font-semibold text-foreground flex items-center gap-2">
           <Calendar className="w-4 h-4 text-muted-foreground" />
@@ -384,7 +384,7 @@ export function PatientCalendar({
           type="button"
           onClick={goToPrevMonth}
           aria-label="Mes anterior"
-          className="p-1 rounded-lg border border-border hover:bg-accent transition-colors flex-shrink-0"
+          className="p-1 rounded-lg border border-border hover:bg-accent transition-colors flex-shrink-0 touch-target-box"
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
@@ -396,7 +396,7 @@ export function PatientCalendar({
           <button
             type="button"
             onClick={goToToday}
-            className="text-xs font-medium text-primary hover:underline px-1"
+            className="text-xs font-medium text-primary hover:underline px-1 touch-target-h"
           >
             Hoy
           </button>
@@ -404,7 +404,7 @@ export function PatientCalendar({
             type="button"
             onClick={goToNextMonth}
             aria-label="Mes siguiente"
-            className="p-1 rounded-lg border border-border hover:bg-accent transition-colors"
+            className="p-1 rounded-lg border border-border hover:bg-accent transition-colors touch-target-box"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -417,7 +417,7 @@ export function PatientCalendar({
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
           <button
             onClick={() => loadMonth()}
-            className="mt-3 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+            className="mt-3 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors touch-target-h"
           >
             Reintentar
           </button>
@@ -425,16 +425,16 @@ export function PatientCalendar({
       ) : (
         <>
           {/* Weekday header */}
-          <div className="grid grid-cols-7 gap-1 mb-1">
+          <div className="grid grid-cols-7 gap-1 max-sm:gap-x-0.5 mb-1">
             {WEEKDAY_LABELS.map(label => (
-              <div key={label} className="ui-calendar-micro text-center font-medium text-muted-foreground uppercase py-1">
+              <div key={label} className="ui-calendar-micro max-lg:text-xs text-center font-medium text-muted-foreground uppercase max-sm:normal-case max-sm:tracking-tight py-1">
                 {label}
               </div>
             ))}
           </div>
 
           {/* Day grid */}
-          <div className="grid grid-cols-7 gap-1">
+          <div className="grid grid-cols-7 gap-1 max-sm:gap-x-0.5">
             {days.map(day => {
               const dayEvents = eventsByDay.get(day.dateKey) ?? []
               const isSelected = day.dateKey === selectedDateKey
@@ -445,7 +445,8 @@ export function PatientCalendar({
                   onClick={() => { clearEventSelection(); setSelectedDateKey(day.dateKey) }}
                   aria-label={`${day.dayOfMonth}${dayEvents.length ? `, ${dayEvents.length} evento(s)` : ', sin actividad'}`}
                   className={cn(
-                    'aspect-square rounded-lg border text-xs flex flex-col items-center justify-center gap-0.5 transition-colors',
+                    // B6 — below sm the cells are narrow, so height (not a square) provides the 44 px touch size.
+                    'aspect-square max-sm:aspect-auto touch-target-min rounded-lg border text-xs flex flex-col items-center justify-center gap-0.5 transition-colors',
                     day.isCurrentMonth ? 'text-foreground' : 'text-muted-foreground/40',
                     isSelected ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-accent',
                     day.isToday && !isSelected && 'border-border bg-accent/50',
@@ -575,7 +576,7 @@ function TimelineEventRow({ event, isSelected, onSelectHealthRecord, onSelectPre
           </p>
           <RecordProvenance metadata={event.metadata} />
         </div>
-        <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
+        <span className="ui-calendar-micro max-lg:text-xs text-muted-foreground flex-shrink-0">{time}</span>
       </EventRowShell>
     )
   }
@@ -596,7 +597,7 @@ function TimelineEventRow({ event, isSelected, onSelectHealthRecord, onSelectPre
             <RiskBadge level={event.metadata.riskLevel} size="sm" />
             <span className="text-xs text-muted-foreground">{formatScore(event.metadata.riskScore)}</span>
             {event.metadata.modelVersion && (
-              <span className="ui-calendar-micro text-muted-foreground">Modelo {event.metadata.modelVersion}</span>
+              <span className="ui-calendar-micro max-lg:text-xs text-muted-foreground">Modelo {event.metadata.modelVersion}</span>
             )}
           </div>
           {event.metadata.isAnomaly && (
@@ -604,7 +605,7 @@ function TimelineEventRow({ event, isSelected, onSelectHealthRecord, onSelectPre
           )}
           <AutomaticPredictionProvenance metadata={event.metadata} />
         </div>
-        <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
+        <span className="ui-calendar-micro max-lg:text-xs text-muted-foreground flex-shrink-0">{time}</span>
       </EventRowShell>
     )
   }
@@ -636,7 +637,7 @@ function TimelineEventRow({ event, isSelected, onSelectHealthRecord, onSelectPre
         </div>
         <RiskChangeProvenance metadata={event.metadata} />
       </div>
-      <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
+      <span className="ui-calendar-micro max-lg:text-xs text-muted-foreground flex-shrink-0">{time}</span>
     </EventRowShell>
   )
 }

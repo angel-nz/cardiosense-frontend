@@ -85,7 +85,7 @@ export function ClinicalSourceDisclosure({ healthRecord, className }: ClinicalSo
       <button
         type="button"
         onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
-        className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+        className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline touch-target-h"
         aria-expanded={open}
       >
         {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
@@ -95,7 +95,7 @@ export function ClinicalSourceDisclosure({ healthRecord, className }: ClinicalSo
         <div className="mt-2 bg-accent/30 rounded-lg border border-border p-3">
           {/* V7 §11 — source-record identification via the V3 canonical
               12-hour formatter; never a raw ISO timestamp. */}
-          <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground mb-2.5">
+          <p className="flex items-center gap-1.5 text-[11px] max-lg:text-xs text-muted-foreground mb-2.5">
             <FileText className="w-3 h-3 flex-shrink-0" />
             {/* NEW S2E — explicit measured time; legacy rows labelled as entry time. */}
             Registro clínico · {clinicalTimeLabel(healthRecord)}

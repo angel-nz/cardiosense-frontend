@@ -223,6 +223,8 @@ function NavButton({ label, disabled, onClick, children, testId }: { label: stri
       onClick={() => { if (!disabled) onClick() }}
       className={cn(
         'p-1.5 rounded-md border border-border text-muted-foreground transition-colors',
+        // UI-MOBILE-B7 — below lg: 44 px device-constant target (icon centred by the helper).
+        'touch-target-box',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:ring-offset-card',
         disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-accent hover:text-foreground',
       )}
@@ -235,6 +237,11 @@ function NavButton({ label, disabled, onClick, children, testId }: { label: stri
 interface BoxPos { key: string; left: number; top: number; maxHeight: number | null; width?: number }
 const RING_R = 14
 const BOX_GAP = 10
+// UI-MOBILE-B7 — same breakpoint as Tailwind's `lg` (see the `max-lg:` classes).
+const isBelowLg = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 1023.98px)').matches
+// Smallest visible height (layout px) worth giving the full box when it is
+// placed under the chart's navigation row.
+const MIN_BOX_ROOM = 200
 
 interface Props {
   model: RiskEvolutionModel
@@ -365,6 +372,39 @@ export function RiskEvolutionChart({
       // to the marker; never outside the dialog / viewport.
       const dlg = c.closest('[role="dialog"]') as HTMLElement | null
       const PAD = 16
+      if (dlg && isBelowLg()) {
+        // UI-MOBILE-B7 — below lg only. On a phone the centred box used to
+        // fill the whole dialog and sit on top of the chart's own navigation
+        // row (first/previous/next/last + counter), leaving only the box's
+        // own buttons reachable. The box now starts just BELOW that row
+        // whenever at least MIN_BOX_ROOM px remain under it (the content
+        // scrolls inside the box as before); otherwise (very short landscape
+        // dialogs) it keeps the previous centred placement and the box's own
+        // 44 px previous/next/close buttons stay the reachable navigation.
+        // Measured in device px and converted once to the layout px the
+        // absolutely-positioned box is styled in (html { zoom } — see
+        // index.css).
+        const z = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1
+        const rect = dlg.getBoundingClientRect()
+        const a = { left: rect.left + dlg.clientLeft * z, top: rect.top + dlg.clientTop * z, width: dlg.clientWidth * z, height: dlg.clientHeight * z }
+        let top = a.top, height = a.height
+        const navEl = c.querySelector<HTMLElement>('[data-testid="point-nav"]')
+        if (navEl) {
+          const below = navEl.getBoundingClientRect().bottom + 4 * z
+          if (below > top && a.top + a.height - below >= MIN_BOX_ROOM * z) { height -= below - top; top = below }
+        }
+        const width = Math.max(0, Math.min(560 * z, a.width - 2 * PAD * z))
+        const maxHeight = Math.max(0, height - 2 * PAD * z)
+        const h = Math.min(b.scrollHeight * z, maxHeight)
+        const r = (v: number) => Math.round(v / z)
+        const nextMobile: BoxPos = {
+          key: selectedKey, width: r(width), maxHeight: r(maxHeight),
+          left: r(a.left + (a.width - width) / 2 - cr.left),
+          top: r(top + (height - h) / 2 - cr.top),
+        }
+        if (!boxPos || boxPos.key !== nextMobile.key || boxPos.left !== nextMobile.left || boxPos.top !== nextMobile.top || boxPos.maxHeight !== nextMobile.maxHeight || boxPos.width !== nextMobile.width) setBoxPos(nextMobile)
+        return
+      }
       const area = dlg
         ? (() => { const r = dlg.getBoundingClientRect(); return { left: r.left + dlg.clientLeft, top: r.top + dlg.clientTop, width: dlg.clientWidth, height: dlg.clientHeight } })()
         : { left: 0, top: 0, width: document.documentElement.clientWidth, height: window.innerHeight }
@@ -380,7 +420,15 @@ export function RiskEvolutionChart({
       if (!boxPos || boxPos.key !== next.key || boxPos.left !== next.left || boxPos.top !== next.top || boxPos.maxHeight !== next.maxHeight || boxPos.width !== next.width) setBoxPos(next)
       return
     }
-    const center = (el: Element) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2 - cr.left, y: r.top + r.height / 2 - cr.top } }
+    // UI-MOBILE-B7 — getBoundingClientRect() is in device px while the box is
+    // styled (and the container measured: clientWidth/offsetTop/…) in layout px
+    // under `html { zoom }` (Medium 1.10 / Large 1.25). Below lg the marker
+    // centres are converted to layout px so the candidates are computed in ONE
+    // unit — at Large the box used to land up to ~25 % of the marker's offset
+    // away from where it was computed and could sit on top of the selected
+    // marker. At >= 1024 px zf is 1: the original arithmetic, untouched.
+    const zf = isBelowLg() ? (Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1) : 1
+    const center = (el: Element) => { const r = el.getBoundingClientRect(); return { x: (r.left + r.width / 2 - cr.left) / zf, y: (r.top + r.height / 2 - cr.top) / zf } }
     const { x, y } = center(hit)
     const others = Array.from(c.querySelectorAll<SVGCircleElement>('[data-point-key] circle[data-hit]')).filter(el => el !== hit).map(center)
     const navEl = c.querySelector<HTMLElement>('[data-testid="point-nav"]')
@@ -437,8 +485,8 @@ export function RiskEvolutionChart({
 
   return (
     <div ref={containerRef} data-testid="risk-evolution-chart" data-variant={variant} data-real-points={model.real.length} data-projected-points={model.projected.length} className="relative">
-      <div className="flex items-center justify-end gap-1 mb-1" role="group" aria-label={`Navegación de la gráfica: ${chartLabel}`} data-testid="point-nav">
-        <span className="text-[11px] text-muted-foreground mr-1 tabular-nums" data-testid="point-position">
+      <div className="flex items-center justify-end gap-1 max-lg:gap-1.5 mb-1" role="group" aria-label={`Navegación de la gráfica: ${chartLabel}`} data-testid="point-nav">
+        <span className="text-[11px] max-lg:text-xs text-muted-foreground mr-1 tabular-nums" data-testid="point-position">
           {selectedIndex >= 0 ? `${selectedIndex + 1} de ${n}` : `${n}`}
         </span>
         <NavButton testId="nav-first" label="Ir al primero" disabled={n === 0 || selectedIndex === 0} onClick={() => go(0)}><ChevronsLeft className="w-3.5 h-3.5" aria-hidden="true" /></NavButton>
@@ -555,8 +603,8 @@ export function RiskEvolutionChart({
             backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--popover-foreground))', fontSize: textSizes.tooltip,
           }}
         >
-          <div className="flex items-start justify-between gap-2 mb-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="flex items-start max-lg:items-center max-lg:flex-wrap max-lg:gap-y-1 justify-between gap-2 mb-1">
+            <p className="text-[11px] max-lg:text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {full
                 ? (selectedRow.point.kind === 'REAL' ? 'Riesgo real' : 'Proyección')
                 : (selectedRow.point.kind === 'REAL' ? 'Riesgo real' : 'Proyección')}
@@ -565,13 +613,13 @@ export function RiskEvolutionChart({
             {full && (
               // Mouse navigation inside the centred box (the chart's own icon
               // buttons may sit underneath it).
-              <span className="flex items-center gap-1 -mt-0.5 ml-auto" data-testid="box-nav">
+              <span className="flex items-center gap-1 max-lg:gap-1.5 -mt-0.5 max-lg:mt-0 ml-auto" data-testid="box-nav">
                 <button type="button" aria-label="Punto anterior" title="Punto anterior" aria-disabled={selectedIndex <= 0 || undefined} onClick={() => { if (selectedIndex > 0) go(selectedIndex - 1) }}
-                  className={cn('p-0.5 rounded text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary', selectedIndex <= 0 ? 'opacity-40 cursor-not-allowed' : 'hover:text-foreground hover:bg-accent')}>
+                  className={cn('p-0.5 rounded max-lg:p-0 touch-target-box text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary', selectedIndex <= 0 ? 'opacity-40 cursor-not-allowed' : 'hover:text-foreground hover:bg-accent')}>
                   <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
                 <button type="button" aria-label="Punto siguiente" title="Punto siguiente" aria-disabled={selectedIndex >= n - 1 || undefined} onClick={() => { if (selectedIndex < n - 1) go(selectedIndex + 1) }}
-                  className={cn('p-0.5 rounded text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary', selectedIndex >= n - 1 ? 'opacity-40 cursor-not-allowed' : 'hover:text-foreground hover:bg-accent')}>
+                  className={cn('p-0.5 rounded max-lg:p-0 touch-target-box text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary', selectedIndex >= n - 1 ? 'opacity-40 cursor-not-allowed' : 'hover:text-foreground hover:bg-accent')}>
                   <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
               </span>
@@ -581,7 +629,7 @@ export function RiskEvolutionChart({
               onClick={closeBox}
               aria-label="Cerrar descripción del punto"
               title="Cerrar descripción del punto"
-              className="pointer-events-auto -mt-0.5 -mr-1 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="pointer-events-auto -mt-0.5 -mr-1 max-lg:m-0 p-0.5 max-lg:p-0 touch-target-box rounded text-muted-foreground hover:text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <X className="w-3.5 h-3.5" aria-hidden="true" />
             </button>

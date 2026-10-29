@@ -154,8 +154,25 @@ export default function PredictionHistoryPage() {
       {/* §10 — filter controls, ported from GlobalPredictionHistory's proven
           pattern: date/select changes apply immediately, no debounce, no
           free-text search (the patient is already scoped by the route). */}
-      <div className="bg-card rounded-xl border border-border p-4 space-y-2">
-        <div className="flex items-end gap-2 flex-wrap">
+      {/* SORT-SEARCH-STICKY-FIX-1 (FIX-4) — the patient's prediction-history
+          filters stay pinned under the fixed Topbar while the history
+          scrolls. Same shared recipe as every other B7 sticky region:
+          `.ui-sticky-toolbar` (position:sticky; top:var(--topbar-height) —
+          zoom-aware through the shared token; z-index 10 < Topbar 20) plus
+          the page's own translucent card background. Compact presentation
+          on narrow screens (two-column grid, tighter padding) keeps the pinned
+          block short; on short landscape screens (the B7 condition
+          max-width:1023px + max-height:480px) `.ui-history-filters` (index.css)
+          collapses it to ONE slim row and anchors the date-wheel popups under
+          the Topbar. Deliberately NOT given the global page's `max-sm:static`
+          / short-landscape `static` escape hatches: this card is meant to
+          remain visible; see the report for the viewport occupancy
+          measurements. */}
+      <div
+        data-testid="patient-history-filters"
+        className="ui-sticky-toolbar ui-history-filters bg-card/80 rounded-xl border border-border p-4 space-y-2 max-sm:p-3"
+      >
+        <div className="ui-history-filters-row flex items-end gap-2 flex-wrap max-sm:grid max-sm:grid-cols-2 max-sm:[&>div]:w-full">
           <WheelDatePicker label="Desde"
             id="history-from"
             compact
@@ -181,6 +198,7 @@ export default function PredictionHistoryPage() {
               value={riskLevel}
               onChange={e => setRiskLevel(e.target.value as PredictionRiskFilter | '')}
               className="w-full px-2.5 ui-secondary-control-density text-xs rounded-lg border border-border bg-card cursor-pointer"
+              data-touch-min
             >
             <option value="">Todos los niveles</option>
             <option value="LOW">Bajo</option>
@@ -192,7 +210,7 @@ export default function PredictionHistoryPage() {
             <button
               type="button"
               onClick={clearFilters}
-              className="text-xs text-primary hover:underline ml-auto"
+              className="text-xs text-primary hover:underline ml-auto max-sm:justify-self-end max-sm:self-center"
             >
               Limpiar filtros
             </button>
@@ -202,7 +220,7 @@ export default function PredictionHistoryPage() {
             (see `invalidRange` guard in load() above) and current filters/
             results stay exactly as they were — no silent date swapping. */}
         {invalidRange && (
-          <p className="text-[11px] text-red-600 dark:text-red-400">
+          <p className="text-[11px] max-lg:text-xs text-red-600 dark:text-red-400">
             La fecha "Desde" no puede ser posterior a "Hasta".
           </p>
         )}
@@ -218,7 +236,7 @@ export default function PredictionHistoryPage() {
           <p className="font-medium text-red-600 dark:text-red-400">{error}</p>
           <button
             onClick={() => load()}
-            className="mt-3 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+            className="mt-3 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors touch-target-h"
           >
             Reintentar
           </button>
@@ -254,7 +272,7 @@ export default function PredictionHistoryPage() {
                   {monthLabel(group.monthKey + '-01')}
                 </div>
               )}
-              <div className="text-[11px] font-medium text-muted-foreground">
+              <div className="text-[11px] max-lg:text-xs font-medium text-muted-foreground">
                 {/* §14 — day heading: Hoy/Ayer for the current/previous
                     business day, otherwise the absolute weekday+day style
                     (dayLabel) — never "Hoy 25". Month heading above always
@@ -272,7 +290,7 @@ export default function PredictionHistoryPage() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <RiskBadge level={pred.riskLevel} showScore />
                           {pred.isAnomaly && (
-                            <span className="text-[10px] font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 px-2 py-0.5 rounded-full">
+                            <span className="text-[10px] max-lg:text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 px-2 py-0.5 rounded-full">
                               ⚠ Anomalía
                             </span>
                           )}
@@ -290,7 +308,7 @@ export default function PredictionHistoryPage() {
                                 calculation time is secondary. */}
                             {pred.healthRecord ? clinicalTimeLabel(pred.healthRecord) : `Sin registro vinculado · ${formatRelativeBusinessDateTime(pred.predictedAt)}`}
                           </span>
-                          <span className="text-[11px]">Calculada {formatRelativeBusinessDateTime(pred.predictedAt)}</span>
+                          <span className="text-[11px] max-lg:text-xs">Calculada {formatRelativeBusinessDateTime(pred.predictedAt)}</span>
                         </div>
                         {/* featureImportance isn't persisted on the Prediction row, so
                             it's never present on historical entries — no fallback data
@@ -319,14 +337,16 @@ export default function PredictionHistoryPage() {
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page <= 1}
-                  className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Página anterior"
+                  className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed touch-target-box"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages}
-                  className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Página siguiente"
+                  className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed touch-target-box"
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>

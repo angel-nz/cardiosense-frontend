@@ -49,7 +49,8 @@ interface SettingsSectionProps {
 export function SettingsSection({ title, children, className, headerAction, allowOverflow = false }: SettingsSectionProps) {
   return (
     <div className={cn('bg-card rounded-xl border border-border', !allowOverflow && 'overflow-hidden', className)}>
-      <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3">
+      {/* B5 — below sm the header action wraps under the title instead of being clipped. */}
+      <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3 max-sm:flex-wrap">
         <h2 className="ui-heading-section font-semibold text-foreground">{title}</h2>
         {headerAction}
       </div>

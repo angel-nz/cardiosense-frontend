@@ -194,7 +194,7 @@ export default function PatientVisibilitySettings() {
                 type="button"
                 onClick={() => setConfirmBulkHideOpen(true)}
                 disabled={bulkBusy}
-                className="flex-1 flex items-center justify-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-amber-700 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/15 dark:hover:bg-amber-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex-1 flex items-center justify-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-amber-700 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/15 dark:hover:bg-amber-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed touch-target-h"
               >
                 <EyeOff className="w-4 h-4 text-amber-700 dark:text-amber-300" />
                 Ocultar todos los pacientes inactivos
@@ -203,7 +203,7 @@ export default function PatientVisibilitySettings() {
                 type="button"
                 onClick={() => setConfirmBulkShowOpen(true)}
                 disabled={bulkBusy}
-                className="flex-1 flex items-center justify-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-teal-700 dark:border-teal-800/60 text-teal-700 dark:text-teal-300 bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/15 dark:hover:bg-teal-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex-1 flex items-center justify-center gap-2 px-4 ui-compact-control-density rounded-lg text-sm font-medium border border-teal-700 dark:border-teal-800/60 text-teal-700 dark:text-teal-300 bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/15 dark:hover:bg-teal-950/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed touch-target-h"
               >
                 <Eye className="w-4 h-4 text-teal-700 dark:text-teal-300" />
                 Mostrar todos los pacientes ocultos
@@ -232,7 +232,7 @@ export default function PatientVisibilitySettings() {
               Search icon below a valid containing block on its own; no
               separate `relative` is needed or used here. */}
           <div
-            className="ui-sticky-toolbar mb-3 bg-card/80 border-b border-border"
+            className="ui-sticky-toolbar [@media(max-width:1023px)_and_(max-height:340px)]:static mb-3 bg-card/80 border-b border-border"
             style={{ paddingTop: 'var(--ui-secondary-control-padding-y)', paddingBottom: 'var(--ui-secondary-control-padding-y)' }}
           >
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -287,7 +287,7 @@ export default function PatientVisibilitySettings() {
                       type="button"
                       onClick={() => handleShow(patient)}
                       disabled={rowBusyId !== null}
-                      className="flex items-center gap-1.5 text-xs font-medium text-teal-700 dark:text-teal-300 hover:bg-primary/10 px-2.5 ui-secondary-control-density rounded-lg transition-colors flex-shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="flex items-center gap-1.5 text-xs font-medium text-teal-700 dark:text-teal-300 hover:bg-primary/10 px-2.5 ui-secondary-control-density rounded-lg transition-colors flex-shrink-0 disabled:opacity-60 disabled:cursor-not-allowed touch-target-h"
                     >
                       {rowBusyId === patient.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                       <Eye className="w-4 h-4 text-teal-700 dark:text-teal-300" />
@@ -307,7 +307,8 @@ export default function PatientVisibilitySettings() {
                   <button
                     onClick={() => setPage(p => Math.max(1, p - 1))}
                     disabled={page <= 1}
-                    className="rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    aria-label="Página anterior"
+                    className="rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed touch-target-box"
                     style={{ padding: 'var(--ui-secondary-control-padding-y)' }}
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
@@ -315,7 +316,8 @@ export default function PatientVisibilitySettings() {
                   <button
                     onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                     disabled={page >= totalPages}
-                    className="rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    aria-label="Página siguiente"
+                    className="rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed touch-target-box"
                     style={{ padding: 'var(--ui-secondary-control-padding-y)' }}
                   >
                     <ChevronRight className="w-3.5 h-3.5" />
@@ -343,14 +345,14 @@ export default function PatientVisibilitySettings() {
           <button
             onClick={() => setConfirmBulkHideOpen(false)}
             disabled={bulkBusy}
-            className="px-4 ui-compact-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-60"
+            className="px-4 ui-compact-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-60 touch-target-h"
           >
             Cancelar
           </button>
           <button
             onClick={handleBulkHide}
             disabled={bulkBusy}
-            className="flex items-center gap-2 px-4 ui-compact-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-60"
+            className="flex items-center gap-2 px-4 ui-compact-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-60 touch-target-h"
           >
             {bulkBusy && <Loader2 className="w-4 h-4 animate-spin" />}
             Ocultar todos
@@ -371,14 +373,14 @@ export default function PatientVisibilitySettings() {
           <button
             onClick={() => setConfirmBulkShowOpen(false)}
             disabled={bulkBusy}
-            className="px-4 ui-compact-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-60"
+            className="px-4 ui-compact-control-density text-sm font-medium rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-60 touch-target-h"
           >
             Cancelar
           </button>
           <button
             onClick={handleBulkShow}
             disabled={bulkBusy}
-            className="flex items-center gap-2 px-4 ui-compact-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-60"
+            className="flex items-center gap-2 px-4 ui-compact-control-density text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-60 touch-target-h"
           >
             {bulkBusy && <Loader2 className="w-4 h-4 animate-spin" />}
             Mostrar todos

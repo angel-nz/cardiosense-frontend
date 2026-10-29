@@ -180,7 +180,7 @@ export function DashboardCalendar() {
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
           <button
             onClick={() => loadMonth()}
-            className="mt-3 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+            className="mt-3 px-4 ui-compact-control-density text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors touch-target-h"
           >
             Reintentar
           </button>
@@ -208,7 +208,7 @@ export function DashboardCalendar() {
           (68px, confirmed in Topbar.tsx/AppLayout.tsx's own `pt-[68px]`
           page-content offset) plus 8px of breathing room, so the sticky
           card settles just below the Topbar rather than touching it. */}
-      <div className="bg-card rounded-xl border border-border ui-card-density lg:sticky lg:top-[76px]">
+      <div className="bg-card rounded-xl border border-border ui-card-density max-sm:p-3 lg:sticky lg:top-[76px]">
         <div className="mb-4">
           <h3 className="font-semibold text-foreground flex items-center gap-2">
             Actividad cardiovascular
@@ -224,7 +224,7 @@ export function DashboardCalendar() {
             type="button"
             onClick={goToPrevMonth}
             aria-label="Mes anterior"
-            className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors flex-shrink-0"
+            className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors flex-shrink-0 touch-target-box"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -236,7 +236,7 @@ export function DashboardCalendar() {
             <button
               type="button"
               onClick={goToToday}
-              className="text-xs font-medium text-primary hover:underline px-1"
+              className="text-xs font-medium text-primary hover:underline px-1 touch-target-h"
             >
               Hoy
             </button>
@@ -244,7 +244,7 @@ export function DashboardCalendar() {
               type="button"
               onClick={goToNextMonth}
               aria-label="Mes siguiente"
-              className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors"
+              className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors touch-target-box"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -252,9 +252,9 @@ export function DashboardCalendar() {
         </div>
 
         {/* Weekday header */}
-        <div className="grid grid-cols-7 gap-1 mb-1">
+        <div className="grid grid-cols-7 gap-1 max-sm:gap-x-0.5 mb-1">
           {WEEKDAY_LABELS.map(label => (
-            <div key={label} className="ui-calendar-micro text-center font-medium text-muted-foreground uppercase py-1">
+            <div key={label} className="ui-calendar-micro max-lg:text-xs text-center font-medium text-muted-foreground uppercase max-sm:normal-case max-sm:tracking-tight py-1">
               {label}
             </div>
           ))}
@@ -264,7 +264,7 @@ export function DashboardCalendar() {
             (not per-type dots) — Dashboard days can carry activity from
             many patients at once, so a number scales better than
             multiple dots which could overflow a small cell. */}
-        <div className="grid grid-cols-7 gap-1">
+        <div className="grid grid-cols-7 gap-1 max-sm:gap-x-0.5">
           {days.map(day => {
             const dayEvents = eventsByDay.get(day.dateKey) ?? []
             const isSelected = day.dateKey === selectedDateKey
@@ -275,7 +275,8 @@ export function DashboardCalendar() {
                 onClick={() => setSelectedDateKey(day.dateKey)}
                 aria-label={`${day.dayOfMonth}${dayEvents.length ? `, ${dayEvents.length} evento(s)` : ', sin actividad'}`}
                 className={cn(
-                  'aspect-square rounded-lg border text-xs flex flex-col items-center justify-center gap-0.5 transition-colors',
+                  // B6 — below sm the cells are narrow, so height (not a square) provides the 44 px touch size.
+                    'aspect-square max-sm:aspect-auto touch-target-min rounded-lg border text-xs flex flex-col items-center justify-center gap-0.5 transition-colors',
                   day.isCurrentMonth ? 'text-foreground' : 'text-muted-foreground/40',
                   isSelected ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-accent',
                   day.isToday && !isSelected && 'border-border bg-accent/50',
@@ -283,7 +284,7 @@ export function DashboardCalendar() {
               >
                 <span>{day.dayOfMonth}</span>
                 {dayEvents.length > 0 && (
-                  <span className="ui-calendar-count font-semibold text-primary leading-none">
+                  <span className="ui-calendar-count max-lg:text-xs font-semibold text-primary leading-none">
                     {dayEvents.length}
                   </span>
                 )}
@@ -416,7 +417,7 @@ function DashboardEventRow({
           </p>
           <RecordProvenance metadata={event.metadata} />
         </div>
-        <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
+        <span className="ui-calendar-micro max-lg:text-xs text-muted-foreground flex-shrink-0">{time}</span>
       </>
     ))
   }
@@ -437,7 +438,7 @@ function DashboardEventRow({
           )}
           <AutomaticPredictionProvenance metadata={event.metadata} />
         </div>
-        <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
+        <span className="ui-calendar-micro max-lg:text-xs text-muted-foreground flex-shrink-0">{time}</span>
       </>
     ))
   }
@@ -467,7 +468,7 @@ function DashboardEventRow({
         </div>
         <RiskChangeProvenance metadata={event.metadata} />
       </div>
-      <span className="ui-calendar-micro text-muted-foreground flex-shrink-0">{time}</span>
+      <span className="ui-calendar-micro max-lg:text-xs text-muted-foreground flex-shrink-0">{time}</span>
     </>
   ))
 }

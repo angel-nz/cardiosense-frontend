@@ -14,7 +14,7 @@ import type { HealthRecord, CreateHealthRecordRequest } from '@/types'
 const inputClass = cn(
   'w-full px-3 py-2 text-sm rounded-lg border border-border bg-card',
   'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
-  'transition-all placeholder:text-muted-foreground',
+  'transition-all placeholder:text-muted-foreground touch-target-min',
 )
 
 interface RecordFormState {
@@ -317,10 +317,10 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
                 aria-invalid={fieldErrors.measuredAt ? true : undefined}
               />
             </div>
-            <p id="record-measured-at-help" className="text-[11px] text-muted-foreground">
+            <p id="record-measured-at-help" className="text-[11px] max-lg:text-xs text-muted-foreground">
               Momento en que realmente se tomaron las mediciones.
             </p>
-            {fieldErrors.measuredAt && <p role="alert" className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.measuredAt}</p>}
+            {fieldErrors.measuredAt && <p role="alert" className="text-[11px] max-lg:text-xs text-red-600 dark:text-red-400">{fieldErrors.measuredAt}</p>}
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -329,35 +329,35 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
               <input type="number" min={60} max={300} required className={inputClass}
                 value={form.sysBP}
                 onChange={e => setForm(f => ({ ...f, sysBP: e.target.value }))} />
-              {fieldErrors.sysBP && <p className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.sysBP}</p>}
+              {fieldErrors.sysBP && <p className="text-[11px] max-lg:text-xs text-red-600 dark:text-red-400">{fieldErrors.sysBP}</p>}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Presión diastólica</label>
               <input type="number" min={40} max={200} required className={inputClass}
                 value={form.diaBP}
                 onChange={e => setForm(f => ({ ...f, diaBP: e.target.value }))} />
-              {fieldErrors.diaBP && <p className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.diaBP}</p>}
+              {fieldErrors.diaBP && <p className="text-[11px] max-lg:text-xs text-red-600 dark:text-red-400">{fieldErrors.diaBP}</p>}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Colesterol total</label>
               <input type="number" min={50} max={800} required className={inputClass}
                 value={form.totChol}
                 onChange={e => setForm(f => ({ ...f, totChol: e.target.value }))} />
-              {fieldErrors.totChol && <p className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.totChol}</p>}
+              {fieldErrors.totChol && <p className="text-[11px] max-lg:text-xs text-red-600 dark:text-red-400">{fieldErrors.totChol}</p>}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">IMC</label>
               <input type="number" step="0.1" min={10} max={80} required className={inputClass}
                 value={form.bmi}
                 onChange={e => setForm(f => ({ ...f, bmi: e.target.value }))} />
-              {fieldErrors.bmi && <p className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.bmi}</p>}
+              {fieldErrors.bmi && <p className="text-[11px] max-lg:text-xs text-red-600 dark:text-red-400">{fieldErrors.bmi}</p>}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Glucosa casual</label>
               <input type="number" min={30} max={500} required className={inputClass}
                 value={form.glucose}
                 onChange={e => setForm(f => ({ ...f, glucose: e.target.value }))} />
-              {fieldErrors.glucose && <p className="text-[11px] text-red-600 dark:text-red-400">{fieldErrors.glucose}</p>}
+              {fieldErrors.glucose && <p className="text-[11px] max-lg:text-xs text-red-600 dark:text-red-400">{fieldErrors.glucose}</p>}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Cigarrillos/día</label>
@@ -368,17 +368,17 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
           </div>
 
           <div className="flex flex-wrap items-center ui-element-gap text-sm">
-            <label className="flex items-center gap-2">
+            <label className="flex items-center gap-2 touch-target-h">
               <input type="checkbox" checked={form.currentSmoker}
                 onChange={e => setForm(f => ({ ...f, currentSmoker: e.target.checked }))} />
               Fumador actual
             </label>
-            <label className="flex items-center gap-2">
+            <label className="flex items-center gap-2 touch-target-h">
               <input type="checkbox" checked={form.bpMeds}
                 onChange={e => setForm(f => ({ ...f, bpMeds: e.target.checked }))} />
               Medicamento para presión
             </label>
-            <label className="flex items-center gap-2">
+            <label className="flex items-center gap-2 touch-target-h">
               <input type="checkbox" checked={form.diabetes}
                 onChange={e => setForm(f => ({ ...f, diabetes: e.target.checked }))} />
               Diabetes
@@ -397,7 +397,7 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
           <button
             type="submit"
             disabled={saving || loadingLatest}
-            className="flex items-center gap-1.5 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors"
+            className="flex items-center gap-1.5 bg-primary text-white px-4 ui-compact-control-density rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors touch-target-h"
           >
             <Save className="w-4 h-4" />
             {saving ? 'Guardando...' : 'Guardar registro'}
@@ -406,7 +406,7 @@ export function NewRecordModal({ patientId, birthDate, open, onOpenChange, onCre
             type="button"
             onClick={handleClose}
             disabled={saving}
-            className="px-4 ui-compact-control-density text-xs font-medium text-muted-foreground hover:bg-accent rounded-lg transition-colors disabled:opacity-60"
+            className="px-4 ui-compact-control-density text-xs font-medium text-muted-foreground hover:bg-accent rounded-lg transition-colors disabled:opacity-60 touch-target-h"
           >
             Cancelar
           </button>

@@ -86,7 +86,7 @@ function PreferenceToggle({
   disabled?: boolean
 }) {
   return (
-    <label htmlFor={id} className="relative inline-flex items-center cursor-pointer">
+    <label htmlFor={id} className="relative inline-flex items-center cursor-pointer touch-target-h">
       <input
         id={id}
         type="checkbox"
